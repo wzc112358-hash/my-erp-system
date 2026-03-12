@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+
+# Database
+backend/pb_data/
+backend/pb_migrations/
+
+# Backend binary
+backend/pocketbase
+backend/pocketbase:Zone.Identifier
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Backup files
+*.tar.gz
+*.tar
+*.zip
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.docker/config.json
+
+# Traefik
+traefik/acme.json
+
+# SSH
+.ssh/
