@@ -1,0 +1,23 @@
+[http.routers]
+  [http.routers.frontend]
+    rule = "Host(`henghuacheng.cn`)"
+    service = "frontend"
+    entryPoints = ["web", "websecure"]
+    [http.routers.frontend.tls]
+      certResolver = "letsencrypt"
+
+  [http.routers.pocketbase]
+    rule = "Host(`api.henghuacheng.cn`)"
+    service = "pocketbase"
+    entryPoints = ["web", "websecure"]
+    [http.routers.pocketbase.tls]
+      certResolver = "letsencrypt"
+
+[http.services]
+  [http.services.frontend]
+    [[http.services.frontend.loadBalancer.servers]]
+      url = "http://frontend:80"
+
+  [http.services.pocketbase]
+    [[http.services.pocketbase.loadBalancer.servers]]
+      url = "http://pocketbase:8090"
