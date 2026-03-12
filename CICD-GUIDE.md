@@ -5,10 +5,9 @@
 ## 目录
 
 1. [架构概述](#架构概述)
-2. [阿里云配置](#阿里云配置)
-3. [GitHub 配置](#github-配置)
-4. [服务器配置](#服务器配置)
-5. [部署流程](#部署流程)
+2. [GitHub 配置](#github-配置)
+3. [服务器配置](#服务器配置)
+4. [部署流程](#部署流程)
 
 ---
 
@@ -18,44 +17,14 @@
 ┌─────────────┐     PR/Merge      ┌─────────────────────┐
 │  Developer  │ ────────────────► │   GitHub Actions    │
 └─────────────┘                   │  (Self-hosted Runner)│
-                                   └─────────┬───────────┘
-                                             │ Build & Push
-                                             ▼
-                                   ┌─────────────────────┐
-                                   │ 阿里云 ACR 镜像仓库  │
-                                   └─────────┬───────────┘
-                                             │ Deploy
-                                             ▼
-                                   ┌─────────────────────┐
-                                   │   阿里云服务器        │
-                                   │  docker-compose    │
-                                   └─────────────────────┘
+                                    └─────────┬───────────┘
+                                              │ Build & SCP
+                                              ▼
+                                    ┌─────────────────────┐
+                                    │   阿里云服务器        │
+                                    │  docker import      │
+                                    └─────────────────────┘
 ```
-
----
-
-## 阿里云配置
-
-### 1. 创建容器镜像服务实例
-
-1. 登录 [阿里云容器镜像服务控制台](https://cr.console.aliyun.com/)
-2. 创建个人版实例或企业版实例
-3. 获取实例信息：
-   - **实例ID**: `your-acr-instance-id`
-   - **地域**: `cn-hangzhou`
-   - **访问域名**: `your-acr-instance-id.registry.cn-hangzhou.aliyuncs.com`
-
-### 2. 创建镜像仓库
-
-1. 在 ACR 控制台创建命名空间，如 `erp-system`
-2. 创建镜像仓库：
-   - **frontend**: `your-acr-instance-id.registry.cn-hangzhou.aliyuncs.com/erp-system/frontend`
-   - **pocketbase**: `your-acr-instance-id.registry.cn-hangzhou.aliyuncs.com/erp-system/pocketbase`
-
-### 3. 获取镜像凭证
-
-1. 在 ACR 实例设置中设置访问凭证
-2. 获取用户名和密码，后续用于 GitHub Secrets
 
 ---
 
@@ -67,10 +36,6 @@
 
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
-| `ALIYUN_ACR_INSTANCE_ID` | ACR 实例ID | `cr-xxxxx` |
-| `ALIYUN_ACR_REGISTRY` | ACR 镜像仓库地址 | `cr-xxxxx.registry.cn-hangzhou.aliyuncs.com` |
-| `ALIYUN_ACR_USERNAME` | ACR 用户名 | `your-username` |
-| `ALIYUN_ACR_PASSWORD` | ACR 密码 | `your-password` |
 | `SERVER_HOST` | 服务器 IP | `47.xxx.xxx.xxx` |
 | `SERVER_USER` | SSH 用户名 | `root` |
 | `SERVER_SSH_KEY` | SSH 私钥 | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
@@ -124,6 +89,10 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```bash
 sudo mkdir -p /opt/erp-system
 sudo chown -R $USER:$USER /opt/erp-system
+
+# 创建镜像存储目录
+sudo mkdir -p /opt/erp-system/images
+sudo chown -R $USER:$USER /opt/erp-system/images
 ```
 
 ### 2. 配置 SSH 免密登录
@@ -139,21 +108,40 @@ ssh-copy-id -i ~/.ssh/id_ed25519.pub root@SERVER_IP
 cat ~/.ssh/id_ed25519.pub | ssh root@SERVER_IP "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
-### 3. 配置服务器上的 docker-compose.yml
+### 3. 初始化服务器仓库
 
-在 `/opt/erp-system/docker-compose.yml`:
+```bash
+# 在服务器上克隆仓库（或初始化空目录）
+cd /opt/erp-system
+git init
+git remote add origin git@github.com:{owner}/{repo}.git
+git fetch origin master
+git checkout -b master origin/master
+
+# 后续更新用 git pull 即可
+```
+
+### 4. 配置服务器上的 docker-compose.yml
+
+修改 `/opt/erp-system/docker-compose.yml`，将 build 改为 image（本地镜像）:
 
 ```yaml
 version: '3.8'
 
 services:
   frontend:
-    image: ${ACR_INSTANCE_ID}.registry.cn-hangzhou.aliyuncs.com/erp-system/frontend:latest
+    image: erp-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     networks:
       - web
 
   pocketbase:
-    image: ${ACR_INSTANCE_ID}.registry.cn-hangzhou.aliyuncs.com/erp-system/pocketbase:latest
+    image: erp-pocketbase:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8090:8090"
     volumes:
@@ -211,8 +199,9 @@ networks:
 
 1. **触发 CI**: GitHub Actions 自动运行
 2. **构建镜像**: 在 Self-hosted Runner 上构建 Docker 镜像
-3. **推送镜像**: 将镜像推送到阿里云 ACR
-4. **部署**: SSH 登录服务器，拉取最新镜像并重启服务
+3. **导出镜像**: 导出为 tar.gz 文件
+4. **传输镜像**: SCP 传送到服务器
+5. **部署**: SSH 登录服务器，加载镜像并重启服务
 
 ---
 
@@ -230,93 +219,72 @@ on:
   push:
     branches: [master]
 
-env:
-  ACR_INSTANCE_ID: ${{ secrets.ALIYUN_ACR_INSTANCE_ID }}
-  ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-  ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-  ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: self-hosted
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build frontend image
+        run: |
+          docker build -t erp-frontend:latest ./frontend
 
-      - name: Login to ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
+      - name: Build pocketbase image
+        run: |
+          docker build -t erp-pocketbase:latest ./backend
 
-      - name: Build and push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.ACR_REGISTRY }}/erp-system/frontend:${{ github.sha }}
-            ${{ env.ACR_REGISTRY }}/erp-system/frontend:latest
-          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/erp-system/frontend:latest
-          cache-to: type=inline
+      - name: Export frontend image
+        run: |
+          docker save erp-frontend:latest | gzip > erp-frontend.tar.gz
 
-      - name: Build and push pocketbase
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ${{ env.ACR_REGISTRY }}/erp-system/pocketbase:${{ github.sha }}
-            ${{ env.ACR_REGISTRY }}/erp-system/pocketbase:latest
+      - name: Export pocketbase image
+        run: |
+          docker save erp-pocketbase:latest | gzip > erp-pocketbase.tar.gz
 
-  deploy:
-    needs: build-and-push
-    runs-on: self-hosted
-    if: github.event_name == 'pull_request'
-    
-    steps:
+      - name: Copy images to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-pocketbase.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
+          
+          rm -f /tmp/deploy_key
+
       - name: Deploy to server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          ACR_INSTANCE_ID: ${{ secrets.ALIYUN_ACR_INSTANCE_ID }}
-          ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
         run: |
-          # 创建临时 SSH 密钥文件
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           
-          # SSH 登录服务器执行部署
           ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'EOF'
             cd /opt/erp-system
             
-            # 拉取最新 docker-compose.yml
+            # 拉取最新代码
             git pull origin master
             
-            # 重新加载 .env 文件中的镜像地址
-            export ACR_INSTANCE_ID="$ACR_INSTANCE_ID"
-            export ACR_REGISTRY="$ACR_REGISTRY"
+            # 加载镜像
+            docker load -i images/erp-frontend.tar.gz
+            docker load -i images/erp-pocketbase.tar.gz
             
-            # 登录 ACR
-            docker login --username=${ACR_USERNAME} --password=${ACR_PASSWORD} ${ACR_REGISTRY}
+            # 重新构建并启动（使用本地镜像）
+            docker-compose build --no-cache frontend pocketbase
+            docker-compose up -d
             
-            # 拉取最新镜像
-            docker-compose pull frontend pocketbase
-            
-            # 重启服务
-            docker-compose up -d --no-build
-            
-            # 清理旧镜像
+            # 清理旧镜像和 tar 文件
             docker image prune -f
+            rm -f images/erp-frontend.tar.gz images/erp-pocketbase.tar.gz
           EOF
           
-          # 清理临时文件
           rm -f /tmp/deploy_key
 ```
 
@@ -362,11 +330,15 @@ cd ~/actions-runner
 sudo ./svc.sh status
 ```
 
-### 2. 镜像拉取失败
+### 2. 镜像加载失败
 
-- 检查 ACR 访问凭证是否正确
-- 检查服务器网络是否能访问 ACR
-- 手动测试: `docker login ${ACR_REGISTRY}`
+```bash
+# 检查镜像文件
+ls -la /opt/erp-system/images/
+
+# 手动加载测试
+docker load -i images/erp-frontend.tar.gz
+```
 
 ### 3. 部署后服务异常
 
@@ -384,10 +356,9 @@ docker-compose restart frontend
 
 部署前确认以下配置：
 
-- [ ] 阿里云 ACR 实例已创建
-- [ ] 镜像仓库已创建
 - [ ] GitHub Secrets 已配置
 - [ ] Self-hosted Runner 已安装并运行
 - [ ] 服务器 Docker 和 docker-compose 已安装
 - [ ] SSH 免密登录已配置
 - [ ] 部署目录已创建
+- [ ] 服务器仓库已初始化
