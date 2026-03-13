@@ -1,37 +1,40 @@
-name: Deploy to Production
+name: Build and Deploy
 
 on:
   pull_request:
     branches: [master]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
   push:
     branches: [master]
 
 jobs:
   build-and-deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
     runs-on: self-hosted
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build frontend image
+      - name: Build frontend Docker image
         run: |
+          docker build -t erp-frontend:${{ github.sha }} ./frontend
           docker build -t erp-frontend:latest ./frontend
 
-      - name: Build pocketbase image
+      - name: Build pocketbase Docker image
         run: |
+          docker build -t erp-pocketbase:${{ github.sha }} ./backend
           docker build -t erp-pocketbase:latest ./backend
 
-      - name: Export frontend image
+      - name: Export frontend image to tar.gz
         run: |
           docker save erp-frontend:latest | gzip > erp-frontend.tar.gz
 
-      - name: Export pocketbase image
+      - name: Export pocketbase image to tar.gz
         run: |
           docker save erp-pocketbase:latest | gzip > erp-pocketbase.tar.gz
 
-      - name: Copy images to server
+      - name: Copy images to Aliyun server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -45,7 +48,7 @@ jobs:
           
           rm -f /tmp/deploy_key
 
-      - name: Deploy to server
+      - name: Deploy to Aliyun server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -54,10 +57,14 @@ jobs:
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           
-          ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'DEPLOY_SCRIPT'
+            set -e
+            
             cd /opt/erp-system
             
-            git pull origin master
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            mkdir -p backup/$timestamp
+            cp -r backend/pb_data backup/$timestamp/ 2>/dev/null || true
             
             docker load -i images/erp-frontend.tar.gz
             docker load -i images/erp-pocketbase.tar.gz
@@ -67,6 +74,14 @@ jobs:
             
             docker image prune -f
             rm -f images/erp-frontend.tar.gz images/erp-pocketbase.tar.gz
-          EOF
+            
+            echo "Deployment completed!"
+            docker-compose ps
+          DEPLOY_SCRIPT
           
           rm -f /tmp/deploy_key
+
+      - name: Cleanup local artifacts
+        if: always()
+        run: |
+          rm -f erp-frontend.tar.gz erp-pocketbase.tar.gz
