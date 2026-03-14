@@ -156,7 +156,7 @@ export const ReportAPI = {
           salesSignDate = salesContract.sign_date;
           salesQuantity = salesContract.total_quantity;
           salesUnitPrice = salesContract.unit_price;
-          salesTotalAmount = salesContract.total_amount;
+          salesTotalAmount = salesContract.total_amount / 1.13;
           
           const existingCount = salesContractRows.get(pc.expand.sales_contract.id) || 0;
           salesContractRows.set(pc.expand.sales_contract.id, existingCount + 1);
@@ -164,7 +164,8 @@ export const ReportAPI = {
       }
 
       const supplierName = pc.expand?.supplier?.name || '';
-      const purchaseTaxTotalAmount = pc.total_amount * 1.13;
+      const purchaseTaxTotalAmount = pc.total_amount;
+      const purchaseTotalAmount = pc.total_amount / 1.13;
       const arrivalDate = salesShipmentsMap.get(pc.expand?.sales_contract?.id || '') || '';
 
       if (!salesContract) {
@@ -178,7 +179,7 @@ export const ReportAPI = {
         supplierName,
         purchaseQuantity: pc.total_quantity,
         purchaseUnitPrice: pc.unit_price,
-        purchaseTotalAmount: pc.total_amount,
+        purchaseTotalAmount: purchaseTotalAmount,
         purchaseTaxTotalAmount,
         salesContractNo: salesContract.no,
         salesSignDate,
@@ -203,6 +204,7 @@ export const ReportAPI = {
     const salesContractPurchaseTotal = new Map<string, number>();
     const salesContractFreightTotal = new Map<string, number>();
     const salesContractMiscTotal = new Map<string, number>();
+    const salesContractTaxTotal = new Map<string, number>();
     
     reportData.forEach((row) => {
       if (row.salesContractNo) {
@@ -217,6 +219,15 @@ export const ReportAPI = {
         
         const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
         salesContractMiscTotal.set(row.salesContractNo, miscTotal + row.miscellaneous);
+
+        if (count === 0) {
+          for (const sc of salesContracts) {
+            if (sc.no === row.salesContractNo) {
+              salesContractTaxTotal.set(row.salesContractNo, sc.total_amount);
+              break;
+            }
+          }
+        }
       }
     });
 
@@ -231,10 +242,13 @@ export const ReportAPI = {
         const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
         const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
         const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
-        row.salesTaxTotalAmount = row.salesTotalAmount * 1.13;
-        row.profit = row.salesTotalAmount - purchaseTotal - freightTotal - miscTotal;
-        row.tax = (row.salesTotalAmount * 1.13 - purchaseTotal * 1.13) * 0.1878;
-        row.netProfit = row.salesTotalAmount - purchaseTotal - row.tax - freightTotal - miscTotal;
+        const salesTaxTotal = salesContractTaxTotal.get(row.salesContractNo) || 0;
+        const purchaseTaxTotal = salesContractPurchaseTotal.get(row.salesContractNo) ? (purchaseTotal * 1.13) : 0;
+        
+        row.salesTaxTotalAmount = salesTaxTotal;
+        row.tax = (salesTaxTotal - purchaseTaxTotal) * 0.1881;
+        row.profit = salesTaxTotal / 1.13 - purchaseTotal - freightTotal - miscTotal;
+        row.netProfit = salesTaxTotal / 1.13 - purchaseTotal - row.tax - freightTotal - miscTotal;
       } else {
         row.salesRowSpan = 0;
         row.salesTaxTotalAmount = 0;
@@ -277,14 +291,14 @@ export const ReportAPI = {
         customerName: sc.expand?.customer?.name || '',
         salesQuantity: sc.total_quantity,
         salesUnitPrice: sc.unit_price,
-        salesTotalAmount: sc.total_amount,
-        salesTaxTotalAmount: sc.total_amount * 1.13,
+        salesTotalAmount: sc.total_amount / 1.13,
+        salesTaxTotalAmount: sc.total_amount,
         freight,
         miscellaneous,
         arrivalDate: salesShipmentsMap.get(sc.id) || '',
-        tax: (sc.total_amount * 1.13) * 0.1878,
-        profit: sc.total_amount - freight - miscellaneous,
-        netProfit: sc.total_amount - (sc.total_amount * 1.13) * 0.1878 - freight - miscellaneous,
+        tax: (sc.total_amount) * 0.1881,
+        profit: sc.total_amount / 1.13 - freight - miscellaneous,
+        netProfit: sc.total_amount / 1.13 - sc.total_amount * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,
@@ -325,7 +339,7 @@ export const ReportAPI = {
       summary.totalNetProfit += row.netProfit;
     });
 
-    summary.totalTax = (summary.totalSalesAmount * 1.13 - summary.totalPurchaseAmount * 1.13) * 0.1878;
+    summary.totalTax = (summary.totalSalesTaxAmount - summary.totalPurchaseTaxAmount) * 0.1881;
 
     return { data: reportData, summary };
   },

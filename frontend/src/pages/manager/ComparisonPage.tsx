@@ -419,18 +419,24 @@ export const ComparisonPage: React.FC = () => {
                     style={{ marginBottom: 16 }}
                   />
                 )}
-                <Descriptions column={2} bordered size="small">
+                <Descriptions column={4} bordered size="small">
                   <Descriptions.Item label="销售总数量">
                     {profit.sales_quantity} 吨
                   </Descriptions.Item>
                   <Descriptions.Item label="采购总数量">
                     {profit.purchase_quantity} 吨
                   </Descriptions.Item>
-                  <Descriptions.Item label="销售总金额">
+                  <Descriptions.Item label="销售总金额（含税）">
                     {formatCurrency(profit.sales_amount)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="采购总金额">
+                  <Descriptions.Item label="采购总金额（含税）">
                     {formatCurrency(profit.purchase_amount)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="销售总金额（不含税）">
+                    {formatCurrency(profit.sales_amount / 1.13)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="采购总金额（不含税）">
+                    {formatCurrency(profit.purchase_amount / 1.13)}
                   </Descriptions.Item>
                   <Descriptions.Item label="运费合计">
                     {formatCurrency(profit.total_freight)}
@@ -450,14 +456,14 @@ export const ComparisonPage: React.FC = () => {
                   </Descriptions.Item>
                   <Descriptions.Item label="税额">
                     {(() => {
-                      const tax = (profit.sales_amount * 1.13 - profit.purchase_amount * 1.13) * 0.1878;
+                      const tax = (profit.sales_amount - profit.purchase_amount) * 0.1881;
                       return <span style={{ fontWeight: 'bold' }}>{formatCurrency(tax)}</span>;
                     })()}
                   </Descriptions.Item>
                   <Descriptions.Item label="净利润">
                     {(() => {
-                      const tax = (profit.sales_amount * 1.13 - profit.purchase_amount * 1.13) * 0.1878;
-                      const netProfit = profit.sales_amount - profit.purchase_amount - tax - profit.total_freight - profit.total_miscellaneous;
+                      const tax = (profit.sales_amount - profit.purchase_amount) * 0.1881;
+                      const netProfit = profit.sales_amount / 1.13 - profit.purchase_amount / 1.13 - tax - profit.total_freight - profit.total_miscellaneous;
                       return (
                         <span style={{ color: netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
                           {formatCurrency(netProfit)}
@@ -467,10 +473,10 @@ export const ComparisonPage: React.FC = () => {
                   </Descriptions.Item>
                 </Descriptions>
                 <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                  营业利润 = 销售总金额 - 采购总金额 - 运费合计 - 杂费合计
+                  营业利润 = 销售含税总价 ÷ 1.13 - 采购含税总价 ÷ 1.13 - 运费合计 - 杂费合计
                 </div>
                 <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
-                  税额 = (销售总价 × 1.13 - 采购总价 × 1.13) × 0.1878，净利润 = 销售总价 - 采购总价 - 税额 - 运费 - 杂费
+                  税额 = (销售含税总价 - 采购含税总价) × 0.1881，净利润 = 销售含税总价 ÷ 1.13 - 采购含税总价 ÷ 1.13 - 税额 - 运费 - 杂费
                 </div>
               </Card>
             </>

@@ -183,7 +183,7 @@ export const ComparisonAPI = {
         purchaseContracts.length > 0
           ? salesContract.unit_price - purchaseContracts[0].unit_price
           : 0,
-      total_profit: salesContract.total_amount - purchaseTotalAmount - totalFreight - totalMiscellaneous,
+      total_profit: salesContract.total_amount / 1.13 - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
       sales_amount: salesContract.total_amount,
       purchase_amount: purchaseTotalAmount,
       sales_quantity: salesContract.total_quantity,
