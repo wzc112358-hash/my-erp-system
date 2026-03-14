@@ -43,8 +43,8 @@ jobs:
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           
-          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
-          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-pocketbase.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/root/images/
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-pocketbase.tar.gz ${SERVER_USER}@${SERVER_HOST}:/root/images/
           
           rm -f /tmp/deploy_key
 
@@ -60,7 +60,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'DEPLOY_SCRIPT'
             set -e
             
-            cd /opt/erp-system
+            cd /root
             
             timestamp=$(date +%Y%m%d_%H%M%S)
             mkdir -p backup/$timestamp
