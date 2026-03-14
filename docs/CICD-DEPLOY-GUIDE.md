@@ -80,11 +80,11 @@ docker compose version
 
 ```bash
 # 创建项目目录结构
-sudo mkdir -p /opt/erp-system/{images,backup,logs}
+sudo mkdir -p /root/{images,backup,logs}
 
 # 设置目录权限（假设使用 root 用户部署）
-sudo chown -R root:root /opt/erp-system
-sudo chmod -R 755 /opt/erp-system
+sudo chown -R root:root /root
+sudo chmod -R 755 /root
 ```
 
 ### 2.4 配置服务器 SSH 密钥
@@ -197,19 +197,15 @@ cat ~/.ssh/id_ed25519
        ▼
 2. 构建 Frontend Docker 镜像
        ▼
-3. 构建 Pocketbase Docker 镜像
+3. 导出 Frontend 镜像为 tar.gz
        ▼
-4. 导出 Frontend 镜像为 tar.gz
+4. 复制镜像到服务器
        ▼
-5. 导出 Pocketbase 镜像为 tar.gz
+5. 服务器加载镜像
        ▼
-6. 复制镜像到服务器
+6. 使用 Docker Compose 启动服务
        ▼
-7. 服务器加载镜像
-       ▼
-8. 使用 Docker Compose 构建并启动服务
-       ▼
-9. 清理临时文件
+7. 清理临时文件
 ```
 
 ---
@@ -230,7 +226,7 @@ on:
 
 jobs:
   build-and-deploy:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
     runs-on: self-hosted
 
     steps:
@@ -242,20 +238,11 @@ jobs:
           docker build -t erp-frontend:${{ github.sha }} ./frontend
           docker build -t erp-frontend:latest ./frontend
 
-      - name: Build pocketbase Docker image
-        run: |
-          docker build -t erp-pocketbase:${{ github.sha }} ./backend
-          docker build -t erp-pocketbase:latest ./backend
-
       - name: Export frontend image to tar.gz
         run: |
           docker save erp-frontend:latest | gzip > erp-frontend.tar.gz
 
-      - name: Export pocketbase image to tar.gz
-        run: |
-          docker save erp-pocketbase:latest | gzip > erp-pocketbase.tar.gz
-
-      - name: Copy images to Aliyun server
+      - name: Copy image to Aliyun server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -264,8 +251,7 @@ jobs:
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           
-          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
-          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-pocketbase.tar.gz ${SERVER_USER}@${SERVER_HOST}:/opt/erp-system/images/
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/root/images/
           
           rm -f /tmp/deploy_key
 
@@ -281,7 +267,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'DEPLOY_SCRIPT'
             set -e
             
-            cd /opt/erp-system
+            cd /root
             
             # 备份当前数据（可选）
             if [ -d "backup" ]; then
@@ -292,15 +278,14 @@ jobs:
             
             # 加载 Docker 镜像
             docker load -i images/erp-frontend.tar.gz
-            docker load -i images/erp-pocketbase.tar.gz
             
-            # 重新构建并启动服务
-            docker-compose build --no-cache frontend pocketbase
+            # 重新构建并启动前端服务
+            docker-compose build --no-cache frontend
             docker-compose up -d
             
             # 清理旧镜像和临时文件
             docker image prune -f
-            rm -f images/erp-frontend.tar.gz images/erp-pocketbase.tar.gz
+            rm -f images/erp-frontend.tar.gz
             
             echo "Deployment completed successfully!"
             docker-compose ps
@@ -311,7 +296,7 @@ jobs:
       - name: Cleanup local artifacts
         if: always()
         run: |
-          rm -f erp-frontend.tar.gz erp-pocketbase.tar.gz
+          rm -f erp-frontend.tar.gz
 ```
 
 ---
@@ -382,11 +367,10 @@ docker stats
 # SSH 连接到服务器
 ssh root@139.XXX.XXX.XXX
 
-cd /opt/erp-system
+cd /root
 
 # 手动加载镜像
 docker load -i images/erp-frontend.tar.gz
-docker load -i images/erp-pocketbase.tar.gz
 
 # 重启服务
 docker-compose up -d
