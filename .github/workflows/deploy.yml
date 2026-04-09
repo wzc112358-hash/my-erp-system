@@ -1,0 +1,76 @@
+name: Build and Deploy
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [master]
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build frontend Docker image
+        run: |
+          docker build -t erp-frontend:${{ github.sha }} ./frontend
+          docker build -t erp-frontend:latest ./frontend
+
+      - name: Export frontend image to tar.gz
+        run: |
+          docker save erp-frontend:latest | gzip > erp-frontend.tar.gz
+
+      - name: Copy image to Aliyun server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          
+          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/root/images/
+          
+          rm -f /tmp/deploy_key
+
+      - name: Deploy to Aliyun server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          
+          ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'DEPLOY_SCRIPT'
+            set -e
+            
+            cd /root
+            
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            mkdir -p backup/$timestamp
+            cp -r backend/pb_data backup/$timestamp/ 2>/dev/null || true
+            
+            docker load -i images/erp-frontend.tar.gz
+            
+            docker-compose build --no-cache frontend
+            docker-compose up -d
+            
+            docker image prune -f
+            rm -f images/erp-frontend.tar.gz
+            
+            echo "Deployment completed!"
+            docker-compose ps
+          DEPLOY_SCRIPT
+          
+          rm -f /tmp/deploy_key
+
+      - name: Cleanup local artifacts
+        if: always()
+        run: |
+          rm -f erp-frontend.tar.gz

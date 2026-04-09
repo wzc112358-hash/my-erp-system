@@ -1,0 +1,262 @@
+body {
+  margin: 0;
+  min-width: 100vw;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* 侧边栏菜单选中状态 - 药丸形白色背景 */
+.ant-menu-item-selected {
+  background: #ffffff !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
+
+.ant-menu-item-selected .ant-menu-title-content,
+.ant-menu-item-selected .anticon {
+  color: #333333 !important;
+  font-weight: 500;
+}
+
+/* 侧边栏菜单悬停状态 */
+.ant-menu-item:hover {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-radius: 16px !important;
+}
+
+/* 侧边栏菜单项默认文字颜色 */
+.ant-menu-item .ant-menu-title-content,
+.ant-menu-item .anticon {
+  color: #666666;
+}
+
+/* 按钮凹陷效果 (按下感) */
+.ant-btn {
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-btn-primary {
+  background: linear-gradient(145deg, #f0f0f0, #ffffff) !important;
+  border: 1px solid #e0e0e0 !important;
+  box-shadow: 
+    -2px -2px 4px rgba(255, 255, 255, 0.8),
+    2px 2px 4px rgba(0, 0, 0, 0.1) !important;
+  color: #333333 !important;
+}
+
+.ant-btn-primary:hover {
+  background: linear-gradient(145deg, #ffffff, #f0f0f0) !important;
+  box-shadow: 
+    -1px -1px 2px rgba(255, 255, 255, 0.6),
+    1px 1px 2px rgba(0, 0, 0, 0.08) !important;
+}
+
+.ant-btn-primary:active {
+  background: linear-gradient(145deg, #e6e6e6, #f5f5f5) !important;
+  box-shadow: 
+    inset -2px -2px 4px rgba(255, 255, 255, 0.5),
+    inset 2px 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 按钮凸起效果 (弹出感) - 用于次要按钮 */
+.ant-btn-default {
+  background: linear-gradient(145deg, #ffffff, #e8e8e8) !important;
+  border: 1px solid #d0d0d0 !important;
+  box-shadow: 
+    -2px -2px 4px rgba(255, 255, 255, 0.1),
+    2px 2px 4px rgba(0, 0, 0, 0.1) !important;
+  color: #333333 !important;
+}
+
+.ant-btn-default:hover {
+  background: linear-gradient(145deg, #f5f5f5, #ececec) !important;
+  color: #333333 !important;
+}
+
+.ant-btn-default:active {
+  background: linear-gradient(145deg, #e0e0e0, #f0f0f0) !important;
+  box-shadow: 
+    inset -2px -2px 4px rgba(0, 0, 0, 0.05),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.5) !important;
+}
+
+/* 文本按钮（详情/修改/删除等操作按钮）添加凸起效果 */
+.ant-btn-link {
+  box-shadow: none !important;
+}
+
+.ant-btn-text {
+  border-radius: 8px !important;
+  box-shadow: 
+    -2px -2px 4px rgba(255, 255, 255, 0.1),
+    2px 2px 4px rgba(0, 0, 0, 0.08) !important;
+  background: linear-gradient(145deg, #ffffff, #f5f5f5) !important;
+  margin: 0 2px !important;
+}
+
+.ant-btn-text:hover {
+  background: linear-gradient(145deg, #f5f5f5, #ffffff) !important;
+  box-shadow: 
+    -1px -1px 2px rgba(255, 255, 255, 0.3),
+    1px 1px 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+.ant-btn-text:active {
+  background: linear-gradient(145deg, #e8e8e8, #f0f0f0) !important;
+  box-shadow: 
+    inset -1px -1px 2px rgba(255, 255, 255, 0.3),
+    inset 1px 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* 危险按钮（删除按钮）凸起效果 */
+.ant-btn-text.ant-btn-dangerous {
+  background: linear-gradient(145deg, #fff1f0, #ffffff) !important;
+  color: #ff4d4f !important;
+}
+
+.ant-btn-text.ant-btn-dangerous:hover {
+  background: linear-gradient(145deg, #ffffff, #fff1f0) !important;
+  color: #ff7875 !important;
+}
+
+.ant-btn-text.ant-btn-dangerous:active {
+  background: linear-gradient(145deg, #ffebe8, #fff1f0) !important;
+}
+
+/* 数据卡片阴影加深 */
+.ant-card {
+  border-radius: 12px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+.ant-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* 状态 Tag 边框和圆角 */
+.ant-tag {
+  border-radius: 8px !important;
+  border: 1px solid currentColor !important;
+  padding: 2px 10px !important;
+}
+
+/* 表格行悬停效果 */
+.ant-table-tbody > tr:hover > td {
+  background: rgba(24, 144, 255, 0.04) !important;
+}
+
+/* 输入框圆角 */
+.manager-page .ant-input,
+.manager-page .ant-select-selector,
+.manager-page .ant-picker,
+.manager-page .ant-input-number {
+  border-radius: 8px !important;
+}
+
+.manager-page .ant-input,
+.manager-page .ant-select-selector,
+.manager-page .ant-picker {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.manager-page .ant-input:hover,
+.manager-page .ant-select-selector:hover,
+.manager-page .ant-picker:hover {
+  box-shadow: none !important;
+}
+
+.manager-page .ant-input:focus,
+.manager-page .ant-input-focused,
+.manager-page .ant-select-focused .ant-select-selector,
+.manager-page .ant-picker-focused {
+  box-shadow: none !important;
+}
+
+/* 其他页面输入框添加阴影 */
+.ant-input,
+.ant-select-selector,
+.ant-picker {
+  border-radius: 8px !important;
+  box-shadow: -1px -1px 2px rgba(255, 255, 255, 0.5), 1px 1px 2px rgba(0, 0, 0, 0.08) !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-input:hover,
+.ant-select-selector:hover,
+.ant-picker:hover {
+  box-shadow: -2px -2px 4px rgba(255, 255, 255, 0.6), 2px 2px 4px rgba(0, 0, 0, 0.12) !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  box-shadow: -2px -2px 4px rgba(255, 255, 255, 0.6), 2px 2px 4px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* 选择框下拉箭头区域 */
+.ant-select-arrow {
+  transition: transform 0.2s ease !important;
+}
+
+/* 进度条条纹效果 */
+.ant-progress-inner {
+  border-radius: 8px !important;
+}
+
+.ant-progress-bg {
+  border-radius: 8px !important;
+}
+
+/* 模态框圆角 */
+.ant-modal-content {
+  border-radius: 12px !important;
+}
+
+.ant-modal-header {
+  border-radius: 12px 12px 0 0 !important;
+}
+
+/* 下拉菜单圆角 */
+.ant-dropdown-menu {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* 下拉菜单项悬停效果 */
+.ant-dropdown-menu-item {
+  border-radius: 6px !important;
+  margin: 2px 4px !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background: linear-gradient(145deg, #ffffff, #f0f0f0) !important;
+  box-shadow: -1px -1px 2px rgba(255, 255, 255, 0.5), 1px 1px 2px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 分页器圆角 */
+.ant-pagination-item {
+  border-radius: 8px !important;
+}
+
+.ant-pagination-prev .ant-pagination-item-link,
+.ant-pagination-next .ant-pagination-item-link {
+  border-radius: 8px !important;
+}
+
+/* 表格整体圆角 */
+.ant-table-wrapper .ant-table {
+  border-radius: 12px !important;
+}
+
+.ant-table-wrapper .ant-table-container {
+  border-radius: 12px !important;
+}

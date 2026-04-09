@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    networks:
+      - web
+
+  pocketbase:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./backend/pb_data:/app/pb_data
+    networks:
+      - web
+    restart: unless-stopped
+
+  traefik:
+    image: traefik:v2.9
+    container_name: traefik
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - ./traefik:/etc/traefik
+    networks:
+      - web
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - pocketbase
+
+networks:
+  web:
+    driver: bridge
