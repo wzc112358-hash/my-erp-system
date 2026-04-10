@@ -3,8 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty } from 'antd';
 import { LeftOutlined, UploadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
+import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
 import type { ContractDetailData } from '@/types/comparison';
+import type { BiddingRecord } from '@/types/bidding-record';
 import dayjs from 'dayjs';
 
 const formatCurrency = (value: number) => `¥${value?.toLocaleString() || 0}`;
@@ -64,6 +66,7 @@ const ContractDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('sales');
   const [detailData, setDetailData] = useState<ContractDetailData | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -75,6 +78,14 @@ const ContractDetailPage: React.FC = () => {
         const data = await ComparisonAPI.getContractDetail(id);
         if (!cancelled) {
           setDetailData(data);
+          try {
+            const biddingResult = await BiddingRecordAPI.getBySalesContract(id);
+            if (!cancelled) {
+              setBiddingRecords(biddingResult.items);
+            }
+          } catch {
+            // bidding records are optional
+          }
         }
       } catch (error) {
         const err = error as { name?: string; message?: string; cause?: { name?: string } };
@@ -122,6 +133,27 @@ const ContractDetailPage: React.FC = () => {
     { title: '送货地址', dataIndex: 'delivery_address', key: 'delivery_address' },
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
+  ];
+
+  const bidResultMap: Record<string, { label: string; color: string }> = {
+    pending: { label: '待开标', color: 'orange' },
+    won: { label: '中标', color: 'green' },
+    lost: { label: '未中标', color: 'red' },
+  };
+
+  const biddingColumns = [
+    { title: '招标公司', dataIndex: 'bidding_company', key: 'bidding_company' },
+    { title: '招标编号', dataIndex: 'bidding_no', key: 'bidding_no' },
+    { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity' },
+    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? formatCurrency(v) : '-' },
+    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? formatCurrency(v) : '-' },
+    { title: '开标时间', dataIndex: 'open_date', key: 'open_date', render: (v: string) => formatDate(v) },
+    { title: '中标结果', dataIndex: 'bid_result', key: 'bid_result', render: (v: string) => {
+      const info = bidResultMap[v];
+      return info ? <Tag color={info.color}>{info.label}</Tag> : '-';
+    }},
+    { title: '招标代理费', dataIndex: 'agency_fee', key: 'agency_fee', render: (v: number) => v ? formatCurrency(v) : '-' },
   ];
 
   const saleInvoiceColumns = [
@@ -390,6 +422,17 @@ const ContractDetailPage: React.FC = () => {
                   expandable={makeExpandable('sale_receipts')}
                 />
               </Card>
+              {biddingRecords.length > 0 && (
+                <Card title="关联投标记录" style={cardStyle} styles={{ body: cardBodyStyle }}>
+                  <Table
+                    columns={biddingColumns}
+                    dataSource={biddingRecords}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                  />
+                </Card>
+              )}
             </>
           )}
         </Spin>

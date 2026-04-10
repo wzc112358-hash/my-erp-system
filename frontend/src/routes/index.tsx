@@ -36,6 +36,7 @@ const OverviewPage = lazy(() => import('@/pages/manager/OverviewPage').then(m =>
 const ContractDetailPage = lazy(() => import('@/pages/manager/ContractDetailPage').then(m => ({ default: m.default })));
 const ProgressFlowPage = lazy(() => import('@/pages/manager/ProgressFlowPage').then(m => ({ default: m.ProgressFlowPage })));
 const PerformancePage = lazy(() => import('@/pages/manager/PerformancePage').then(m => ({ default: m.default })));
+const OtherBusinessPage = lazy(() => import('@/pages/manager/OtherBusinessPage').then(m => ({ default: m.default })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
@@ -279,6 +280,10 @@ export const router = createBrowserRouter([
           {
             path: 'performance',
             element: <PerformancePage />,
+          },
+          {
+            path: 'other-business',
+            element: <OtherBusinessPage />,
           },
         ],
       },

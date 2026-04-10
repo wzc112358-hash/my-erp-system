@@ -54,6 +54,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'progress-flow', label: '流程进度', icon: <ShareAltOutlined />, path: '/manager/progress-flow' },
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
+    { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
   ],
 };
 

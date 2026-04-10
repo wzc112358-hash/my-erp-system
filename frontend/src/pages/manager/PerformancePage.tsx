@@ -51,6 +51,7 @@ function makeColumns(): import('antd/es/table').ColumnsType<UserPerformance> {
 export const PerformancePage: React.FC = () => {
   const [salesData, setSalesData] = useState<UserPerformance[]>([]);
   const [purchaseData, setPurchaseData] = useState<UserPerformance[]>([]);
+  const [serviceData, setServiceData] = useState<UserPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -62,12 +63,14 @@ export const PerformancePage: React.FC = () => {
     try {
       const start = dateRange?.[0]?.format('YYYY-MM-DD') || undefined;
       const end = dateRange?.[1]?.endOf('day').format('YYYY-MM-DD HH:mm:ss') || undefined;
-      const [sales, purchase] = await Promise.all([
+      const [sales, purchase, service] = await Promise.allSettled([
         PerformanceAPI.getSalesPerformance(start, end),
         PerformanceAPI.getPurchasePerformance(start, end),
+        PerformanceAPI.getServicePerformance(start, end),
       ]);
-      setSalesData(sales);
-      setPurchaseData(purchase);
+      if (sales.status === 'fulfilled') setSalesData(sales.value);
+      if (purchase.status === 'fulfilled') setPurchaseData(purchase.value);
+      if (service.status === 'fulfilled') setServiceData(service.value);
     } catch (err) {
       console.error('Fetch performance error:', err);
     } finally {
@@ -145,6 +148,11 @@ export const PerformancePage: React.FC = () => {
               key: 'purchase',
               label: '采购业绩',
               children: renderTable(purchaseData),
+            },
+            {
+              key: 'service',
+              label: '佣金业绩',
+              children: renderTable(serviceData),
             },
           ]}
         />

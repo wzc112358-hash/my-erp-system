@@ -26,6 +26,20 @@ interface PerformanceRecord {
   };
 }
 
+interface ServiceOrderRecord {
+  id: string;
+  service_contract: string;
+  order_no: string;
+  quantity: number;
+  receipt_amount: number;
+  created: string;
+  creator_user?: string;
+  expand?: {
+    creator_user?: { id: string; name: string };
+    service_contract?: { id: string; no: string; product_name: string; sign_date: string };
+  };
+}
+
 export interface UserPerformance {
   userId: string;
   userName: string;
@@ -124,5 +138,51 @@ export const PerformanceAPI = {
     const nameMap = await resolveNames(result.items);
     const grandTotal = result.items.reduce((s, c) => s + (c.total_amount || 0), 0);
     return groupByUser(result.items, nameMap, grandTotal);
+  },
+
+  getServicePerformance: async (startDate?: string, endDate?: string): Promise<UserPerformance[]> => {
+    const filters: string[] = [];
+    if (startDate) filters.push(`created >= "${startDate}"`);
+    if (endDate) filters.push(`created <= "${endDate}"`);
+
+    const result = await pb.collection('service_orders').getList<ServiceOrderRecord>(1, 5000, {
+      filter: filters.length > 0 ? filters.join(' && ') : undefined,
+      expand: 'creator_user,service_contract',
+    });
+
+    const nameMap = await resolveNames(result.items as unknown as PerformanceRecord[]);
+    const grandTotal = result.items.reduce((s, o) => s + (o.receipt_amount || 0), 0);
+
+    const grouped: Record<string, ServiceOrderRecord[]> = {};
+    result.items.forEach((item) => {
+      const userId = item.creator_user || 'unknown';
+      if (!grouped[userId]) grouped[userId] = [];
+      grouped[userId].push(item);
+    });
+
+    return Object.entries(grouped).map(([userId, orders]) => {
+      const totalAmount = orders.reduce((sum, o) => sum + (o.receipt_amount || 0), 0);
+      const contractIds = [...new Set(orders.map(o => o.service_contract))];
+      return {
+        userId,
+        userName: nameMap[userId] || '未知用户',
+        contractCount: contractIds.length,
+        totalAmount,
+        amountPercent: grandTotal > 0 ? (totalAmount / grandTotal) * 100 : 0,
+        contracts: contractIds.map(cid => {
+          const related = orders.find(o => o.service_contract === cid);
+          const contractName = related?.expand?.service_contract?.no || cid;
+          const amount = orders.filter(o => o.service_contract === cid).reduce((s, o) => s + (o.receipt_amount || 0), 0);
+          return {
+            id: cid,
+            no: contractName,
+            product_name: related?.expand?.service_contract?.product_name || '-',
+            total_amount: amount,
+            total_quantity: orders.filter(o => o.service_contract === cid).reduce((s, o) => s + (o.quantity || 0), 0),
+            sign_date: related?.expand?.service_contract?.sign_date || '',
+          };
+        }),
+      };
+    }).sort((a, b) => b.totalAmount - a.totalAmount);
   },
 };
