@@ -34,6 +34,8 @@ const OverviewPage = lazy(() => import('@/pages/manager/OverviewPage').then(m =>
 const ContractDetailPage = lazy(() => import('@/pages/manager/ContractDetailPage').then(m => ({ default: m.default })));
 const ProgressFlowPage = lazy(() => import('@/pages/manager/ProgressFlowPage').then(m => ({ default: m.ProgressFlowPage })));
 const PerformancePage = lazy(() => import('@/pages/manager/PerformancePage').then(m => ({ default: m.default })));
+const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
+const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 
 // eslint-disable-next-line react-refresh/only-export-components
 const LoadingFallback: React.FC = () => (
@@ -175,6 +177,14 @@ export const router = createBrowserRouter([
           {
             path: 'notifications',
             element: <SalesNotificationList />,
+          },
+          {
+            path: 'services',
+            element: <ServiceList />,
+          },
+          {
+            path: 'services/:id',
+            element: <ServiceDetail />,
           },
         ],
       },

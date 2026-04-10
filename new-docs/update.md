@@ -542,42 +542,62 @@ const handleDelete = async (id: string) => {
 
 ---
 
-### 步骤 F: 新建服务费业务表（销售端）
+### 步骤 F: 新建佣金服务费业务（销售端）
 
 **类型**: 手动 + 代码修改  
 **依赖**: 无  
 **预计时间**: 4-6 小时
 
+#### 业务说明
+
+佣金业务采用「大合同 + 子订单」结构：
+
+- **大合同（service_contracts）**：一个客户的一个佣金服务大合同，仅记录合同基本信息（编号、客户、服务名称、签约日期等）
+- **子订单（service_orders）**：大合同下的每一笔佣金订单，记录单价、数量、收款、兑换人民币、开票、报税等明细
+
 #### F.1 PocketBase 后台创建集合 [手动]
 
-**集合名**: `service_contracts`
+##### 集合一：`service_contracts`（佣金大合同）
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | no | text | 合同编号 |
 | customer | relation → customers | 客户 |
 | product_name | text | 服务名称 |
-| total_amount | number | 总金额 |
-| unit_price | number | 单价 |
-| receipted_amount | number | 已收金额 |
-| receipt_percent | number | 收款比例 |
-| debt_amount | number | 欠款金额 |
-| debt_percent | number | 欠款比例 |
-| invoiced_amount | number | 已开票金额 |
-| invoice_percent | number | 开票比例 |
-| uninvoiced_amount | number | 未开票金额 |
-| uninvoiced_percent | number | 未开票比例 |
 | sign_date | date | 签约日期 |
-| status | select | executing / completed |
 | remark | text | 备注 |
 | attachments | file | 附件 |
 | sales_manager | text | 销售负责人 |
-| creator | text | 创建者 |
-| creator_user | relation → users | 关联用户（步骤 B） |
+| creator_user | relation → users | 关联用户 |
 | created | autodate | 创建时间 |
 | updated | autodate | 更新时间 |
 
 **权限**: 与 `sales_contracts` 一致。
+
+##### 集合二：`service_orders`（佣金子订单）
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| service_contract | relation → service_contracts | 所属大合同 |
+| order_no | text | 佣金订单号 |
+| unit_price | number | 单价 |
+| quantity | number | 数量（此单的） |
+| receipt_amount | number | 收款金额（此单的，单位 USD） |
+| receipt_date | date | 收款时间 |
+| receipt_amount_rmb | number | 收款金额RMB |
+| receipt_rmb_date | date | 收款时间RMB |
+| invoice_amount | number | 开票金额（此单的） |
+| invoice_date | date | 开票时间 |
+| tax_date | date | 报税时间 |
+| tax_amount | number | 报税金额 |
+| remark | text | 备注 |
+| attachments | file | 附件 |
+| manager | text | 负责人 |
+| creator_user | relation → users | 关联用户 |
+| created | autodate | 创建时间 |
+| updated | autodate | 更新时间 |
+
+**权限**: 与 `sales_contracts` 一致（销售角色 CRUD 本人创建，经理只读）。
 
 #### F.2 新建类型文件
 
@@ -589,22 +609,10 @@ export interface ServiceContract {
   no: string;
   customer: string;
   product_name: string;
-  total_amount: number;
-  unit_price: number;
-  receipted_amount: number;
-  receipt_percent: number;
-  debt_amount: number;
-  debt_percent: number;
-  invoiced_amount: number;
-  invoice_percent: number;
-  uninvoiced_amount: number;
-  uninvoiced_percent: number;
   sign_date: string;
-  status: 'executing' | 'completed';
   remark?: string;
   attachments?: string | string[];
   sales_manager?: string;
-  creator: string;
   creator_user?: string;
   created: string;
   updated: string;
@@ -614,35 +622,132 @@ export interface ServiceContract {
   };
 }
 
-export interface ServiceContractFormData { ... }
-export interface ServiceContractListParams { ... }
+export interface ServiceContractFormData {
+  no: string;
+  customer: string;
+  product_name: string;
+  sign_date: string;
+  remark?: string;
+  attachments?: File[];
+  sales_manager?: string;
+}
+
+export interface ServiceContractListParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+}
+
+export interface ServiceOrder {
+  id: string;
+  service_contract: string;
+  order_no: string;
+  unit_price: number;
+  quantity: number;
+  receipt_amount: number;
+  receipt_date: string;
+  receipt_amount_rmb?: number;
+  receipt_rmb_date?: string;
+  invoice_amount: number;
+  invoice_date?: string;
+  tax_date?: string;
+  tax_amount?: number;
+  remark?: string;
+  attachments?: string | string[];
+  manager?: string;
+  creator_user?: string;
+  created: string;
+  updated: string;
+  expand?: {
+    creator_user?: { id: string; name: string };
+  };
+}
+
+export interface ServiceOrderFormData {
+  service_contract: string;
+  order_no: string;
+  unit_price: number;
+  quantity: number;
+  receipt_amount: number;
+  receipt_date: string;
+  receipt_amount_rmb?: number;
+  receipt_rmb_date?: string;
+  invoice_amount?: number;
+  invoice_date?: string;
+  tax_date?: string;
+  tax_amount?: number;
+  remark?: string;
+  attachments?: File[];
+  manager?: string;
+}
 ```
 
 #### F.3 新建 API 文件
 
 **文件**: 新建 `frontend/src/api/service-contract.ts`
 
-参照 `frontend/src/api/sales-contract.ts` 模式，封装 `ServiceContractAPI`（list / getById / create / update / delete），操作 `service_contracts` 集合。
+参照 `frontend/src/api/sales-contract.ts` 模式，封装 `ServiceContractAPI`：
+
+| 方法 | 集合 | 说明 |
+|------|------|------|
+| `list(params)` | `service_contracts` | 列表，带客户端搜索过滤 + 分页 |
+| `getById(id)` | `service_contracts` | 详情，expand customer, creator_user |
+| `create(data)` | `service_contracts` | 创建，FormData 方式（支持附件） |
+| `update(id, data)` | `service_contracts` | 更新，FormData 部分 update |
+| `delete(id)` | `service_contracts` | 删除 |
+| `getOrders(contractId)` | `service_orders` | 获取大合同下的所有子订单 |
+| `createOrder(data)` | `service_orders` | 新增子订单 |
+| `updateOrder(id, data)` | `service_orders` | 更新子订单 |
+| `deleteOrder(id)` | `service_orders` | 删除子订单 |
 
 #### F.4 新建页面文件
-
-按照现有销售模块的模式创建以下页面：
 
 | 文件 | 说明 |
 |------|------|
 | `frontend/src/pages/sales/services/ServiceList.tsx` | 服务合同列表 |
-| `frontend/src/pages/sales/services/ServiceForm.tsx` | 新建/编辑表单 |
-| `frontend/src/pages/sales/services/ServiceDetail.tsx` | 服务合同详情 |
+| `frontend/src/pages/sales/services/ServiceForm.tsx` | 大合同新建/编辑表单 |
+| `frontend/src/pages/sales/services/ServiceDetail.tsx` | 大合同详情（含子订单表格 + 新增/编辑子订单 Modal） |
+| `frontend/src/pages/sales/services/ServiceOrderForm.tsx` | 子订单新建/编辑表单 |
 
-**列表页字段**: 合同编号、服务名称、客户、总金额、签约日期、状态
+**列表页（ServiceList）字段**: 合同编号、服务名称、客户(expand)、签约日期、操作
 
-**表单字段**: 合同编号、客户、服务名称、单价、总金额、签约日期、备注、附件
+**大合同表单（ServiceForm）字段**: 合同编号、客户(select)、服务名称、签约日期、销售负责人、备注、附件
+
+**详情页（ServiceDetail）结构**:
+
+```
+ServiceDetail
+├── 返回按钮 → /sales/services
+├── 合同基本信息 Card (Descriptions)
+│   ├── 合同编号、服务名称、客户
+│   ├── 签约日期、销售负责人、备注
+│   └── 附件（下载链接）
+├── 佣金订单列表 Card
+│   ├── 新增订单 Button
+│   └── Table
+│       ├── 订单号、单价、数量、收款金额(USD)、收款时间
+│       ├── 收款金额RMB、收款时间RMB
+│       ├── 开票金额、开票时间
+│       ├── 报税时间、报税金额
+│       ├── 备注、负责人
+│       └── 操作（编辑 / 删除）
+└── 新增/编辑订单 Modal (ServiceOrderForm)
+```
+
+**子订单表单（ServiceOrderForm）字段**: 订单号、单价、数量、收款金额(USD)、收款时间、收款金额RMB、收款时间RMB、开票金额、开票时间、报税时间、报税金额、负责人、备注、附件
 
 #### F.5 添加路由
 
 **文件**: `frontend/src/routes/index.tsx`
 
-在 `/sales` children 中添加：
+1. 添加 lazy import：
+
+```tsx
+const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
+const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
+```
+
+2. 在 `/sales` children 中添加：
 
 ```tsx
 { path: 'services', element: <ServiceList /> },
@@ -663,10 +768,10 @@ export interface ServiceContractListParams { ... }
 
 **文件**: 新建 `backend/hooks/service_contract.go`
 
-参照 `backend/hooks/sales_contract.go` 的模式：
+**`service_orders` hooks**:
 
-- `OnRecordCreate`: 自动计算 `total_amount`，初始化各进度字段为 0，设置 `status = executing`，自动填充 `creator_user`
-- `OnRecordAfterCreateSuccess`: 通知采购端有新服务合同
+- `OnRecordCreate("service_orders")`: 自动填充 `creator_user`
+
 - 注册到 `main.go` 的 `RegisterHooks` 中
 
 **文件**: `backend/hooks/main.go`
@@ -679,10 +784,10 @@ RegisterServiceContractHooks(app)
 
 #### 验证方法
 
-1. PocketBase 后台确认 `service_contracts` 集合已创建
+1. PocketBase 后台确认 `service_contracts` 和 `service_orders` 集合已创建
 2. 销售端侧边栏显示「服务合同」菜单
 3. 可以创建、编辑、删除、查看服务合同
-4. 新建后自动计算总金额
+4. 在合同详情页可以新增/编辑/删除子订单
 
 ---
 
@@ -907,7 +1012,9 @@ D+E. 通知系统优化 (有依赖关系，建议一起做)
     └── E.1-E.5 通知已读实时更新
 
 F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
-    ├── F.1-F.7 服务合同 (销售端)
+    ├── F.1-F.7 佣金服务合同 + 佣金子订单 (销售端)
+    │   ├── F.1 [手动] PocketBase 创建 service_contracts + service_orders 两个集合
+    │   └── F.2-F.7 前端类型 + API + 页面 + 路由 + 菜单 + 后端 Hooks (仅子订单自动填充)
     ├── G.1-G.7 资金支出 (采购端)
     └── H.1-H.3 经理端查看页面 (依赖 F 和 G)
 ```
@@ -959,6 +1066,7 @@ F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
 | `frontend/src/pages/sales/services/ServiceList.tsx` | **新建** | F |
 | `frontend/src/pages/sales/services/ServiceForm.tsx` | **新建** | F |
 | `frontend/src/pages/sales/services/ServiceDetail.tsx` | **新建** | F |
+| `frontend/src/pages/sales/services/ServiceOrderForm.tsx` | **新建** | F |
 | `frontend/src/pages/purchase/expenses/ExpenseList.tsx` | **新建** | G |
 | `frontend/src/pages/purchase/expenses/ExpenseForm.tsx` | **新建** | G |
 | `frontend/src/pages/purchase/expenses/ExpenseDetail.tsx` | **新建** | G |

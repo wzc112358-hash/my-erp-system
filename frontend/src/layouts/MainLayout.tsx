@@ -36,6 +36,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'shipments', label: '运输', icon: <CarOutlined />, path: '/sales/shipments' },
     { key: 'invoices', label: '发票', icon: <FileDoneOutlined />, path: '/sales/invoices' },
     { key: 'receipts', label: '收款', icon: <DollarOutlined />, path: '/sales/receipts' },
+    { key: 'services', label: '服务合同', icon: <FileTextOutlined />, path: '/sales/services' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/sales/notifications' },
   ],
   purchasing: [
