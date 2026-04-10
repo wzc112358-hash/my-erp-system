@@ -28,6 +28,8 @@ const PurchaseInvoiceDetail = lazy(() => import('@/pages/purchase/invoices/Invoi
 const PaymentList = lazy(() => import('@/pages/purchase/payments/PaymentList').then(m => ({ default: m.PaymentList })));
 const PaymentDetailPage = lazy(() => import('@/pages/purchase/payments/PaymentDetailPage').then(m => ({ default: m.PaymentDetailPage })));
 const NotificationList = lazy(() => import('@/pages/purchase/notifications/NotificationList').then(m => ({ default: m.NotificationList })));
+const ExpenseList = lazy(() => import('@/pages/purchase/expenses/ExpenseList').then(m => ({ default: m.ExpenseList })));
+const ExpenseDetail = lazy(() => import('@/pages/purchase/expenses/ExpenseDetail').then(m => ({ default: m.ExpenseDetail })));
 const SalesNotificationList = lazy(() => import('@/pages/sales/notifications/NotificationList').then(m => ({ default: m.NotificationList })));
 const ReportPage = lazy(() => import('@/pages/manager/ReportPage').then(m => ({ default: m.ReportPage })));
 const OverviewPage = lazy(() => import('@/pages/manager/OverviewPage').then(m => ({ default: m.default })));
@@ -36,6 +38,8 @@ const ProgressFlowPage = lazy(() => import('@/pages/manager/ProgressFlowPage').t
 const PerformancePage = lazy(() => import('@/pages/manager/PerformancePage').then(m => ({ default: m.default })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
+const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
+const BiddingDetail = lazy(() => import('@/pages/sales/bidding/BiddingDetail').then(m => ({ default: m.BiddingDetail })));
 
 // eslint-disable-next-line react-refresh/only-export-components
 const LoadingFallback: React.FC = () => (
@@ -186,6 +190,14 @@ export const router = createBrowserRouter([
             path: 'services/:id',
             element: <ServiceDetail />,
           },
+          {
+            path: 'bidding',
+            element: <BiddingList />,
+          },
+          {
+            path: 'bidding/:id',
+            element: <BiddingDetail />,
+          },
         ],
       },
       {
@@ -234,6 +246,14 @@ export const router = createBrowserRouter([
           {
             path: 'notifications',
             element: <NotificationList />,
+          },
+          {
+            path: 'expenses',
+            element: <ExpenseList />,
+          },
+          {
+            path: 'expenses/:id',
+            element: <ExpenseDetail />,
           },
         ],
       },

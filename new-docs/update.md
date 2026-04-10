@@ -806,16 +806,12 @@ RegisterServiceContractHooks(app)
 | no | text | 记录编号 |
 | expense_type | text | 支出类型（标书保证金、U盾费等） |
 | description | text | 描述说明 |
-| total_amount | number | 总金额 |
-| paid_amount | number | 已付金额 |
-| paid_percent | number | 付款比例 |
+| payment_amount | number | 付款金额 |
 | pay_date | date | 付款日期 |
 | method | text | 付款方式 |
-| status | select | executing / completed |
 | remark | text | 备注 |
 | attachments | file | 附件 |
 | purchasing_manager | text | 采购负责人 |
-| creator | text | 创建者 |
 | creator_user | relation → users | 关联用户 |
 | created | autodate | 创建时间 |
 | updated | autodate | 更新时间 |
@@ -832,16 +828,12 @@ export interface ExpenseRecord {
   no: string;
   expense_type: string;
   description: string;
-  total_amount: number;
-  paid_amount: number;
-  paid_percent: number;
+  payment_amount: number;
   pay_date: string;
   method?: string;
-  status: 'executing' | 'completed';
   remark?: string;
   attachments?: string | string[];
   purchasing_manager?: string;
-  creator: string;
   creator_user?: string;
   created: string;
   updated: string;
@@ -868,9 +860,9 @@ export interface ExpenseRecordListParams { ... }
 | `frontend/src/pages/purchase/expenses/ExpenseForm.tsx` | 新建/编辑表单 |
 | `frontend/src/pages/purchase/expenses/ExpenseDetail.tsx` | 支出详情 |
 
-**列表页字段**: 编号、支出类型、描述、总金额、付款日期、状态
+**列表页字段**: 编号、支出类型、描述、付款金额、付款日期
 
-**表单字段**: 编号、支出类型、描述、总金额、付款日期、付款方式、备注、附件
+**表单字段**: 编号、支出类型、描述、付款金额、付款日期、付款方式、备注、附件
 
 #### G.5 添加路由
 
@@ -897,7 +889,7 @@ export interface ExpenseRecordListParams { ... }
 
 **文件**: 新建 `backend/hooks/expense_record.go`
 
-- `OnRecordCreate`: 自动填充 `creator_user`，设置 `status = executing`，初始化 `paid_amount = 0`
+- `OnRecordCreate`: 自动填充 `creator_user`
 - 注册到 `main.go` 的 `RegisterHooks` 中
 
 #### 验证方法
@@ -908,13 +900,268 @@ export interface ExpenseRecordListParams { ... }
 
 ---
 
-### 步骤 H: 经理模块新增「其他业务」页面
+### 步骤 H: 新建投标管理（销售端）
+
+**类型**: 手动 + 代码修改  
+**依赖**: 无  
+**预计时间**: 4-6 小时
+
+#### 业务说明
+
+投标管理用于记录销售端的投标业务流程：
+
+1. **投标阶段**：填写招标公司、招标编号、产品信息、标书费、投标保证金等
+2. **开标后**：填写中标结果、保证金退还信息、招标代理费
+3. **中标后**：如果中标，可关联已有的销售合同
+
+关联销售合同字段初始为空，中标后由用户手动关联。
+
+#### H.1 PocketBase 后台创建集合 [手动]
+
+**集合名**: `bidding_records`
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| bidding_company | text | 招标公司 |
+| bidding_no | text | 招标编号 |
+| product_name | text | 产品名称 |
+| quantity | number | 数量 |
+| tender_fee | number | 标书费 |
+| tender_fee_date | date | 付标书费时间 |
+| tender_fee_invoice | file | 标书费发票附件 |
+| bid_bond | number | 投标保证金 |
+| bid_bond_date | date | 付保证金时间 |
+| open_date | date | 开标时间 |
+| bid_result | select | 中标结果：pending / won / lost |
+| bond_return_date | date | 保证金退还时间 |
+| bond_return_amount | number | 退还金额 |
+| agency_fee | number | 招标代理费 |
+| sales_contract | relation → sales_contracts | 关联销售合同（可选） |
+| remark | text | 备注 |
+| attachments | file | 附件 |
+| creator_user | relation → users | 关联用户 |
+| created | autodate | 创建时间 |
+| updated | autodate | 更新时间 |
+
+**权限**: 与 `sales_contracts` 一致。
+
+#### H.2 新建类型文件
+
+**文件**: 新建 `frontend/src/types/bidding-record.ts`
+
+```typescript
+export interface BiddingRecord {
+  id: string;
+  bidding_company: string;
+  bidding_no: string;
+  product_name: string;
+  quantity: number;
+  tender_fee: number;
+  tender_fee_date: string;
+  tender_fee_invoice?: string | string[];
+  bid_bond: number;
+  bid_bond_date: string;
+  open_date: string;
+  bid_result: 'pending' | 'won' | 'lost';
+  bond_return_date?: string;
+  bond_return_amount?: number;
+  agency_fee?: number;
+  sales_contract?: string;
+  remark?: string;
+  attachments?: string | string[];
+  creator_user?: string;
+  created: string;
+  updated: string;
+  expand?: {
+    sales_contract?: { id: string; no: string; product_name: string };
+    creator_user?: { id: string; name: string };
+  };
+}
+
+export interface BiddingRecordFormData {
+  bidding_company: string;
+  bidding_no: string;
+  product_name: string;
+  quantity: number;
+  tender_fee?: number;
+  tender_fee_date?: string;
+  tender_fee_invoice?: File[];
+  bid_bond?: number;
+  bid_bond_date?: string;
+  open_date?: string;
+  bid_result?: string;
+  bond_return_date?: string;
+  bond_return_amount?: number;
+  agency_fee?: number;
+  sales_contract?: string;
+  remark?: string;
+  attachments?: File[];
+}
+
+export interface BiddingRecordListParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  bid_result?: string;
+}
+```
+
+#### H.3 新建 API 文件
+
+**文件**: 新建 `frontend/src/api/bidding-record.ts`
+
+参照 `frontend/src/api/sales-contract.ts` 模式，封装 `BiddingRecordAPI`：
+
+| 方法 | 集合 | 说明 |
+|------|------|------|
+| `list(params)` | `bidding_records` | 列表，带客户端搜索/中标结果过滤 + 分页 |
+| `getById(id)` | `bidding_records` | 详情，expand sales_contract, creator_user |
+| `create(data)` | `bidding_records` | 创建，FormData 方式（支持附件） |
+| `update(id, data)` | `bidding_records` | 更新，FormData 部分 update |
+| `delete(id)` | `bidding_records` | 删除 |
+
+#### H.4 新建页面文件
+
+| 文件 | 说明 |
+|------|------|
+| `frontend/src/pages/sales/bidding/BiddingList.tsx` | 投标记录列表 |
+| `frontend/src/pages/sales/bidding/BiddingForm.tsx` | 新建/编辑表单 |
+| `frontend/src/pages/sales/bidding/BiddingDetail.tsx` | 投标详情 |
+
+**列表页（BiddingList）字段**: 招标公司、招标编号、产品名称、数量、标书费、投标保证金、开标时间、中标结果、操作
+
+**表单（BiddingForm）字段**:
+
+- **投标信息区**：招标公司、招标编号、产品名称、数量
+- **标书费区**：标书费、付标书费时间、标书费发票附件
+- **保证金区**：投标保证金、付保证金时间
+- **开标信息区**：开标时间、中标结果（待开标/中标/未中标）
+- **退还区**：保证金退还时间、退还金额
+- **其他区**：招标代理费、关联销售合同（Select，可选）、备注、附件
+
+**详情页（BiddingDetail）结构**:
+
+```
+BiddingDetail
+├── 返回按钮 → /sales/bidding
+├── 投标基本信息 Card (Descriptions)
+│   ├── 招标公司、招标编号
+│   ├── 产品名称、数量
+│   ├── 标书费、付标书费时间、标书费发票附件
+│   ├── 投标保证金、付保证金时间
+│   ├── 开标时间、中标结果
+│   ├── 保证金退还时间、退还金额
+│   ├── 招标代理费
+│   ├── 关联销售合同（如有则显示链接）
+│   ├── 备注
+│   └── 附件（下载链接）
+└── 编辑按钮 → 打开编辑 Modal
+```
+
+#### H.5 添加路由
+
+**文件**: `frontend/src/routes/index.tsx`
+
+1. 添加 lazy import：
+
+```tsx
+const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
+const BiddingDetail = lazy(() => import('@/pages/sales/bidding/BiddingDetail').then(m => ({ default: m.BiddingDetail })));
+```
+
+2. 在 `/sales` children 中添加：
+
+```tsx
+{ path: 'bidding', element: <BiddingList /> },
+{ path: 'bidding/:id', element: <BiddingDetail /> },
+```
+
+#### H.6 添加菜单项
+
+**文件**: `frontend/src/layouts/MainLayout.tsx`
+
+在 `MENU_CONFIG` 的 `sales` 数组中，在「通知中心」前添加：
+
+```tsx
+{ key: 'bidding', label: '投标管理', icon: <FileTextOutlined />, path: '/sales/bidding' },
+```
+
+#### H.7 修改后端 Hooks
+
+**文件**: 新建 `backend/hooks/bidding_record.go`
+
+- `OnRecordCreate("bidding_records")`: 自动填充 `creator_user`，设置 `bid_result = pending`
+- 注册到 `main.go` 的 `RegisterHooks` 中
+
+**文件**: `backend/hooks/main.go`
+
+添加：
+
+```go
+RegisterBiddingRecordHooks(app)
+```
+
+#### H.8 销售合同详情页显示关联投标记录
+
+**文件**: `frontend/src/pages/sales/contracts/ContractDetail.tsx`
+
+当投标记录关联了某个销售合同时，在该销售合同详情页底部显示关联的投标信息表格。
+
+**实现方案**:
+
+1. 在 `BiddingRecordAPI` 中新增方法 `getBySalesContract(contractId)`，通过 `filter: sales_contract = "${contractId}"` 查询关联的投标记录
+2. 在 `ContractDetail.tsx` 中，加载合同详情时同时查询关联投标记录
+3. 在收款记录 Card 下方新增「关联投标记录」Card，展示 Table
+
+**表格列**: 招标公司、招标编号、产品名称、数量、标书费、投标保证金、开标时间、中标结果
+
+```tsx
+const biddingColumns = [
+  { title: '招标公司', dataIndex: 'bidding_company', key: 'bidding_company' },
+  { title: '招标编号', dataIndex: 'bidding_no', key: 'bidding_no' },
+  { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
+  { title: '数量', dataIndex: 'quantity', key: 'quantity' },
+  { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '开标时间', dataIndex: 'open_date', key: 'open_date', render: (v: string) => v?.split(' ')[0] || '-' },
+  { title: '中标结果', dataIndex: 'bid_result', key: 'bid_result', render: (v: string) => { /* Tag */ } },
+  { title: '操作', key: 'action', render: (_: unknown, record: BiddingRecord) => (
+    <Button type="link" onClick={() => navigate(`/sales/bidding/${record.id}`)}>查看</Button>
+  )},
+];
+```
+
+**文件**: `frontend/src/api/bidding-record.ts`
+
+新增方法：
+
+```typescript
+getBySalesContract: async (contractId: string) => {
+  return pb.collection('bidding_records').getList<BiddingRecord>(1, 100, {
+    filter: `sales_contract = "${contractId}"`,
+  });
+},
+```
+
+#### 验证方法
+
+1. PocketBase 后台确认 `bidding_records` 集合已创建
+2. 销售端侧边栏显示「投标管理」菜单
+3. 可以创建、编辑、删除、查看投标记录
+4. 新建投标记录默认中标结果为「待开标」
+5. 中标后可关联销售合同
+6. 销售合同详情页底部显示关联的投标记录表格（如有）
+7. 点击投标记录表格中的「查看」可跳转到投标详情页
+
+---
+
+### 步骤 I: 经理模块新增「其他业务」页面
 
 **类型**: 代码修改  
-**依赖**: 步骤 F 和 G 完成  
+**依赖**: 步骤 F、G 和 H 完成  
 **预计时间**: 2-3 小时
 
-#### H.1 新建页面
+#### I.1 新建页面
 
 **文件**: 新建 `frontend/src/pages/manager/OtherBusinessPage.tsx`
 
@@ -922,24 +1169,31 @@ export interface ExpenseRecordListParams { ... }
 
 ```
 OtherBusinessPage (/manager/other-business)
-├── Tabs (服务合同 | 资金支出)
+├── Tabs (服务合同 | 资金支出 | 投标记录)
 │   ├── Tab 1: 服务合同
 │   │   └── Table（只读）
 │   │       ├── 合同编号
 │   │       ├── 服务名称
 │   │       ├── 客户 (expand customer)
-│   │       ├── 总金额
 │   │       ├── 签约日期
-│   │       ├── 状态
 │   │       └── 操作（查看详情 Drawer）
-│   └── Tab 2: 资金支出
+│   ├── Tab 2: 资金支出
+│   │   └── Table（只读）
+│   │       ├── 编号
+│   │       ├── 支出类型
+│   │       ├── 描述
+│   │       ├── 付款金额
+│   │       ├── 付款日期
+│   │       └── 操作（查看详情 Drawer）
+│   └── Tab 3: 投标记录
 │       └── Table（只读）
-│           ├── 编号
-│           ├── 支出类型
-│           ├── 描述
-│           ├── 总金额
-│           ├── 付款日期
-│           ├── 状态
+│           ├── 招标公司
+│           ├── 招标编号
+│           ├── 产品名称
+│           ├── 标书费
+│           ├── 投标保证金
+│           ├── 开标时间
+│           ├── 中标结果
 │           └── 操作（查看详情 Drawer）
 ```
 
@@ -947,10 +1201,11 @@ OtherBusinessPage (/manager/other-business)
 
 - 服务合同：直接调用 `pb.collection('service_contracts').getList()` （经理有读权限）
 - 资金支出：直接调用 `pb.collection('expense_records').getList()`
+- 投标记录：直接调用 `pb.collection('bidding_records').getList()`
 
 **详情展示**: 点击「查看」按钮弹出 Drawer/Modal，使用 Descriptions 组件展示所有字段。
 
-#### H.2 添加路由
+#### I.2 添加路由
 
 **文件**: `frontend/src/routes/index.tsx`
 
@@ -966,7 +1221,7 @@ const OtherBusinessPage = lazy(() => import('@/pages/manager/OtherBusinessPage')
 { path: 'other-business', element: <OtherBusinessPage /> },
 ```
 
-#### H.3 添加菜单项
+#### I.3 添加菜单项
 
 **文件**: `frontend/src/layouts/MainLayout.tsx`
 
@@ -1011,12 +1266,13 @@ D+E. 通知系统优化 (有依赖关系，建议一起做)
     ├── D.1-D.4 通知删除功能
     └── E.1-E.5 通知已读实时更新
 
-F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
+F+G+H+I. 服务合同+资金支出+投标+经理查看 (有依赖关系)
     ├── F.1-F.7 佣金服务合同 + 佣金子订单 (销售端)
     │   ├── F.1 [手动] PocketBase 创建 service_contracts + service_orders 两个集合
     │   └── F.2-F.7 前端类型 + API + 页面 + 路由 + 菜单 + 后端 Hooks (仅子订单自动填充)
     ├── G.1-G.7 资金支出 (采购端)
-    └── H.1-H.3 经理端查看页面 (依赖 F 和 G)
+    ├── H.1-H.7 投标管理 (销售端，独立于 F/G)
+    └── I.1-I.3 经理端查看页面 (依赖 F、G 和 H)
 ```
 
 ---
@@ -1030,9 +1286,10 @@ F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
 | `backend/hooks/purchase_invoice.go` | 修改 | A |
 | `backend/hooks/sales_contract.go` | 修改 | B |
 | `backend/hooks/purchase_contract.go` | 修改 | B |
-| `backend/hooks/main.go` | 修改 | F, G |
+| `backend/hooks/main.go` | 修改 | F, G, H |
 | `backend/hooks/service_contract.go` | **新建** | F |
 | `backend/hooks/expense_record.go` | **新建** | G |
+| `backend/hooks/bidding_record.go` | **新建** | H |
 
 ### 前端类型
 
@@ -1042,6 +1299,7 @@ F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
 | `frontend/src/types/comparison.ts` | 修改 | A |
 | `frontend/src/types/service-contract.ts` | **新建** | F |
 | `frontend/src/types/expense-record.ts` | **新建** | G |
+| `frontend/src/types/bidding-record.ts` | **新建** | H |
 
 ### 前端 API
 
@@ -1052,6 +1310,7 @@ F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
 | `frontend/src/api/performance.ts` | **新建** | B |
 | `frontend/src/api/service-contract.ts` | **新建** | F |
 | `frontend/src/api/expense-record.ts` | **新建** | G |
+| `frontend/src/api/bidding-record.ts` | **新建** | H |
 
 ### 前端页面
 
@@ -1070,14 +1329,17 @@ F+G+H. 服务合同+资金支出+经理查看 (有依赖关系)
 | `frontend/src/pages/purchase/expenses/ExpenseList.tsx` | **新建** | G |
 | `frontend/src/pages/purchase/expenses/ExpenseForm.tsx` | **新建** | G |
 | `frontend/src/pages/purchase/expenses/ExpenseDetail.tsx` | **新建** | G |
-| `frontend/src/pages/manager/OtherBusinessPage.tsx` | **新建** | H |
+| `frontend/src/pages/sales/bidding/BiddingList.tsx` | **新建** | H |
+| `frontend/src/pages/sales/bidding/BiddingForm.tsx` | **新建** | H |
+| `frontend/src/pages/sales/bidding/BiddingDetail.tsx` | **新建** | H |
+| `frontend/src/pages/manager/OtherBusinessPage.tsx` | **新建** | I |
 
 ### 前端路由/布局/Store
 
 | 文件 | 操作 | 步骤 |
 |------|------|------|
-| `frontend/src/routes/index.tsx` | 修改 | B, F, G, H |
-| `frontend/src/layouts/MainLayout.tsx` | 修改 | B, E, F, G |
+| `frontend/src/routes/index.tsx` | 修改 | B, F, G, H, I |
+| `frontend/src/layouts/MainLayout.tsx` | 修改 | B, E, F, G, H |
 | `frontend/src/stores/notification.ts` | **新建** | E |
 
 ---

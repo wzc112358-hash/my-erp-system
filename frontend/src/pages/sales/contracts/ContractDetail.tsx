@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Table, Progress, Spin, Row, Col, App, Flex, Button, Modal } from 'antd';
+import { Card, Descriptions, Table, Progress, Spin, Row, Col, App, Flex, Button, Modal, Tag } from 'antd';
 import { DownloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
+import { BiddingRecordAPI } from '@/api/bidding-record';
 import type { SalesContract, SalesShipment, SaleInvoice, SaleReceipt } from '@/types/sales-contract';
 import type { PurchaseContract } from '@/types/purchase-contract';
+import type { BiddingRecord } from '@/types/bidding-record';
 
 const statusMap: Record<string, { text: string; color: string }> = {
   executing: { text: '执行中', color: 'blue' },
@@ -21,6 +23,7 @@ export const ContractDetail: React.FC = () => {
   const [shipments, setShipments] = useState<SalesShipment[]>([]);
   const [invoices, setInvoices] = useState<SaleInvoice[]>([]);
   const [receipts, setReceipts] = useState<SaleReceipt[]>([]);
+  const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPurchaseContract, setShowPurchaseContract] = useState(false);
   const [purchaseContract, setPurchaseContract] = useState<PurchaseContract | null>(null);
@@ -31,16 +34,18 @@ export const ContractDetail: React.FC = () => {
       if (!id) return;
       setLoading(true);
       try {
-        const [contractData, shipmentsData, invoicesData, receiptsData] = await Promise.all([
+        const [contractData, shipmentsData, invoicesData, receiptsData, biddingData] = await Promise.all([
           SalesContractAPI.getById(id),
           SalesContractAPI.getShipments(id),
           SalesContractAPI.getInvoices(id),
           SalesContractAPI.getReceipts(id),
+          BiddingRecordAPI.getBySalesContract(id),
         ]);
         setContract(contractData);
         setShipments(shipmentsData.items);
         setInvoices(invoicesData.items);
         setReceipts(receiptsData.items);
+        setBiddingRecords(biddingData.items);
       } catch (error) {
         const err = error as { name?: string; message?: string; cause?: { name?: string } };
         const isAborted =
@@ -120,6 +125,29 @@ export const ContractDetail: React.FC = () => {
     { title: '产品数量', dataIndex: 'product_amount', key: 'product_amount' },
     { title: '收款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
     { title: '收款账户', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },
+  ];
+
+  const bidResultMap: Record<string, { label: string; color: string }> = {
+    pending: { label: '待开标', color: 'orange' },
+    won: { label: '中标', color: 'green' },
+    lost: { label: '未中标', color: 'red' },
+  };
+
+  const biddingColumns = [
+    { title: '招标公司', dataIndex: 'bidding_company', key: 'bidding_company' },
+    { title: '招标编号', dataIndex: 'bidding_no', key: 'bidding_no' },
+    { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity' },
+    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+    { title: '开标时间', dataIndex: 'open_date', key: 'open_date', render: (v: string) => v?.split(' ')[0] || '-' },
+    { title: '中标结果', dataIndex: 'bid_result', key: 'bid_result', render: (v: string) => {
+      const info = bidResultMap[v];
+      return info ? <Tag color={info.color}>{info.label}</Tag> : '-';
+    }},
+    { title: '操作', key: 'action', render: (_: unknown, record: BiddingRecord) => (
+      <Button type="link" onClick={() => navigate(`/sales/bidding/${record.id}`)}>查看</Button>
+    )},
   ];
 
   return (
@@ -267,7 +295,7 @@ export const ContractDetail: React.FC = () => {
         )}
       </Card>
 
-      <Card title="收款记录">
+      <Card title="收款记录" style={{ marginBottom: 16 }}>
         {receipts.length > 0 ? (
           <Table
             columns={receiptColumns}
@@ -280,6 +308,18 @@ export const ContractDetail: React.FC = () => {
           <div style={{ textAlign: 'center', color: '#999' }}>暂无收款记录</div>
         )}
       </Card>
+
+      {biddingRecords.length > 0 && (
+        <Card title="关联投标记录" style={{ marginBottom: 16 }}>
+          <Table
+            columns={biddingColumns}
+            dataSource={biddingRecords}
+            rowKey="id"
+            pagination={false}
+            size="small"
+          />
+        </Card>
+      )}
 
       <Modal
         title={`采购合同详情 - ${purchaseContract?.no || ''}`}

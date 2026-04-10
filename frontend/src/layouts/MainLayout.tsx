@@ -37,6 +37,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'invoices', label: '发票', icon: <FileDoneOutlined />, path: '/sales/invoices' },
     { key: 'receipts', label: '收款', icon: <DollarOutlined />, path: '/sales/receipts' },
     { key: 'services', label: '服务合同', icon: <FileTextOutlined />, path: '/sales/services' },
+    { key: 'bidding', label: '投标管理', icon: <FileTextOutlined />, path: '/sales/bidding' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/sales/notifications' },
   ],
   purchasing: [
@@ -45,6 +46,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'arrivals', label: '运输', icon: <InboxOutlined />, path: '/purchase/arrivals' },
     { key: 'invoices', label: '收票', icon: <FileDoneOutlined />, path: '/purchase/invoices' },
     { key: 'payments', label: '付款', icon: <BankOutlined />, path: '/purchase/payments' },
+    { key: 'expenses', label: '资金支出', icon: <DollarOutlined />, path: '/purchase/expenses' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/purchase/notifications' },
   ],
   manager: [
