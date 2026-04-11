@@ -27,7 +27,7 @@ export const SupplierForm: React.FC<SupplierFormProps> = ({ form, onFinish, onCa
       }}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="name"
             label="供应商名称"
@@ -36,7 +36,7 @@ export const SupplierForm: React.FC<SupplierFormProps> = ({ form, onFinish, onCa
             <Input placeholder="请输入供应商名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="contact" label="联系人">
             <Input placeholder="请输入联系人" />
           </Form.Item>
@@ -44,12 +44,12 @@ export const SupplierForm: React.FC<SupplierFormProps> = ({ form, onFinish, onCa
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="phone" label="联系电话">
             <Input placeholder="请输入联系电话" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="email" label="电子邮箱">
             <Input placeholder="请输入电子邮箱" />
           </Form.Item>
@@ -57,12 +57,12 @@ export const SupplierForm: React.FC<SupplierFormProps> = ({ form, onFinish, onCa
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="industry" label="所在行业">
             <Input placeholder="请输入所在行业" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="region" label="所属地区">
             <Input placeholder="请输入所属地区" />
           </Form.Item>
@@ -74,12 +74,12 @@ export const SupplierForm: React.FC<SupplierFormProps> = ({ form, onFinish, onCa
       </Form.Item>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bank_name" label="开户银行">
             <Input placeholder="请输入开户银行" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bank_account" label="银行账号">
             <Input placeholder="请输入银行账号" />
           </Form.Item>

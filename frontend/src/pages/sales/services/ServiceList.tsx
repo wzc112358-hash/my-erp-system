@@ -18,7 +18,7 @@ export const ServiceList: React.FC = () => {
   const [search, setSearch] = useState('');
   const [formVisible, setFormVisible] = useState(false);
   const [editingContract, setEditingContract] = useState<ServiceContract | null>(null);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<ServiceContractFormData>();
 
   const fetchData = async () => {
     setLoading(true);
@@ -80,7 +80,7 @@ export const ServiceList: React.FC = () => {
       ...formData,
       sign_date: record.sign_date ? dayjs(record.sign_date.split(' ')[0]) : undefined,
       attachments,
-    });
+    } as unknown as Partial<ServiceContractFormData>);
     setFormVisible(true);
   };
 

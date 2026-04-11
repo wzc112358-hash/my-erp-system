@@ -128,7 +128,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       onFinish={handleFinish}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="发票号码"
@@ -137,7 +137,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
             <Input placeholder="请输入发票号码" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联销售合同"
@@ -171,7 +171,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       )}
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -180,7 +180,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="invoice_type"
             label="发票类型"
@@ -199,7 +199,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_amount"
             label="产品数量"
@@ -208,7 +208,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
             <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入产品数量" onChange={handleProductAmountChange} />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="amount"
             label="发票金额"
@@ -223,7 +223,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="issue_date"
             label="开票日期"

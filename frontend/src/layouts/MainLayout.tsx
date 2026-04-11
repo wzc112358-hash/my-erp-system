@@ -137,7 +137,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
           placement="left"
           onClose={() => setSidebarVisible(false)}
           open={sidebarVisible}
-          width={280}
+          width="80%"
           styles={{ body: { padding: 0, background: 'linear-gradient(180deg, #d8d9da 0%, #eaecec 40%, #ffffff 100%)' } }}
         >
           <div

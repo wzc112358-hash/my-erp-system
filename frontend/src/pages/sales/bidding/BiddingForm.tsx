@@ -1,4 +1,5 @@
 import { Form, Input, InputNumber, DatePicker, Button, Row, Col, Space, Upload, Select, Divider } from 'antd';
+import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -6,7 +7,7 @@ import { pb } from '@/lib/pocketbase';
 import type { BiddingRecordFormData, BiddingRecord } from '@/types/bidding-record';
 
 interface BiddingFormProps {
-  form: ReturnType<typeof Form.useForm>[0];
+  form: FormInstance<BiddingRecordFormData>;
   onFinish: (values: BiddingRecordFormData) => void;
   onCancel: () => void;
   initialValues?: BiddingRecord | null;
@@ -74,9 +75,9 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
             }
       }
     >
-      <Divider orientation="left" plain>投标信息</Divider>
+      <Divider titlePlacement="left" plain>投标信息</Divider>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="bidding_company"
             label="招标公司"
@@ -85,7 +86,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入招标公司" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="bidding_no"
             label="招标编号"
@@ -97,7 +98,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -106,7 +107,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="quantity"
             label="数量"
@@ -117,19 +118,19 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
         </Col>
       </Row>
 
-      <Divider orientation="left" plain>标书费</Divider>
+      <Divider titlePlacement="left" plain>标书费</Divider>
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="tender_fee" label="标书费">
             <InputNumber placeholder="请输入标书费" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="tender_fee_date" label="付标书费时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="tender_fee_invoice"
             label="标书费发票附件"
@@ -146,28 +147,28 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
         </Col>
       </Row>
 
-      <Divider orientation="left" plain>保证金</Divider>
+      <Divider titlePlacement="left" plain>保证金</Divider>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bid_bond" label="投标保证金">
             <InputNumber placeholder="请输入投标保证金" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bid_bond_date" label="付保证金时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
       </Row>
 
-      <Divider orientation="left" plain>开标信息</Divider>
+      <Divider titlePlacement="left" plain>开标信息</Divider>
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="open_date" label="开标时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="bid_result" label="中标结果">
             <Select
               placeholder="请选择中标结果"
@@ -181,28 +182,28 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
         </Col>
       </Row>
 
-      <Divider orientation="left" plain>保证金退还</Divider>
+      <Divider titlePlacement="left" plain>保证金退还</Divider>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bond_return_date" label="保证金退还时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="bond_return_amount" label="退还金额">
             <InputNumber placeholder="请输入退还金额" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
       </Row>
 
-      <Divider orientation="left" plain>其他</Divider>
+      <Divider titlePlacement="left" plain>其他</Divider>
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="agency_fee" label="招标代理费">
             <InputNumber placeholder="请输入招标代理费" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={16}>
+        <Col xs={24} md={16}>
           <Form.Item name="sales_contract" label="关联销售合同">
             <Select
               placeholder="可选，中标后关联"

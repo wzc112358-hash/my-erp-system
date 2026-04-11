@@ -20,6 +20,16 @@ const formatCurrency = (value: number) => `¥${value?.toLocaleString() || 0}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 const formatDateShort = (date: string) => date ? dayjs(date).format('YYYY.MM.DD') : '-';
 
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 767);
+  React.useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 767);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+};
+
 const SalesContractCard: React.FC<{
   contract: OverviewContract;
   selected: boolean;
@@ -319,6 +329,7 @@ const ConnectionLines: React.FC<ConnectionLinesProps> = ({
 export const OverviewPage: React.FC = () => {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   
   const [salesContracts, setSalesContracts] = useState<OverviewContract[]>([]);
   const [purchaseContracts, setPurchaseContracts] = useState<OverviewContract[]>([]);
@@ -695,15 +706,15 @@ export const OverviewPage: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: isMobile ? 8 : 24 }}>
       <Card style={{ marginBottom: 16, borderRadius: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-          <Space wrap>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
+          <Space wrap direction={isMobile ? 'vertical' : 'horizontal'}>
             <Input
               placeholder="搜索合同编号/品名"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 200 }}
+              style={{ width: isMobile ? '100%' : 200 }}
               prefix={<SearchOutlined />}
               allowClear
             />
@@ -712,7 +723,7 @@ export const OverviewPage: React.FC = () => {
               value={customerFilter}
               onChange={setCustomerFilter}
               allowClear
-              style={{ width: 150 }}
+              style={{ width: isMobile ? '100%' : 150 }}
               options={customers}
               showSearch
               filterOption={(input, option) =>
@@ -724,7 +735,7 @@ export const OverviewPage: React.FC = () => {
               value={supplierFilter}
               onChange={setSupplierFilter}
               allowClear
-              style={{ width: 150 }}
+              style={{ width: isMobile ? '100%' : 150 }}
               options={suppliers}
               showSearch
               filterOption={(input, option) =>
@@ -734,14 +745,14 @@ export const OverviewPage: React.FC = () => {
             <RangePicker
               value={dateRange}
               onChange={(dates) => setDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
-              style={{ width: 260 }}
+              style={{ width: isMobile ? '100%' : 260 }}
             />
             <Select
               placeholder="排序字段"
               value={sortField}
               onChange={handleSortChange}
               allowClear
-              style={{ width: 140 }}
+              style={{ width: isMobile ? '100%' : 140 }}
               options={[
                 { label: '销售合同号', value: 'no' },
                 { label: '采购发货时间', value: 'shipmentDate' },

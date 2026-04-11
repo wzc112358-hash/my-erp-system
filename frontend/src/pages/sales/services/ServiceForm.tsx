@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Form, Input, Select, DatePicker, Button, Row, Col, Space, message, Upload } from 'antd';
+import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ServiceContractFormData, ServiceContract } from '@/types/service-contract';
@@ -11,7 +12,7 @@ interface CustomerOption {
 }
 
 interface ServiceFormProps {
-  form: ReturnType<typeof Form.useForm>[0];
+  form: FormInstance<ServiceContractFormData>;
   onFinish: (values: ServiceContractFormData) => void;
   onCancel: () => void;
   initialValues?: ServiceContract | null;
@@ -71,7 +72,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
       }
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="合同编号"
@@ -80,7 +81,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入合同编号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="customer"
             label="客户"
@@ -99,7 +100,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="服务名称"
@@ -108,7 +109,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入服务名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sign_date"
             label="签约日期"

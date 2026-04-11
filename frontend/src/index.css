@@ -12,7 +12,7 @@ body {
 /* 侧边栏菜单选中状态 - 药丸形白色背景 */
 .ant-menu-item-selected {
   background: #ffffff !important;
-  border-radius: 16px !important;
+  border-radius: 24px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
 }
 
@@ -25,7 +25,7 @@ body {
 /* 侧边栏菜单悬停状态 */
 .ant-menu-item:hover {
   background: rgba(255, 255, 255, 0.6) !important;
-  border-radius: 16px !important;
+  border-radius: 24px !important;
 }
 
 /* 侧边栏菜单项默认文字颜色 */
@@ -36,7 +36,7 @@ body {
 
 /* 按钮凹陷效果 (按下感) */
 .ant-btn {
-  border-radius: 8px !important;
+  border-radius: 12px !important;
   transition: all 0.2s ease !important;
 }
 
@@ -91,7 +91,7 @@ body {
 }
 
 .ant-btn-text {
-  border-radius: 8px !important;
+  border-radius: 12px !important;
   box-shadow: 
     -2px -2px 4px rgba(255, 255, 255, 0.1),
     2px 2px 4px rgba(0, 0, 0, 0.08) !important;
@@ -259,4 +259,65 @@ body {
 
 .ant-table-wrapper .ant-table-container {
   border-radius: 12px !important;
+}
+
+/* ========== 移动端适配 (≤767px) ========== */
+@media screen and (max-width: 767px) {
+  .ant-layout-sider {
+    display: none !important;
+  }
+
+  .ant-layout-content {
+    margin: 8px !important;
+    padding: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .ant-table-wrapper {
+    overflow-x: auto !important;
+  }
+
+  .ant-form .ant-row {
+    flex-direction: column !important;
+  }
+
+  .ant-form .ant-row > .ant-col {
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
+  }
+
+  .ant-modal-content {
+    margin: 8px !important;
+    max-height: calc(100vh - 16px) !important;
+    overflow-y: auto !important;
+  }
+
+  .ant-card-head-title {
+    font-size: 14px !important;
+  }
+
+  .ant-descriptions .ant-descriptions-item {
+    display: block !important;
+    padding-bottom: 8px !important;
+  }
+
+  .ant-space-horizontal {
+    flex-wrap: wrap !important;
+  }
+}
+
+/* ========== 平板适配 (768px - 1024px) ========== */
+@media screen and (min-width: 768px) and (max-width: 1024px) {
+  .ant-layout-sider {
+    width: 200px !important;
+    min-width: 200px !important;
+    max-width: 200px !important;
+    flex: 0 0 200px !important;
+  }
+
+  .ant-form .ant-row > .ant-col[data-span="8"],
+  .ant-form .ant-row > .ant-col[class*="col-8"] {
+    max-width: 50% !important;
+    flex: 0 0 50% !important;
+  }
 }

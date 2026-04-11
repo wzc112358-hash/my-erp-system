@@ -1508,6 +1508,17 @@ export default defineConfig({
 4. 检查 Service Worker 是否已注册
 5. 检查 Manifest 是否正确加载
 
+**⚠️ 潜在问题与解决方案**:
+
+| # | 问题 | 影响 | 解决方案 |
+|---|------|------|----------|
+| 1 | **`vite-plugin-pwa` 与 Vite 7 兼容性** | 安装后可能报错或构建失败 | 当前项目 Vite 版本为 `7.3.1`，`vite-plugin-pwa` 最新版可能未适配。安装后立即运行 `npm run build` 测试，若失败：① 查看 vite-plugin-pwa GitHub Issues 是否有 Vite 7 支持；② 如无则临时降级 Vite 到 `6.x`（需同时调整 `@vitejs/plugin-react` 版本）；③ 或等待插件更新 |
+| 2 | **`npm run build`（`tsc -b`）的 TS 5.9 兼容问题** | 构建直接报错，无法生成 dist | `tsconfig.app.json` 中 `ignoreDeprecations: "6.0"` 在 TS 5.9 中会导致 `tsc -b` 失败。解决方案：移除 `ignoreDeprecations` 字段，或将 `npm run build` 脚本改为 `vite build`（跳过 tsc 检查，由 IDE 单独做类型检查）|
+| 3 | **API 缓存的 `urlPattern` 不覆盖开发环境** | 开发环境 Service Worker 缓存不生效 | 文档中 `urlPattern: /^https:\/\/api.*\/.*/i` 只匹配 `https://api` 开头的 URL，开发环境 `http://127.0.0.1:8090` 不会被匹配。建议改为同时覆盖两种：`urlPattern: /^https?:\/\/(api.*\|127\.0\.0\.1:8090)\/.*/i`。生产环境不受影响 |
+| 4 | **图标文件缺失** | PWA 安装时无图标、manifest 报错 | `frontend/public/` 下当前只有 `vite.svg`，需要手动准备 `icon-192.png`（192x192）和 `icon-512.png`（512x512）。没有图标不影响功能，但会影响"添加到主屏幕"的体验。可用在线工具（如 favicon.io）从 logo 生成 |
+| 5 | **Service Worker 缓存导致更新不生效** | 用户看到的始终是旧版本 | 已配置 `registerType: 'autoUpdate'`，会在检测到新 SW 时自动刷新。但需注意：如果修改了缓存策略（`globPatterns` 或 `runtimeCaching`），旧的 SW 缓存名不会自动失效，可能需要用户手动清除浏览器缓存或修改 `cacheName` |
+| 6 | **双系统（北京/兰州）的 PWA 冲突** | 同一浏览器安装两个系统时图标/缓存混淆 | 两个系统共用同一套前端代码和 manifest（相同的 `name` 和 `short_name`），PWA 会视为同一应用。解决方案：在 `pocketbase.ts` 的 `getApiBaseUrl()` 中根据 `erp_system` 值动态设置 manifest 的 `name`（如"ERP系统-北京"），或将 manifest 改为动态生成 |
+
 ---
 
 ### 步骤 19: 移动端适配
@@ -1577,41 +1588,210 @@ OverviewPage 和 ProgressFlowPage 在移动端:
 3. 测试汉堡菜单是否正常显示
 4. 测试表格横向滚动
 
+**⚠️ 潜在问题与解决方案**:
+
+| # | 问题 | 影响 | 解决方案 |
+|---|------|------|----------|
+| 1 | **MainLayout 移动端逻辑已基本就绪** | 重复工作 | `MainLayout.tsx` 已有 `isMobile` 判断（`window.innerWidth <= 767`）、Drawer 侧边栏、汉堡按钮等逻辑。步骤 19 主要只需补充 CSS 媒体查询，JS 层改动量很小 |
+| 2 | **复杂页面的表格横向滚动** | 表格列太多，移动端溢出 | 大部分列表页已设置 `scroll={{ x: ... }}`，Ant Design Table 会自动横向滚动。需确保外层容器有 `overflow-x: auto`，已在文档的 CSS 媒体查询中覆盖（`.ant-table-wrapper { overflow-x: auto }`）|
+| 3 | **经理模块复杂页面移动端体验差** | OverviewPage（卡片列表）和 ProgressFlowPage（ReactFlow 画布）在手机上难以操作 | 这两个页面交互复杂（拖拽、连线、多列布局），完整的移动端适配成本高。建议：① OverviewPage 在移动端改为单列列表，隐藏部分筛选器；② ProgressFlowPage 在移动端提示"建议在电脑端查看"，或仅显示简化的文字列表视图。优先级取决于是否需要在手机上使用经理模块 |
+| 4 | **Drawer/Modal 在移动端的宽度** | Drawer 固定 280px 在小屏幕上可能太宽或太窄 | 文档建议 Drawer 宽度改为屏幕 80%。Ant Design Drawer 支持 `width: '80%'` 或 `width: window.innerWidth * 0.8`。其他 Modal 也应考虑 `width: '90%'` 或使用 `responsive` 配置 |
+| 5 | **CSS `!important` 与媒体查询优先级冲突** | 现有 `index.css` 大量使用 `!important`，媒体查询中的覆盖可能不生效 | 现有样式（按钮、卡片等）已经用 `!important` 声明，移动端媒体查询中如果需要缩小间距或隐藏元素，也需要用 `!important`。建议媒体查询中的覆盖规则统一加上 `!important` |
+| 6 | **Ant Design 组件自带响应式行为** | Ant Design v5+ 的 Grid 系统（Row/Col）有内置响应式，可能与自定义媒体查询冲突 | 项目中已使用 `<Row gutter={16}>` + `<Col span={12}>` 布局，在移动端 `span={12}` 仍然占一半宽度。建议改为响应式写法：`<Col xs={24} sm={24} md={12}>`，让移动端自动变为全宽。涉及所有 Form 页面 |
+
+
+
+## 阶段六部署实施详细分析
+
+> 基于项目现有配置和文档分析，整理出实际可执行的部署方案。
+> 每个步骤标注 **[代码]** （助手可完成）或 **[手动]** （需人工操作）。
+
 ---
 
-## 阶段六：部署配置 (系统拆分时执行)
+### 现状盘点
+
+| 组件 | 文件 | 状态 | 说明 |
+|------|------|------|------|
+| 前端 Dockerfile | `frontend/Dockerfile` | ✅ 可用 | Node 构建 + Nginx 运行，但缺少 nginx.conf |
+| 后端 Dockerfile | `backend/Dockerfile` | ✅ 可用 | Go 构建 + Alpine 运行 |
+| docker-compose | `docker-compose.yml` | ⚠️ 单系统 | 只有 1 套 frontend + pocketbase |
+| Traefik 静态配置 | `traefik/traefik.yml` | ✅ 可用 | 80/443 入口，Let's Encrypt 已配置 |
+| Traefik 动态路由 | `traefik/dynamic.toml` | ⚠️ 单域名 | 只有 `henghuacheng.cn` + `api.henghuacheng.cn` |
+| SSL 证书 | `traefik/acme.json` | ✅ 已有 | root:600 权限，已有签发记录 |
+| 前端 API 配置 | `frontend/src/lib/pocketbase.ts` | ✅ 可用 | 运行时按 localStorage 中 `erp_system` 值选择 API 域名，无需修改 |
+| PWA 插件 | `frontend/vite.config.ts` | ✅ 已集成 | vite-plugin-pwa 已配置 |
+| pb_migrations | `pb_migrations/` | ❌ 空目录 | 没有迁移脚本，兰州系统需手动建表 |
+| 图标文件 | `frontend/public/icon-*.png` | ✅ 已有 | 192px 和 512px 图标都有 |
+| Docker 代理 | `.docker/config.json` | ✅ 已配置 | 内网代理 10.255.255.254:7897 |
 
 ---
 
-### 步骤 20: Docker Compose 配置
+### 架构方案：统一前端入口 + 双后端
 
-**类型**: 手动操作 (根据实际部署环境)  
-**依赖**: 前后端代码冻结  
-**预计时间**: 2 小时
+用户访问同一个前端域名，进入后在「系统选择页」选择北京或兰州系统，前端根据用户选择连接到不同的 PocketBase 后端。
 
-**架构方案**: 不同子域名
+| 用途 | 域名 | 说明 |
+|------|------|------|
+| 前端（统一入口） | `erp.henghuacheng.cn` | 所有用户共用，运行时选择系统 |
+| 北京系统 API | `api-beijing.henghuacheng.cn` | 北京 PocketBase 后端 |
+| 兰州系统 API | `api-lanzhou.henghuacheng.cn` | 兰州 PocketBase 后端 |
 
-| 系统 | 前端域名 | API 域名 |
-|------|----------|----------|
-| 北京系统 | https://beijing.henghuacheng.cn | https://api-beijing.henghuacheng.cn |
-| 兰州系统 | https://lanzhou.henghuacheng.cn | https://api-lanzhou.henghuacheng.cn |
+**前端构建策略**：只需构建 1 份前端镜像。`pocketbase.ts` 已实现运行时根据 `localStorage` 中的 `erp_system` 值选择 API 域名，无需修改。
 
-**docker-compose.yml 结构**:
+**数据隔离**：两个 PocketBase 实例各自使用独立的数据目录（`pb_data_beijing` / `pb_data_lanzhou`）。
+
+**用户访问流程**：
+
+```
+用户访问 erp.henghuacheng.cn
+  → 进入系统选择页 (SystemSelect)
+  → 选择「北京系统」或「兰州系统」
+  → localStorage.setItem('erp_system', 'beijing'|'lanzhou')
+  → 跳转登录页
+  → 登录后前端自动连接对应系统的 API
+```
+
+---
+
+### 部署步骤总览
+
+```
+步骤 1: DNS 解析配置                           [手动]
+步骤 2: 前端构建验证 (npm run build)             [代码]
+步骤 3: 新建 frontend/nginx.conf                [代码]
+步骤 4: 修改 frontend/Dockerfile                [代码]
+步骤 5: 重写 docker-compose.yml                 [代码]
+步骤 6: 重写 traefik/dynamic.toml               [代码]
+步骤 7: 上传代码到服务器                         [手动]
+步骤 8: docker compose up -d --build            [手动]
+步骤 9: PocketBase 管理员创建 + CORS 配置        [手动]
+步骤 10: 兰州系统集合创建 (手动建表)              [手动]
+步骤 11: 功能验证                               [手动]
+```
+
+---
+
+### 步骤 1: DNS 解析配置 [手动]
+
+**操作人**: 需要到域名服务商（阿里云/腾讯云等）管理后台
+
+**前置操作 — 删除旧记录**:
+
+| 主机记录 | 操作 | 原因 |
+|----------|------|------|
+| `@` | 删除 | 根域名不再使用 |
+| `www` | 删除 | 不再使用 |
+| `api`（如有） | 删除 | 改用 api-beijing / api-lanzhou |
+
+**新增 DNS A 记录**:
+
+| 主机记录 | 记录类型 | 记录值 | 说明 |
+|----------|----------|--------|------|
+| erp | A | 服务器公网 IP | 统一前端入口 |
+| api-beijing | A | 服务器公网 IP | 北京系统 API |
+| api-lanzhou | A | 服务器公网 IP | 兰州系统 API |
+
+共 3 条 A 记录，全部指向同一台服务器的公网 IP。
+
+**验证方法**: 配置后等待 DNS 生效（通常 1-10 分钟），执行：
+
+```bash
+ping erp.henghuacheng.cn
+ping api-beijing.henghuacheng.cn
+ping api-lanzhou.henghuacheng.cn
+```
+
+均能解析到正确 IP 即为成功。
+
+---
+
+### 步骤 2: 前端构建验证 [代码]
+
+**执行命令**:
+
+```bash
+cd frontend
+npm run build
+```
+
+**注意事项**:
+
+- `npm run build` = `tsc -b && vite build`，TS 5.9 可能导致 `tsc -b` 报错
+- 如果 tsc 报错，需要将 `package.json` 中 build 脚本改为 `vite build`（跳过 tsc 检查）
+- 构建成功后确认 `frontend/dist/` 目录生成
+
+---
+
+### 步骤 3: 新建 frontend/nginx.conf [代码]
+
+**文件**: `frontend/nginx.conf`
+
+**内容要点**:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA 路由回退：所有未匹配的请求返回 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 静态资源缓存
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # gzip 压缩
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+    gzip_min_length 1024;
+}
+```
+
+**为什么需要**: React SPA 应用使用前端路由（如 `/sales/contracts`），刷新页面时 Nginx 默认会去查找对应文件并返回 404。`try_files` 回退到 `index.html` 让前端路由接管。
+
+---
+
+### 步骤 4: 修改 frontend/Dockerfile [代码]
+
+**修改要点**: 在运行阶段增加 COPY nginx.conf。
+
+```dockerfile
+# 运行阶段新增：
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+```
+
+**无需构建参数**：因为前端只有一份镜像，API 域名在运行时通过 `pocketbase.ts` 动态选择。
+
+---
+
+### 步骤 5: 重写 docker-compose.yml [代码]
+
+**改动要点**:
 
 ```yaml
 version: '3.8'
 
 services:
-  frontend-beijing:
+  frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: erp-frontend-beijing
+    container_name: erp-frontend
+    restart: unless-stopped
+    networks:
+      - web
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.beijing.rule=Host(`beijing.henghuacheng.cn`)"
-      - "traefik.http.routers.beijing.entrypoints=websecure"
-      - "traefik.http.services.beijing-frontend.loadbalancer.server.port=80"
+      - "traefik.http.routers.frontend.rule=Host(`erp.henghuacheng.cn`)"
+      - "traefik.http.routers.frontend.entryPoints=websecure"
+      - "traefik.http.routers.frontend.tls.certResolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   pocketbase-beijing:
     build:
@@ -1621,22 +1801,15 @@ services:
     command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_beijing"]
     volumes:
       - ./backend/pb_data_beijing:/pb_data_beijing
+    restart: unless-stopped
+    networks:
+      - web
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.beijing-api.rule=Host(`api-beijing.henghuacheng.cn`)"
-      - "traefik.http.routers.beijing-api.entrypoints=websecure"
+      - "traefik.http.routers.beijing-api.entryPoints=websecure"
+      - "traefik.http.routers.beijing-api.tls.certResolver=letsencrypt"
       - "traefik.http.services.beijing-pocketbase.loadbalancer.server.port=8090"
-
-  frontend-lanzhou:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: erp-frontend-lanzhou
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.lanzhou.rule=Host(`lanzhou.henghuacheng.cn`)"
-      - "traefik.http.routers.lanzhou.entrypoints=websecure"
-      - "traefik.http.services.lanzhou-frontend.loadbalancer.server.port=80"
 
   pocketbase-lanzhou:
     build:
@@ -1646,15 +1819,21 @@ services:
     command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_lanzhou"]
     volumes:
       - ./backend/pb_data_lanzhou:/pb_data_lanzhou
+    restart: unless-stopped
+    networks:
+      - web
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lanzhou-api.rule=Host(`api-lanzhou.henghuacheng.cn`)"
-      - "traefik.http.routers.lanzhou-api.entrypoints=websecure"
+      - "traefik.http.routers.lanzhou-api.entryPoints=websecure"
+      - "traefik.http.routers.lanzhou-api.tls.certResolver=letsencrypt"
       - "traefik.http.services.lanzhou-pocketbase.loadbalancer.server.port=8090"
 
   traefik:
-    image: traefik:v2.10
+    image: traefik:v2.9
     container_name: erp-traefik
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
     ports:
       - "80:80"
       - "443:443"
@@ -1662,63 +1841,224 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik:/etc/traefik
+    networks:
+      - web
+    restart: unless-stopped
+
+networks:
+  web:
+    driver: bridge
+```
+
+**关键变化**:
+- 只有 **1 个前端容器**（不再是 2 个）
+- 移除了 PocketBase 的 `ports: "8090:8090"` 直连映射（改为通过 Traefik 路由）
+- 路由通过 Docker labels 定义，不再依赖 `dynamic.toml` 中的服务定义
+- 两个 PocketBase 实例各自挂载独立数据目录
+- 北京系统继续使用现有的 `pb_data`（需重命名为 `pb_data_beijing`）
+
+**北京系统数据目录迁移**（在服务器上执行）:
+
+```bash
+cd /path/to/my-erp-system/backend
+mv pb_data pb_data_beijing
+mkdir -p pb_data_lanzhou
+chmod -R 777 pb_data_lanzhou
 ```
 
 ---
 
-### 步骤 21: Traefik 路由配置
+### 步骤 6: 重写 traefik/dynamic.toml [代码]
 
-**类型**: 手动操作 (根据实际部署环境)  
-**依赖**: 步骤 20 完成  
-**预计时间**: 1 小时
-
-**文件路径**: `traefik/dynamic.toml`
+使用 Docker labels 方式定义路由后，`dynamic.toml` 只需保留 HTTP→HTTPS 自动重定向：
 
 ```toml
-# 北京系统路由
-[http.routers.beijing]
-rule = "Host(`beijing.henghuacheng.cn`)"
-service = "beijing-frontend"
-tls = true
+# HTTP 自动跳转 HTTPS
+[http.routers]
+  [http.routers.http-catchall]
+    rule = "PathPrefix(`/`)"
+    entryPoints = ["web"]
+    middlewares = ["redirect-to-https"]
+    service = "noop@internal"
 
-[http.services.beijing-frontend]
-[[http.services.beijing-frontend.loadBalancer.servers]]
-url = "http://frontend-beijing:80"
-
-[http.routers.beijing-api]
-rule = "Host(`api-beijing.henghuacheng.cn`)"
-service = "beijing-pocketbase"
-tls = true
-
-[http.services.beijing-pocketbase]
-[[http.services.beijing-pocketbase.loadBalancer.servers]]
-url = "http://pocketbase-beijing:8090"
-
-# 兰州系统路由
-[http.routers.lanzhou]
-rule = "Host(`lanzhou.henghuacheng.cn`)"
-service = "lanzhou-frontend"
-tls = true
-
-[http.services.lanzhou-frontend]
-[[http.services.lanzhou-frontend.loadBalancer.servers]]
-url = "http://frontend-lanzhou:80"
-
-[http.routers.lanzhou-api]
-rule = "Host(`api-lanzhou.henghuacheng.cn`)"
-service = "lanzhou-pocketbase"
-tls = true
-
-[http.services.lanzhou-pocketbase]
-[[http.services.lanzhou-pocketbase.loadBalancer.servers]]
-url = "http://pocketbase-lanzhou:8090"
+[http.middlewares]
+  [http.middlewares.redirect-to-https.redirectScheme]
+    scheme = "https"
+    permanent = true
 ```
 
-**CORS 配置**:
+---
 
-如果 PocketBase 后端未配置 CORS，需要在构建时检查并配置:
-- 北京 API: 允许 beijing.henghuacheng.cn 跨域访问
-- 兰州 API: 允许 lanzhou.henghuacheng.cn 跨域访问
+### 步骤 7: 上传代码到服务器 [手动]
+
+**操作**:
+
+```bash
+# 方式一：git pull（推荐）
+ssh user@server
+cd /path/to/my-erp-system
+git pull origin main
+
+# 方式二：rsync
+rsync -avz --exclude=node_modules --exclude=.git ./ user@server:/path/to/my-erp-system/
+```
+
+---
+
+### 步骤 8: 启动容器 [手动]
+
+**前置操作 — 迁移北京数据目录**:
+
+```bash
+cd /path/to/my-erp-system/backend
+mv pb_data pb_data_beijing
+mkdir -p pb_data_lanzhou
+chmod -R 777 pb_data_lanzhou
+```
+
+**启动**:
+
+```bash
+cd /path/to/my-erp-system
+
+# 首次启动（构建镜像 + 启动）
+docker compose up -d --build
+
+# 查看构建日志
+docker compose logs -f
+
+# 检查容器状态
+docker compose ps
+```
+
+**预期结果**: 5 个容器全部 Running：
+- `erp-frontend`
+- `erp-pocketbase-beijing`
+- `erp-pocketbase-lanzhou`
+- `erp-traefik`
+
+**可能遇到的问题**:
+
+| 问题 | 解决方案 |
+|------|----------|
+| 构建时 npm install 失败 | 检查 `.docker/config.json` 代理配置是否正确 |
+| tsc -b 报错 | 修改 `package.json` build 脚本为 `vite build` |
+| Let's Encrypt 签发失败 | 确认 DNS 已生效、80/443 端口开放、acme.json 权限 600 |
+| 容器启动后立即退出 | `docker compose logs <service>` 查看错误日志 |
+| PocketBase 数据目录权限问题 | `chmod -R 777 ./backend/pb_data_beijing ./backend/pb_data_lanzhou` |
+
+---
+
+### 步骤 9: PocketBase 管理员创建 + CORS 配置 [手动]
+
+#### 9.1 北京系统
+
+北京系统沿用已有数据，管理员账号已存在，只需配置 CORS。
+
+访问管理后台：`https://api-beijing.henghuacheng.cn/_/`
+
+在 Settings → Application 中添加 CORS 允许来源：
+
+```
+https://erp.henghuacheng.cn
+```
+
+#### 9.2 兰州系统
+
+兰州系统是新实例，需要先创建管理员。
+
+访问管理后台：`https://api-lanzhou.henghuacheng.cn/_/`
+
+首次访问会提示创建管理员账号，创建后同样在 Settings → Application 中添加 CORS：
+
+```
+https://erp.henghuacheng.cn
+```
+
+> **重要**: 两个后端的 CORS 都允许同一个前端域名 `erp.henghuacheng.cn`。不配置 CORS 会导致前端请求被浏览器拦截，所有 API 调用失败。
+
+---
+
+### 步骤 10: 兰州系统集合创建 [手动]
+
+> ⚠️ `pb_migrations/` 目录当前为空，没有自动迁移脚本。
+
+#### 方案：手动在管理后台创建集合
+
+访问兰州系统管理后台 `https://api-lanzhou.henghuacheng.cn/_/`，按照以下顺序创建集合：
+
+**创建顺序（按依赖关系）**:
+
+1. **users** — 用户表（PocketBase 内置，可能已自动创建）
+2. **customers** — 客户表
+3. **suppliers** — 供应商表
+4. **sales_contracts** — 销售合同表（含 `creator_user` relation → users）
+5. **purchase_contracts** — 采购合同表（含 `creator_user` relation → users，`sales_contract` relation → sales_contracts）
+6. **sales_shipments** — 销售发货表（relation → sales_contracts）
+7. **purchase_arrivals** — 采购到货表（relation → purchase_contracts）
+8. **sale_invoices** — 销售发票表
+9. **purchase_invoices** — 采购发票表（含 `is_verified` select 字段）
+10. **sale_receipts** — 销售收款表
+11. **purchase_payments** — 采购付款表
+12. **notifications** — 采购通知表
+13. **notifications_02** — 销售通知表
+14. **service_contracts** — 服务大合同表（含 `creator_user` relation → users）
+15. **service_orders** — 佣金子订单表（relation → service_contracts）
+16. **expense_records** — 资金支出表（含 `creator_user` relation → users）
+17. **bidding_records** — 投标记录表（含 `sales_contract` relation → sales_contracts）
+
+**每个集合的字段定义**: 参照本文档步骤 A-H 中的 PocketBase 字段说明，以及 `frontend/src/types/` 下的类型定义。
+
+**每个集合的权限规则**: 参照 `AGENTS.md` 中的权限矩阵：
+- 销售相关集合：销售角色 CRUD 本人创建，经理只读
+- 采购相关集合：采购角色 CRUD 本人创建，经理只读
+- 经理对所有集合有只读权限
+
+> **替代方案**: 如果有北京系统的 PocketBase 备份文件，可以通过管理后台的 Import 功能快速恢复所有集合结构和权限。
+
+---
+
+### 步骤 11: 功能验证 [手动]
+
+**验证清单**:
+
+| # | 验证项 | 操作 |
+|---|--------|------|
+| 1 | HTTPS 证书 | 浏览器访问 3 个域名，确认小锁图标 |
+| 2 | 系统选择页 | 访问 `erp.henghuacheng.cn`，能看到北京/兰州系统选择 |
+| 3 | 北京系统登录 | 选择北京系统 → 登录测试账号 → 能看到数据 |
+| 4 | 兰州系统登录 | 选择兰州系统 → 登录测试账号 → 能进入系统 |
+| 5 | 系统切换 | 退出后切换到另一个系统，API 指向正确 |
+| 6 | CRUD 操作 | 创建/编辑/删除一条记录 |
+| 7 | 文件上传 | 上传附件确认正常 |
+| 8 | 通知功能 | 触发业务操作后检查通知 |
+| 9 | PWA | 浏览器地址栏出现安装图标 |
+
+---
+
+### 文件修改清单汇总
+
+| 文件 | 操作 | 步骤 | 类型 |
+|------|------|------|------|
+| `frontend/nginx.conf` | **新建** | 3 | [代码] |
+| `frontend/Dockerfile` | 修改 | 4 | [代码] |
+| `docker-compose.yml` | 重写 | 5 | [代码] |
+| `traefik/dynamic.toml` | 重写 | 6 | [代码] |
+
+> `frontend/src/lib/pocketbase.ts` 无需修改，已实现运行时选择。
+
+---
+
+### 手动操作汇总
+
+| # | 步骤 | 何时执行 | 说明 |
+|---|------|----------|------|
+| 1 | DNS 配置 | 代码修改前 | 删除旧记录 3 条，新增 A 记录 3 条 |
+| 7 | 上传代码 | 代码修改后 | git pull 或 rsync |
+| 8 | 启动容器 | 上传后 | 先迁移 pb_data，再 docker compose up |
+| 9 | PB 管理员 + CORS | 容器启动后 | 两个系统分别配置 CORS 为 `erp.henghuacheng.cn` |
+| 10 | 兰州建表 | CORS 配置后 | 手动创建 17 个集合 |
+| 11 | 功能验证 | 全部完成后 | 按清单逐项验证 |
 
 ---
 

@@ -24,7 +24,7 @@ export const BiddingList: React.FC = () => {
   const [bidResultFilter, setBidResultFilter] = useState<string | undefined>(undefined);
   const [formVisible, setFormVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<BiddingRecord | null>(null);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<BiddingRecordFormData>();
 
   const fetchData = async () => {
     setLoading(true);

@@ -109,7 +109,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       onFinish={handleFinish}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="付款单号"
@@ -118,7 +118,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
             <Input placeholder="请输入付款单号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="purchase_contract"
             label="关联合同"
@@ -138,7 +138,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -150,7 +150,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_amount"
             label="产品数量"
@@ -168,7 +168,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="amount"
             label="付款金额"
@@ -188,7 +188,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="pay_date"
             label="付款日期"
@@ -197,7 +197,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="method" label="付款方式">
             <Input placeholder="请输入付款方式" />
           </Form.Item>

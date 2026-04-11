@@ -25,6 +25,9 @@ FROM nginx:alpine
 # 复制构建产物到 nginx 默认目录
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# 复制 nginx 配置（SPA 路由回退）
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # 暴露 80 端口
 EXPOSE 80
 

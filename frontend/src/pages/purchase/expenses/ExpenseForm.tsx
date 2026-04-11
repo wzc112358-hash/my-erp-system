@@ -1,10 +1,11 @@
 import { Form, Input, InputNumber, DatePicker, Button, Row, Col, Space, Upload } from 'antd';
+import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ExpenseRecordFormData, ExpenseRecord } from '@/types/expense-record';
 
 interface ExpenseFormProps {
-  form: ReturnType<typeof Form.useForm>[0];
+  form: FormInstance<ExpenseRecordFormData>;
   onFinish: (values: ExpenseRecordFormData) => void;
   onCancel: () => void;
   initialValues?: ExpenseRecord | null;
@@ -44,7 +45,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
       }
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="记录编号"
@@ -53,7 +54,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入记录编号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="expense_type"
             label="支出类型"
@@ -73,7 +74,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
       </Form.Item>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="payment_amount" label="付款金额">
             <InputNumber
               placeholder="请输入付款金额"
@@ -83,7 +84,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="pay_date"
             label="付款日期"
@@ -95,12 +96,12 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="method" label="付款方式">
             <Input placeholder="请输入付款方式" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="purchasing_manager" label="采购负责人">
             <Input placeholder="请输入采购负责人" />
           </Form.Item>

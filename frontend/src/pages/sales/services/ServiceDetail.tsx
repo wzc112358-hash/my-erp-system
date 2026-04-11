@@ -16,7 +16,7 @@ export const ServiceDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [orderModalVisible, setOrderModalVisible] = useState(false);
   const [editingOrder, setEditingOrder] = useState<ServiceOrder | null>(null);
-  const [orderForm] = Form.useForm();
+  const [orderForm] = Form.useForm<ServiceOrderFormData>();
 
   const fetchData = async () => {
     if (!id) return;
@@ -58,7 +58,7 @@ export const ServiceDetail: React.FC = () => {
 
   const handleEditOrder = (record: ServiceOrder) => {
     setEditingOrder(record);
-    orderForm.setFieldsValue({
+    orderForm.setFieldsValue(({
       ...record,
       receipt_date: record.receipt_date ? dayjs(record.receipt_date.split(' ')[0]) : undefined,
       receipt_rmb_date: record.receipt_rmb_date ? dayjs(record.receipt_rmb_date.split(' ')[0]) : undefined,
@@ -72,7 +72,7 @@ export const ServiceDetail: React.FC = () => {
             url: file,
           }))
         : [],
-    });
+    }) as unknown as Partial<ServiceOrderFormData>);
     setOrderModalVisible(true);
   };
 

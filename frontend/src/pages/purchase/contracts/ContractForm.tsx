@@ -106,7 +106,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
       }
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="合同编号"
@@ -115,7 +115,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
             <Input placeholder="请输入合同编号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="supplier"
             label="供应商"
@@ -133,7 +133,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
         </Col>
       </Row>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联销售合同"
@@ -152,7 +152,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -164,7 +164,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="unit_price"
             label="产品单价"
@@ -188,7 +188,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="total_quantity"
             label="产品数量"
@@ -215,14 +215,14 @@ export const ContractForm: React.FC<ContractFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item label="合同总金额">
             <div style={{ padding: '9.5px 11px', background: '#f5f5f5', borderRadius: 6, color: '#333' }}>
               ¥ {totalAmount.toLocaleString()}
             </div>
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sign_date"
             label="签订日期"

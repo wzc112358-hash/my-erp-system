@@ -576,13 +576,13 @@ export const ProgressFlowPage: React.FC = () => {
   }, [contractOptions]);
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: window.innerWidth <= 767 ? 8 : 24 }}>
       <Card style={{ marginBottom: 16, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select
             value={selectedContract}
             onChange={setSelectedContract}
-            style={{ width: 520 }}
+            style={{ width: window.innerWidth <= 767 ? '100%' : 520, minWidth: 200 }}
             showSearch
             placeholder="选择合同查看流程"
             loading={optionsLoading}
@@ -608,7 +608,7 @@ export const ProgressFlowPage: React.FC = () => {
 
       <Card style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
         {selectedContract && !loading && flowNodes.length > 0 ? (
-          <div style={{ height: 700 }}>
+          <div style={{ height: window.innerWidth <= 767 ? 400 : 700 }}>
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
@@ -636,7 +636,7 @@ export const ProgressFlowPage: React.FC = () => {
         open={modalVisible}
         onCancel={() => { setModalVisible(false); setModalData(null); }}
         centered
-        width={720}
+        width={window.innerWidth <= 767 ? '95%' : 720}
         footer={getModalFooter()}
       >
         {modalData && renderModalDetail(modalData)}

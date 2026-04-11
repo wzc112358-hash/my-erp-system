@@ -219,7 +219,7 @@ export const ContractDetail: React.FC = () => {
       </Card>
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card 
             title="到货进度" 
             hoverable 
@@ -232,7 +232,7 @@ export const ContractDetail: React.FC = () => {
             </div>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card 
             title="收款进度" 
             hoverable 
@@ -245,7 +245,7 @@ export const ContractDetail: React.FC = () => {
             </div>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card 
             title="开票进度" 
             hoverable 

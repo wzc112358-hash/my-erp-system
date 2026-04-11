@@ -144,7 +144,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       onFinish={handleFinish}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="purchase_contract"
             label="关联采购合同"
@@ -162,7 +162,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联销售合同"
@@ -181,7 +181,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="tracking_contract_no"
             label="运输合同号"
@@ -190,7 +190,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <Input placeholder="请输入运输合同号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="wether_transit"
             label="是否有中转站"
@@ -208,7 +208,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -217,7 +217,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="shipment_date"
             label="发货日期"
@@ -229,7 +229,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="quantity"
             label="到货数量"
@@ -238,7 +238,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入到货数量" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="logistics_company"
             label="物流公司"
@@ -250,7 +250,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="shipment_address"
             label="发货地址"
@@ -259,7 +259,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <Input placeholder="请输入发货地址" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="delivery_address"
             label="收货地址"
@@ -285,7 +285,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       )}
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="freight_1"
             label="运费金额1"
@@ -294,7 +294,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入运费金额1" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="freight_1_status"
             label="运费1状态"
@@ -307,7 +307,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="freight_1_date" label="运费1付款日期">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
@@ -316,7 +316,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
 
       {wetherTransit === 'yes' && (
         <Row gutter={16}>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
               name="freight_2"
               label="运费金额2"
@@ -325,7 +325,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
               <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入运费金额2" />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
               name="freight_2_status"
               label="运费2状态"
@@ -339,7 +339,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
               />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item name="freight_2_date" label="运费2付款日期">
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
@@ -348,7 +348,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       )}
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="miscellaneous_expenses"
             label="杂费"
@@ -357,7 +357,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入杂费" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="invoice_1_status"
             label="发票1状态"
@@ -371,7 +371,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
           </Form.Item>
         </Col>
         {wetherTransit === 'yes' && (
-          <Col span={8}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
               name="invoice_2_status"
               label="发票2状态"

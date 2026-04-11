@@ -108,7 +108,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       onFinish={handleFinish}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联合同"
@@ -125,7 +125,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -137,7 +137,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_amount"
             label="产品数量"
@@ -155,7 +155,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="amount"
             label="收款金额"
@@ -175,7 +175,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="receive_date"
             label="收款日期"
@@ -184,7 +184,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="method" label="收款方式">
             <Input placeholder="请输入收款方式" />
           </Form.Item>
@@ -192,7 +192,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="account" label="收款账户">
             <Input placeholder="请输入收款账户" />
           </Form.Item>

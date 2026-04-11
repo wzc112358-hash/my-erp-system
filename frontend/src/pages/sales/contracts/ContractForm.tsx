@@ -115,7 +115,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
       }
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="no"
             label="合同编号"
@@ -124,7 +124,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             <Input placeholder="请输入合同编号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="customer"
             label="客户"
@@ -142,7 +142,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
         </Col>
       </Row>
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -151,7 +151,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="purchase_contract"
             label="关联采购合同"
@@ -173,7 +173,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="unit_price"
             label="产品单价"
@@ -197,7 +197,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="total_quantity"
             label="产品数量"
@@ -224,14 +224,14 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item label="合同总金额">
             <div style={{ padding: '9.5px 11px', background: '#f5f5f5', borderRadius: 6, color: '#333' }}>
               ¥ {totalAmount.toLocaleString()}
             </div>
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sign_date"
             label="签订日期"

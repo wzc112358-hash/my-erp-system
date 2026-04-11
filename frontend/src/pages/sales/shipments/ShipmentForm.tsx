@@ -95,7 +95,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
       onFinish={handleFinish}
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联销售合同"
@@ -113,7 +113,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="tracking_contract_no"
             label="运输合同号"
@@ -125,7 +125,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -134,7 +134,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="date"
             label="到货日期"
@@ -146,7 +146,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="quantity"
             label="客户到货数量"
@@ -155,7 +155,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
             <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入客户到货数量" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="logistics_company"
             label="物流公司"

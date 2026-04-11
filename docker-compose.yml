@@ -5,24 +5,56 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: erp-frontend
+    restart: unless-stopped
     networks:
       - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`erp.henghuacheng.cn`)"
+      - "traefik.http.routers.frontend.entryPoints=websecure"
+      - "traefik.http.routers.frontend.tls.certResolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
-  pocketbase:
+  pocketbase-beijing:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8090:8090"
+    container_name: erp-pocketbase-beijing
+    command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_beijing"]
     volumes:
-      - ./backend/pb_data:/app/pb_data
+      - ./backend/pb_data_beijing:/pb_data_beijing
+    restart: unless-stopped
     networks:
       - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.beijing-api.rule=Host(`api-beijing.henghuacheng.cn`)"
+      - "traefik.http.routers.beijing-api.entryPoints=websecure"
+      - "traefik.http.routers.beijing-api.tls.certResolver=letsencrypt"
+      - "traefik.http.services.beijing-pocketbase.loadbalancer.server.port=8090"
+
+  pocketbase-lanzhou:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp-pocketbase-lanzhou
+    command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_lanzhou"]
+    volumes:
+      - ./backend/pb_data_lanzhou:/pb_data_lanzhou
     restart: unless-stopped
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lanzhou-api.rule=Host(`api-lanzhou.henghuacheng.cn`)"
+      - "traefik.http.routers.lanzhou-api.entryPoints=websecure"
+      - "traefik.http.routers.lanzhou-api.tls.certResolver=letsencrypt"
+      - "traefik.http.services.lanzhou-pocketbase.loadbalancer.server.port=8090"
 
   traefik:
     image: traefik:v2.9
-    container_name: traefik
+    container_name: erp-traefik
     command:
       - "--configFile=/etc/traefik/traefik.yml"
     ports:
@@ -30,13 +62,11 @@ services:
       - "443:443"
       - "8080:8080"
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik:/etc/traefik
     networks:
       - web
     restart: unless-stopped
-    depends_on:
-      - frontend
-      - pocketbase
 
 networks:
   web:

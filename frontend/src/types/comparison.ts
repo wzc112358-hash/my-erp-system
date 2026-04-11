@@ -342,6 +342,7 @@ export type FlowNodeType =
   | 'purchase_payment';
 
 export interface FlowNodeData {
+  [key: string]: unknown;
   flowType: FlowNodeType;
   label: string;
   title: string;

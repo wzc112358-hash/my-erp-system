@@ -610,7 +610,7 @@ export const ComparisonAPI = {
         signDate: sc.sign_date || '',
         type: 'sales' as const,
         status: sc.status,
-        created: sc.created_at || sc.created || '',
+        created: sc.created_at || '',
         pendingCount: countPending(sc.id),
       }))
       .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());

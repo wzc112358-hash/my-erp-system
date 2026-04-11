@@ -1,10 +1,11 @@
 import { Form, Input, InputNumber, DatePicker, Button, Space, Upload, Row, Col } from 'antd';
+import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ServiceOrderFormData, ServiceOrder } from '@/types/service-contract';
 
 interface ServiceOrderFormProps {
-  form: ReturnType<typeof Form.useForm>[0];
+  form: FormInstance<ServiceOrderFormData>;
   onFinish: (values: ServiceOrderFormData) => void;
   onCancel: () => void;
   contractId?: string;
@@ -58,7 +59,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       }
     >
       <Row gutter={16}>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item
             name="order_no"
             label="佣金订单号"
@@ -67,7 +68,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
             <Input placeholder="请输入佣金订单号" />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col xs={24} md={12}>
           <Form.Item name="manager" label="负责人">
             <Input placeholder="请输入负责人" />
           </Form.Item>
@@ -75,17 +76,17 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="unit_price" label="单价">
             <InputNumber placeholder="单价" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="quantity" label="数量">
             <InputNumber placeholder="数量" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="receipt_amount"
             label="收款金额 (USD)"
@@ -97,7 +98,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item
             name="receipt_date"
             label="收款时间"
@@ -106,12 +107,12 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="receipt_amount_rmb" label="收款金额RMB（兑换人民币金额）">
             <InputNumber placeholder="¥" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="receipt_rmb_date" label="收款日期RMB（兑换日期）">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
@@ -119,17 +120,17 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="invoice_amount" label="开票金额（RMB）">
             <InputNumber placeholder="开票金额" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="invoice_date" label="开票时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="tax_amount" label="报税金额（RMB）">
             <InputNumber placeholder="报税金额" min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
@@ -137,7 +138,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       </Row>
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Form.Item name="tax_date" label="报税时间">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>

@@ -18,7 +18,7 @@ export const ExpenseList: React.FC = () => {
   const [search, setSearch] = useState('');
   const [formVisible, setFormVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ExpenseRecord | null>(null);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<ExpenseRecordFormData>();
 
   const fetchData = async () => {
     setLoading(true);
@@ -80,7 +80,7 @@ export const ExpenseList: React.FC = () => {
       ...formData,
       pay_date: record.pay_date ? dayjs(record.pay_date.split(' ')[0]) : undefined,
       attachments,
-    });
+    } as unknown as Partial<ExpenseRecordFormData>);
     setFormVisible(true);
   };
 

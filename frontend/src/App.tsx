@@ -16,12 +16,12 @@ function App() {
           colorText: '#333333',
           colorTextSecondary: '#999999',
           colorBgLayout: '#FFFFFF',
-          borderRadius: 8,
+          borderRadius: 12,
           fontFamily: 'Inter, PingFang SC, Helvetica, sans-serif',
         },
         components: {
           Button: {
-            borderRadius: 8,
+            borderRadius: 12,
             primaryShadow: 'none',
           },
           Table: {
