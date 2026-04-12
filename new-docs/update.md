@@ -1656,17 +1656,20 @@ OverviewPage 和 ProgressFlowPage 在移动端:
 ### 部署步骤总览
 
 ```
-步骤 1: DNS 解析配置                           [手动]
-步骤 2: 前端构建验证 (npm run build)             [代码]
-步骤 3: 新建 frontend/nginx.conf                [代码]
-步骤 4: 修改 frontend/Dockerfile                [代码]
-步骤 5: 重写 docker-compose.yml                 [代码]
-步骤 6: 重写 traefik/dynamic.toml               [代码]
-步骤 7: 上传代码到服务器                         [手动]
-步骤 8: docker compose up -d --build            [手动]
-步骤 9: PocketBase 管理员创建 + CORS 配置        [手动]
-步骤 10: 兰州系统集合创建 (手动建表)              [手动]
-步骤 11: 功能验证                               [手动]
+步骤 1: DNS 解析配置                              [手动] ✅ 已完成
+步骤 2: 前端构建验证 (npm run build)                [代码] ✅ 已完成
+步骤 3: 新建 frontend/nginx.conf                   [代码] ✅ 已完成
+步骤 4: 修改 frontend/Dockerfile                   [代码] ✅ 已完成
+步骤 5: 重写 docker-compose.yml                    [代码] ✅ 已完成
+步骤 6: 重写 traefik/dynamic.toml                  [代码] ✅ 已完成
+步骤 7: 本地构建后端二进制文件 (Docker 编译 Go)      [代码] ✅ 已完成
+步骤 8: 本地打包项目 (tar)                          [代码]
+步骤 9: 上传压缩包到服务器 (scp)                    [手动]
+步骤 10: 服务器上解压并准备                         [手动]
+步骤 11: 启动 Docker 容器                           [手动]
+步骤 12: PocketBase 管理员创建 + CORS 配置          [手动]
+步骤 13: 兰州系统集合创建 (手动建表)                [手动]
+步骤 14: 功能验证                                  [手动]
 ```
 
 ---
@@ -1759,11 +1762,19 @@ server {
 
 ### 步骤 4: 修改 frontend/Dockerfile [代码]
 
-**修改要点**: 在运行阶段增加 COPY nginx.conf。
+> **为什么简化**: 服务器内存不足，无法在 Docker 内执行 `npm install` + `npm run build`。
+> 改为使用步骤 2 本地已构建好的 `dist/` 目录，Dockerfile 只做 COPY，服务器上无需 Node.js 编译。
+
+**修改为**：
 
 ```dockerfile
-# 运行阶段新增：
+FROM nginx:alpine
+
+COPY dist/ /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 ```
 
 **无需构建参数**：因为前端只有一份镜像，API 域名在运行时通过 `pocketbase.ts` 动态选择。
@@ -1775,8 +1786,6 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 **改动要点**:
 
 ```yaml
-version: '3.8'
-
 services:
   frontend:
     build:
@@ -1856,15 +1865,7 @@ networks:
 - 路由通过 Docker labels 定义，不再依赖 `dynamic.toml` 中的服务定义
 - 两个 PocketBase 实例各自挂载独立数据目录
 - 北京系统继续使用现有的 `pb_data`（需重命名为 `pb_data_beijing`）
-
-**北京系统数据目录迁移**（在服务器上执行）:
-
-```bash
-cd /path/to/my-erp-system/backend
-mv pb_data pb_data_beijing
-mkdir -p pb_data_lanzhou
-chmod -R 777 pb_data_lanzhou
-```
+- 移除了 `version: '3.8'`（新版 Docker Compose 不再需要）
 
 ---
 
@@ -1889,150 +1890,342 @@ chmod -R 777 pb_data_lanzhou
 
 ---
 
-### 步骤 7: 上传代码到服务器 [手动]
+### 步骤 7: 本地构建后端二进制文件 [代码]
 
-**操作**:
+> **为什么需要**: 服务器内存不足，无法在 Docker 容器内编译 Go（CGO_ENABLED=1 编译 PocketBase 需要较大内存）。
+> 改为在本地预先编译好 Linux x86_64 二进制文件，打包时直接带上，服务器上无需编译。
+
+**操作位置**: 本地开发机
+
+**构建命令**（使用 Docker 容器编译，本地不需要安装 Go）：
 
 ```bash
-# 方式一：git pull（推荐）
-ssh user@server
-cd /path/to/my-erp-system
-git pull origin main
+docker run --rm \
+  -v /home/wzc11/projects/my-erp-system/backend:/app \
+  -w /app \
+  -e GOPROXY=https://goproxy.cn,direct \
+  golang:1.24-alpine \
+  sh -c "apk add --no-cache gcc musl-dev && CGO_ENABLED=1 GOOS=linux go build -ldflags='-s -w' -o pocketbase ."
+```
 
-# 方式二：rsync
-rsync -avz --exclude=node_modules --exclude=.git ./ user@server:/path/to/my-erp-system/
+**构建完成后验证**:
+
+```bash
+ls -lh backend/pocketbase
+# 预期: ~25MB
+
+file backend/pocketbase
+# 预期: ELF 64-bit LSB executable, x86-64
+```
+
+> ⚠️ 此二进制文件是 Linux x86_64 架构，不能在本地 macOS/Windows 上直接运行，只在服务器上使用。
+
+---
+
+### 步骤 8: 本地打包项目 [代码]
+
+**操作位置**: 本地开发机
+
+**打包命令**（排除不需要的文件，**包含预编译的 pocketbase 二进制和前端 dist**）：
+
+```bash
+cd /home/wzc11/projects
+
+tar -czf my-erp-system.tar.gz \
+  --exclude='node_modules' \
+  --exclude='.git' \
+  --exclude='*.db-shm' \
+  --exclude='*.db-wal' \
+  --exclude='acme.json' \
+  my-erp-system/
+```
+
+**排除说明**:
+
+| 排除项 | 原因 |
+|--------|------|
+| `node_modules/` | 服务器上不需要安装依赖，上传浪费时间 |
+| `.git/` | 部署不需要版本历史 |
+| `*.db-shm` / `*.db-wal` | SQLite 临时文件，不应跨机器复制 |
+| `acme.json` | root 权限文件无法读取，服务器上 Traefik 会自动重新签发证书 |
+
+**包含说明**:
+
+| 包含项 | 说明 |
+|--------|------|
+| `frontend/dist/` | 步骤 2 本地预构建的前端产物，服务器直接使用 |
+| `backend/pocketbase` | 步骤 7 本地预编译的二进制文件（~25MB），服务器直接使用 |
+| `backend/pb_data/` | 北京系统的完整数据库 + 上传文件 |
+| `backend/Dockerfile` | 简化版，只做 `COPY pocketbase .`，不编译 |
+| `frontend/Dockerfile` | 简化版，只做 `COPY dist/`，不编译 |
+| `frontend/nginx.conf` | SPA 路由回退配置 |
+| `docker-compose.yml` | 双系统部署配置 |
+| `traefik/` | Traefik 配置文件（不含 acme.json） |
+
+**打包后检查**:
+
+```bash
+ls -lh my-erp-system.tar.gz
+# 预期大小约 20-30 MB
 ```
 
 ---
 
-### 步骤 8: 启动容器 [手动]
+### 步骤 9: 上传压缩包到服务器 [手动]
 
-**前置操作 — 迁移北京数据目录**:
+**操作位置**: 本地开发机
 
 ```bash
-cd /path/to/my-erp-system/backend
-mv pb_data pb_data_beijing
-mkdir -p pb_data_lanzhou
-chmod -R 777 pb_data_lanzhou
+scp /home/wzc11/projects/my-erp-system.tar.gz root@<服务器IP>:/root/
 ```
 
-**启动**:
+---
+
+### 步骤 10: 服务器上解压并准备 [手动]
+
+**操作位置**: SSH 登录服务器后
 
 ```bash
-cd /path/to/my-erp-system
+# 10.1 如果之前解压过旧版本，先清理
+rm -rf /root/my-erp-system
 
-# 首次启动（构建镜像 + 启动）
+# 10.2 解压
+cd /root
+tar -xzf my-erp-system.tar.gz
+cd my-erp-system
+
+# 10.3 确认预编译二进制文件存在
+ls -la backend/pocketbase
+# 应显示 ~25MB 的可执行文件
+
+# 10.4 迁移北京系统数据目录
+cd backend
+mv pb_data pb_data_beijing
+
+# 10.5 创建兰州系统数据目录（空目录，PocketBase 首次启动时自动初始化）
+mkdir -p pb_data_lanzhou
+chmod -R 777 pb_data_lanzhou
+
+# 10.6 回到项目根目录，确认目录结构正确
+cd /root/my-erp-system
+
+ls -la backend/pocketbase           # ✅ 预编译二进制文件存在
+ls -la backend/pb_data_beijing/     # ✅ 应能看到 data.db, storage/ 等
+ls -la backend/pb_data_lanzhou/     # ✅ 应为空目录
+ls -la docker-compose.yml           # ✅ 部署配置存在
+ls -la traefik/                     # ✅ 应有 traefik.yml, dynamic.toml
+
+# 10.7 创建 acme.json（Let's Encrypt 证书存储，Traefik 自动写入）
+touch traefik/acme.json
+chmod 600 traefik/acme.json
+```
+
+---
+
+### 步骤 11: 启动 Docker 容器 [手动]
+
+**操作位置**: 服务器 SSH 终端
+
+```bash
+cd /root/my-erp-system
 docker compose up -d --build
+```
 
-# 查看构建日志
+**构建过程说明**：
+
+前端和后端均在本地预构建，服务器上**无需任何编译**，只需要 COPY 文件到镜像：
+
+| 顺序 | 服务 | 构建内容 | 预计耗时 |
+|------|------|----------|----------|
+| 1 | `frontend` | 仅 COPY `dist/` 到 Nginx 镜像（**无需 npm install / build**） | 2-3 秒 |
+| 2 | `pocketbase-beijing` | 仅 COPY 预编译二进制到 Alpine 镜像 | 5-10 秒 |
+| 3 | `pocketbase-lanzhou` | 同上（使用相同 Dockerfile，有 Docker 缓存） | 2-5 秒 |
+| 4 | `traefik` | 直接拉取 `traefik:v2.9` 镜像 | 30-60 秒 |
+
+> 总预计耗时：**约 1-2 分钟**（主要等待拉取基础镜像）。
+
+**查看构建/启动日志**:
+
+```bash
+# 实时查看所有容器日志
 docker compose logs -f
 
-# 检查容器状态
+# 只看某个服务的日志
+docker compose logs -f frontend
+docker compose logs -f pocketbase-beijing
+docker compose logs -f pocketbase-lanzhou
+docker compose logs -f traefik
+```
+
+**检查容器状态**:
+
+```bash
 docker compose ps
 ```
 
-**预期结果**: 5 个容器全部 Running：
-- `erp-frontend`
-- `erp-pocketbase-beijing`
-- `erp-pocketbase-lanzhou`
-- `erp-traefik`
+**预期输出**（4 个容器全部 `Up`）:
 
-**可能遇到的问题**:
+```
+NAME                    STATUS
+erp-frontend            Up
+erp-pocketbase-beijing  Up
+erp-pocketbase-lanzhou  Up
+erp-traefik             Up
+```
 
-| 问题 | 解决方案 |
-|------|----------|
-| 构建时 npm install 失败 | 检查 `.docker/config.json` 代理配置是否正确 |
-| tsc -b 报错 | 修改 `package.json` build 脚本为 `vite build` |
-| Let's Encrypt 签发失败 | 确认 DNS 已生效、80/443 端口开放、acme.json 权限 600 |
-| 容器启动后立即退出 | `docker compose logs <service>` 查看错误日志 |
-| PocketBase 数据目录权限问题 | `chmod -R 777 ./backend/pb_data_beijing ./backend/pb_data_lanzhou` |
+**可能遇到的问题与解决方案**:
+
+| 问题 | 排查命令 | 解决方案 |
+|------|----------|----------|
+| 前端容器 404 | `docker compose logs frontend` | 确认 `frontend/dist/` 目录存在且包含 `index.html` |
+| PocketBase 报 `not found` 或 `permission denied` | `docker compose logs pocketbase-beijing` | 确认 `backend/pocketbase` 二进制存在且有执行权限：`chmod +x backend/pocketbase` |
+| PocketBase 容器立即退出 | `docker compose logs pocketbase-beijing` | 检查数据目录权限：`chmod -R 777 ./backend/pb_data_beijing` |
+| Let's Encrypt 证书签发失败 | `docker compose logs traefik` | 确认 DNS 已生效、80/443 端口开放、`acme.json` 权限 600 |
+| Traefik 找不到路由 | `docker compose logs traefik` | 确认 `docker.sock` 已挂载：`ls /var/run/docker.sock` |
+
+**重新构建（如果修改了代码后）**:
+
+```bash
+docker compose up -d --build
+```
+
+**完全清理后重建**:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
 
 ---
 
-### 步骤 9: PocketBase 管理员创建 + CORS 配置 [手动]
+### 步骤 12: PocketBase 管理员创建 + CORS 配置 [手动]
 
-#### 9.1 北京系统
+> 前提：步骤 11 容器全部启动成功，且 DNS 已生效。
+> 验证方法：`docker compose ps` 显示 4 个容器全部 `Up`。
 
-北京系统沿用已有数据，管理员账号已存在，只需配置 CORS。
+#### 12.1 北京系统
 
-访问管理后台：`https://api-beijing.henghuacheng.cn/_/`
+北京系统沿用已有数据（从本地 `pb_data` 迁移而来），管理员账号已存在。
 
-在 Settings → Application 中添加 CORS 允许来源：
+1. 浏览器访问管理后台：`https://api-beijing.henghuacheng.cn/_/`
+2. 使用已有管理员账号登录
+3. 进入左侧菜单 **Settings** → 顶部 **Application**
+4. 找到 **CORS (Cross-Origin Resource Sharing)** 区域
+5. 在 **Allowed origins** 中添加：`https://erp.henghuacheng.cn`
+6. 点击 **Save** 保存
 
-```
-https://erp.henghuacheng.cn
-```
+#### 12.2 兰州系统
 
-#### 9.2 兰州系统
+兰州系统是新实例，PocketBase 首次启动后数据库为空。
 
-兰州系统是新实例，需要先创建管理员。
+1. 浏览器访问管理后台：`https://api-lanzhou.henghuacheng.cn/_/`
+2. 首次访问会提示 **创建超级管理员账号**，填写邮箱和密码后提交
+3. 使用新创建的管理员账号登录
+4. 进入左侧菜单 **Settings** → 顶部 **Application**
+5. 找到 **CORS (Cross-Origin Resource Sharing)** 区域
+6. 在 **Allowed origins** 中添加：`https://erp.henghuacheng.cn`
+7. 点击 **Save** 保存
 
-访问管理后台：`https://api-lanzhou.henghuacheng.cn/_/`
-
-首次访问会提示创建管理员账号，创建后同样在 Settings → Application 中添加 CORS：
-
-```
-https://erp.henghuacheng.cn
-```
-
-> **重要**: 两个后端的 CORS 都允许同一个前端域名 `erp.henghuacheng.cn`。不配置 CORS 会导致前端请求被浏览器拦截，所有 API 调用失败。
-
----
-
-### 步骤 10: 兰州系统集合创建 [手动]
-
-> ⚠️ `pb_migrations/` 目录当前为空，没有自动迁移脚本。
-
-#### 方案：手动在管理后台创建集合
-
-访问兰州系统管理后台 `https://api-lanzhou.henghuacheng.cn/_/`，按照以下顺序创建集合：
-
-**创建顺序（按依赖关系）**:
-
-1. **users** — 用户表（PocketBase 内置，可能已自动创建）
-2. **customers** — 客户表
-3. **suppliers** — 供应商表
-4. **sales_contracts** — 销售合同表（含 `creator_user` relation → users）
-5. **purchase_contracts** — 采购合同表（含 `creator_user` relation → users，`sales_contract` relation → sales_contracts）
-6. **sales_shipments** — 销售发货表（relation → sales_contracts）
-7. **purchase_arrivals** — 采购到货表（relation → purchase_contracts）
-8. **sale_invoices** — 销售发票表
-9. **purchase_invoices** — 采购发票表（含 `is_verified` select 字段）
-10. **sale_receipts** — 销售收款表
-11. **purchase_payments** — 采购付款表
-12. **notifications** — 采购通知表
-13. **notifications_02** — 销售通知表
-14. **service_contracts** — 服务大合同表（含 `creator_user` relation → users）
-15. **service_orders** — 佣金子订单表（relation → service_contracts）
-16. **expense_records** — 资金支出表（含 `creator_user` relation → users）
-17. **bidding_records** — 投标记录表（含 `sales_contract` relation → sales_contracts）
-
-**每个集合的字段定义**: 参照本文档步骤 A-H 中的 PocketBase 字段说明，以及 `frontend/src/types/` 下的类型定义。
-
-**每个集合的权限规则**: 参照 `AGENTS.md` 中的权限矩阵：
-- 销售相关集合：销售角色 CRUD 本人创建，经理只读
-- 采购相关集合：采购角色 CRUD 本人创建，经理只读
-- 经理对所有集合有只读权限
-
-> **替代方案**: 如果有北京系统的 PocketBase 备份文件，可以通过管理后台的 Import 功能快速恢复所有集合结构和权限。
+> **重要**:
+> - 两个后端的 CORS 都允许同一个前端域名 `erp.henghuacheng.cn`
+> - 不配置 CORS 会导致前端请求被浏览器拦截（浏览器控制台报 CORS 错误），所有 API 调用失败
+> - 验证 CORS 是否生效：浏览器 F12 → Console，不应有 `Access-Control-Allow-Origin` 报错
 
 ---
 
-### 步骤 11: 功能验证 [手动]
+### 步骤 13: 兰州系统集合创建 [手动]
+
+> ⚠️ `pb_migrations/` 目录当前为空，没有自动迁移脚本。兰州系统的 PocketBase 数据库是空的，需要手动创建所有集合。
+
+#### 13.1 创建集合
+
+访问兰州系统管理后台 `https://api-lanzhou.henghuacheng.cn/_/`，进入左侧 **Collections** 页面，点击 **New collection**，按以下顺序逐个创建：
+
+**创建顺序（按依赖关系排列，有 relation 的集合必须在被引用集合之后创建）**:
+
+| # | 集合名 | 说明 | 关键字段注意点 |
+|---|--------|------|---------------|
+| 1 | `users` | 用户表 | PocketBase 内置，可能已自动创建，需确认有 `type` 字段（select: sales, purchasing, manager） |
+| 2 | `customers` | 客户表 | 字段参照 `frontend/src/types/customer.ts` |
+| 3 | `suppliers` | 供应商表 | 字段参照 `frontend/src/types/supplier.ts` |
+| 4 | `sales_contracts` | 销售合同表 | 需 `creator_user` relation → users；`customer` relation → customers |
+| 5 | `purchase_contracts` | 采购合同表 | 需 `creator_user` relation → users；`sales_contract` relation → sales_contracts；`supplier` relation → suppliers |
+| 6 | `sales_shipments` | 销售发货表 | `contract` relation → sales_contracts |
+| 7 | `purchase_arrivals` | 采购到货表 | `contract` relation → purchase_contracts |
+| 8 | `sale_invoices` | 销售发票表 | `contract` relation → sales_contracts |
+| 9 | `purchase_invoices` | 采购发票表 | `contract` relation → purchase_contracts；需 `is_verified` select（yes, no）；需 `manager_confirmed` select（pending, confirmed, rejected） |
+| 10 | `sale_receipts` | 销售收款表 | `contract` relation → sales_contracts |
+| 11 | `purchase_payments` | 采购付款表 | `contract` relation → purchase_contracts |
+| 12 | `notifications` | 采购通知表 | 字段参照 `frontend/src/types/notification.ts` |
+| 13 | `notifications_02` | 销售通知表 | 字段参照 `frontend/src/types/sales-notification.ts` |
+| 14 | `service_contracts` | 服务大合同表 | 需 `creator_user` relation → users；`customer` relation → customers |
+| 15 | `service_orders` | 佣金子订单表 | `service_contract` relation → service_contracts |
+| 16 | `expense_records` | 资金支出表 | 需 `creator_user` relation → users |
+| 17 | `bidding_records` | 投标记录表 | 需 `sales_contract` relation → sales_contracts（可选）；`bid_result` select（pending, won, lost） |
+
+**每个集合的详细字段定义**:
+- 参照本文档步骤 A-H 中各步骤的「PocketBase 后台创建集合」小节
+- 参照 `frontend/src/types/` 下对应的 TypeScript 类型文件（类型字段名即 PocketBase 字段名）
+
+#### 13.2 配置集合权限
+
+每个集合创建后，点击集合名称进入详情，然后点击右上角 **齿轮图标（Settings）** → **API Rules** 标签页，配置规则：
+
+**通用权限模板**（适用于大多数业务集合）:
+
+| 规则类型 | 销售相关集合 | 采购相关集合 | users |
+|----------|-------------|-------------|-------|
+| List/View | `@request.auth.id != ""` | `@request.auth.id != ""` | `@request.auth.id != ""` |
+| Create | `@request.auth.type = "sales"` | `@request.auth.type = "purchasing"` | 管理员仅通过后台创建 |
+| Update | `@request.auth.id = creator` | `@request.auth.id = creator` | 仅管理员 |
+| Delete | `@request.auth.id = creator` | `@request.auth.id = creator` | 仅管理员 |
+
+**特殊集合权限**:
+
+| 集合 | 说明 |
+|------|------|
+| `notifications` | 采购端通知，`List/View`: `recipient = @request.auth.id` |
+| `notifications_02` | 销售端通知，`List/View`: `recipient = @request.auth.id` |
+| `customers` | 销售 CRUD，采购/经理只读 |
+| `suppliers` | 采购 CRUD，销售/经理只读 |
+
+#### 13.3 创建测试用户
+
+集合创建完成后，需要在兰州系统中创建测试用户：
+
+1. 在管理后台左侧点击 **Collections** → 点击 **users** 集合
+2. 点击右上角 **New record** 按钮
+3. 创建以下测试账号:
+
+| 角色 | email | password | type |
+|------|-------|----------|------|
+| 销售职员 | `sales@test.com` | `12345678` | `sales` |
+| 采购职员 | `purchase@test.com` | `12345678` | `purchasing` |
+| 经理 | `manager@test.com` | `12345678` | `manager` |
+
+> **替代方案**: 如果有北京系统的 PocketBase 备份，可以通过管理后台的 Import 功能快速恢复集合结构和权限，无需手动创建。
+
+---
+
+### 步骤 14: 功能验证 [手动]
+
+> 前提：步骤 11-13 全部完成。
 
 **验证清单**:
 
-| # | 验证项 | 操作 |
-|---|--------|------|
-| 1 | HTTPS 证书 | 浏览器访问 3 个域名，确认小锁图标 |
-| 2 | 系统选择页 | 访问 `erp.henghuacheng.cn`，能看到北京/兰州系统选择 |
-| 3 | 北京系统登录 | 选择北京系统 → 登录测试账号 → 能看到数据 |
-| 4 | 兰州系统登录 | 选择兰州系统 → 登录测试账号 → 能进入系统 |
-| 5 | 系统切换 | 退出后切换到另一个系统，API 指向正确 |
-| 6 | CRUD 操作 | 创建/编辑/删除一条记录 |
-| 7 | 文件上传 | 上传附件确认正常 |
-| 8 | 通知功能 | 触发业务操作后检查通知 |
-| 9 | PWA | 浏览器地址栏出现安装图标 |
+| # | 验证项 | 操作方法 | 预期结果 |
+|---|--------|----------|----------|
+| 1 | HTTPS 证书 | 浏览器访问 `https://erp.henghuacheng.cn` | 地址栏显示小锁图标，无证书警告 |
+| 2 | 系统选择页 | 访问 `erp.henghuacheng.cn` | 显示「北京系统」和「兰州系统」两个选项 |
+| 3 | 北京系统登录 | 选择北京系统 → 用已有账号登录 | 能正常登录，看到已有数据（客户、合同等） |
+| 4 | 兰州系统登录 | 退出 → 选择兰州系统 → 用 `sales@test.com` 登录 | 能正常登录，进入销售模块 |
+| 5 | 系统切换验证 | 退出 → 切换到另一个系统 | API 请求指向正确的后端（浏览器 F12 → Network 面板可确认） |
+| 6 | CRUD 操作 | 在任意模块创建/编辑/删除一条记录 | 操作成功，列表刷新后可见 |
+| 7 | 文件上传 | 在任意表单中上传附件 | 上传成功，能下载查看 |
+| 8 | 通知功能 | 销售创建合同后，采购端收到通知 | 采购通知列表出现新通知 |
+| 9 | 经理模块 | 用经理账号登录，查看合同总览/进度/报表 | 页面正常加载，数据正确 |
+| 10 | PWA | Chrome 浏览器地址栏 | 出现安装图标，可安装为桌面应用 |
+| 11 | PB 管理后台 | 访问 `https://api-beijing.henghuacheng.cn/_/` 和 `https://api-lanzhou.henghuacheng.cn/_/` | 均能正常登录管理后台 |
 
 ---
 
@@ -2040,12 +2233,16 @@ https://erp.henghuacheng.cn
 
 | 文件 | 操作 | 步骤 | 类型 |
 |------|------|------|------|
-| `frontend/nginx.conf` | **新建** | 3 | [代码] |
-| `frontend/Dockerfile` | 修改 | 4 | [代码] |
-| `docker-compose.yml` | 重写 | 5 | [代码] |
-| `traefik/dynamic.toml` | 重写 | 6 | [代码] |
+| `frontend/nginx.conf` | **新建** | 3 | [代码] ✅ 已完成 |
+| `frontend/Dockerfile` | 简化为直接复制 dist | 4 | [代码] ✅ 已完成 |
+| `docker-compose.yml` | 重写 | 5 | [代码] ✅ 已完成 |
+| `traefik/dynamic.toml` | 重写 | 6 | [代码] ✅ 已完成 |
+| `backend/pocketbase` | 本地预编译 | 7 | [代码] ✅ 已完成 |
+| `backend/Dockerfile` | 简化为直接复制二进制 | 5 | [代码] ✅ 已完成 |
 
 > `frontend/src/lib/pocketbase.ts` 无需修改，已实现运行时选择。
+>
+> **服务器上无需任何编译**：前端 dist 和后端二进制均在本地预构建，Docker 只做 COPY。
 
 ---
 
@@ -2053,12 +2250,13 @@ https://erp.henghuacheng.cn
 
 | # | 步骤 | 何时执行 | 说明 |
 |---|------|----------|------|
-| 1 | DNS 配置 | 代码修改前 | 删除旧记录 3 条，新增 A 记录 3 条 |
-| 7 | 上传代码 | 代码修改后 | git pull 或 rsync |
-| 8 | 启动容器 | 上传后 | 先迁移 pb_data，再 docker compose up |
-| 9 | PB 管理员 + CORS | 容器启动后 | 两个系统分别配置 CORS 为 `erp.henghuacheng.cn` |
-| 10 | 兰州建表 | CORS 配置后 | 手动创建 17 个集合 |
-| 11 | 功能验证 | 全部完成后 | 按清单逐项验证 |
+| 1 | DNS 配置 | 最先执行 | ✅ 已完成 |
+| 9 | 上传到服务器 | 打包后 | `scp` 上传 |
+| 10 | 服务器解压+准备 | 上传后 | 解压 + 迁移 pb_data + 创建 acme.json |
+| 11 | 启动容器 | 准备后 | `docker compose up -d --build`，约 1-2 分钟（前后端均无需编译） |
+| 12 | PB 管理员 + CORS | 容器启动后 | 北京只配 CORS，兰州先创建管理员再配 CORS |
+| 13 | 兰州建表 | CORS 配置后 | 手动创建 17 个集合 + 权限 + 测试用户 |
+| 14 | 功能验证 | 全部完成后 | 按清单 11 项逐项验证 |
 
 ---
 

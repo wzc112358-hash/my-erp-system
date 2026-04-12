@@ -14,6 +14,8 @@ entryPoints:
 providers:
   file:
     filename: /etc/traefik/dynamic.toml
+  docker:
+    exposedByDefault: false
 
 certificatesResolvers:
   letsencrypt:

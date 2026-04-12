@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, App, Card } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/auth';
 import { getCurrentSystemName } from '@/lib/pocketbase';
 
@@ -43,6 +43,14 @@ export const Login: React.FC = () => {
       <Card
         style={{ width: 400 }}
       >
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/select-system')}
+          style={{ marginBottom: 16, padding: 0, color: '#666' }}
+        >
+          返回选择系统
+        </Button>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <h1 style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 8 }}>
             {getCurrentSystemName()}企业采购销售管理系统

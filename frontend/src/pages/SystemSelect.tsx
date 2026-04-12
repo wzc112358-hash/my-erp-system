@@ -1,12 +1,13 @@
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from 'antd';
+import { switchSystem } from '@/lib/pocketbase';
 import './SystemSelect.css';
 
 const SystemSelect = () => {
   const navigate = useNavigate();
 
   const handleSelectSystem = (system: 'beijing' | 'lanzhou') => {
-    localStorage.setItem('erp_system', system);
+    switchSystem(system);
     navigate('/login');
   };
 

@@ -24,6 +24,12 @@ const getApiBaseUrl = (): string => {
 };
 
 export const pb = new PocketBase(getApiBaseUrl());
+
+export const switchSystem = (system: string) => {
+  localStorage.setItem('erp_system', system);
+  pb.baseUrl = getApiBaseUrl();
+};
+
 export const API_BASE_URL = getApiBaseUrl();
 export const getCurrentSystemName = (): string => {
   const system = getCurrentSystem();
