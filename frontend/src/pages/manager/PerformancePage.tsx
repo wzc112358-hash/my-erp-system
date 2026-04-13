@@ -10,8 +10,8 @@ const detailColumns = [
   { title: '合同编号', dataIndex: 'no', key: 'no' },
   { title: '品名', dataIndex: 'product_name', key: 'product_name' },
   { title: '签订日期', dataIndex: 'sign_date', key: 'sign_date', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD') : '-' },
-  { title: '总金额', dataIndex: 'total_amount', key: 'total_amount', render: (v: number) => `¥${v?.toLocaleString() || 0}` },
-  { title: '数量(吨)', dataIndex: 'total_quantity', key: 'total_quantity', render: (v: number) => v?.toFixed(2) || '0.00' },
+  { title: '总金额', dataIndex: 'total_amount', key: 'total_amount', render: (v: number) => `¥${(v ?? 0).toFixed(4)}` },
+  { title: '数量(吨)', dataIndex: 'total_quantity', key: 'total_quantity', render: (v: number) => v?.toFixed(4) || '0.00' },
 ];
 
 function makeColumns(): import('antd/es/table').ColumnsType<UserPerformance> {
@@ -35,7 +35,7 @@ function makeColumns(): import('antd/es/table').ColumnsType<UserPerformance> {
       key: 'totalAmount',
       width: 180,
       sorter: (a, b) => a.totalAmount - b.totalAmount,
-      render: (v: number) => `¥${v.toLocaleString()}`,
+      render: (v: number) => `¥${v.toFixed(4)}`,
     },
     {
       title: '金额占比',
@@ -108,7 +108,7 @@ export const PerformancePage: React.FC = () => {
             <Table.Summary.Row>
               <Table.Summary.Cell index={0}><strong>合计</strong></Table.Summary.Cell>
               <Table.Summary.Cell index={1}><strong>{totalContracts}</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={2}><strong>¥{totalAmount.toLocaleString()}</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={2}><strong>¥{totalAmount.toFixed(4)}</strong></Table.Summary.Cell>
               <Table.Summary.Cell index={3}><strong>100%</strong></Table.Summary.Cell>
             </Table.Summary.Row>
           );

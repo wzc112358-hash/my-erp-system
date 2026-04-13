@@ -15,6 +15,7 @@ export interface SalesNotification {
       product_name: string;
       supplier: string;
       total_amount: number;
+      is_cross_border?: boolean;
     };
     recipient?: {
       id: string;

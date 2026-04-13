@@ -7,6 +7,8 @@ export interface SalesContract {
   total_amount: number;
   unit_price: number;
   total_quantity: number;
+  is_price_excluding_tax: boolean;
+  is_cross_border: boolean;
   executed_quantity: number;
   execution_percent: number;
   receipted_amount: number;
@@ -20,7 +22,7 @@ export interface SalesContract {
   sign_date: string;
   status: 'executing' | 'completed' | 'cancelled';
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   sales_manager?: string;
   created: string;
@@ -66,6 +68,8 @@ export interface SalesContractFormData {
   product_name: string;
   unit_price: number;
   total_quantity: number;
+  is_price_excluding_tax?: boolean;
+  is_cross_border?: boolean;
   sign_date: string;
   remark?: string;
   sales_manager?: string;
@@ -86,6 +90,8 @@ export interface SalesContractCreateData {
   product_name: string;
   unit_price: number;
   total_quantity: number;
+  is_price_excluding_tax?: boolean;
+  is_cross_border?: boolean;
   sign_date: string;
   remark?: string;
   sales_manager?: string;
@@ -119,7 +125,7 @@ export interface SaleInvoice {
   amount: number;
   issue_date: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   created: string;
   updated?: string;
@@ -130,6 +136,7 @@ export interface SaleInvoice {
       no: string;
       product_name: string;
       uninvoiced_amount?: number;
+      is_cross_border?: boolean;
     };
     creator?: {
       id: string;
@@ -167,7 +174,7 @@ export interface SaleReceipt {
   method?: string;
   account?: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   created: string;
   updated?: string;

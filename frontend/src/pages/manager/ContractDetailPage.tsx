@@ -5,13 +5,15 @@ import { LeftOutlined, UploadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { ContractDetailData } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import dayjs from 'dayjs';
 
-const formatCurrency = (value: number) => `¥${value?.toLocaleString() || 0}`;
+const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(4)}`;
+const formatUSD = (value: number) => `$${(value ?? 0).toFixed(4)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
-const percentFormat = (value: number) => `${value.toFixed(2)}%`;
+const percentFormat = (value: number) => `${value.toFixed(4)}%`;
 
 interface ProfitCalc {
   operatingProfit: number;
@@ -26,24 +28,55 @@ interface ProfitCalc {
   quantityMatched: boolean;
 }
 
-const calcProfit = (data: ContractDetailData): ProfitCalc => {
+const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
-  const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
-
-  const operatingProfit = sc.total_amount / 1.13 - purchaseTotalAmount / 1.13 - data.profit.total_freight - data.profit.total_miscellaneous;
-  const taxAmount = (sc.total_amount - purchaseTotalAmount) * 0.1881;
-  const netProfit = sc.total_amount - purchaseTotalAmount - taxAmount - data.profit.total_freight - data.profit.total_miscellaneous;
-
+  const salesAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+  const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
+    const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+    return sum + amountCny;
+  }, 0);
+  const freightCny = data.purchase_contracts.reduce((sum, pc) => {
+    return sum + (pc.is_cross_border ? data.profit.total_freight : data.profit.total_freight);
+  }, 0) > 0 || data.profit.total_freight > 0 ? data.profit.total_freight : 0;
+  const miscCny = data.profit.total_miscellaneous;
+  const isExTax = sc.is_price_excluding_tax;
+  const salesIncTax = isExTax ? salesAmountCny * 1.13 : salesAmountCny;
+  const salesExTax = isExTax ? salesAmountCny : salesAmountCny / 1.13;
+  const operatingProfit = salesExTax - purchaseTotalAmountCny / 1.13 - freightCny - miscCny;
+  const taxAmount = (salesIncTax - purchaseTotalAmountCny) * 0.1881;
+  const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny;
   return {
-    operatingProfit,
-    taxAmount,
-    netProfit,
-    salesAmountIncTax: sc.total_amount,
+    operatingProfit, taxAmount, netProfit,
+    salesAmountIncTax: salesIncTax,
+    purchaseAmountIncTax: purchaseTotalAmountCny,
+    salesAmountExTax: salesExTax,
+    purchaseAmountExTax: purchaseTotalAmountCny / 1.13,
+    totalFreight: freightCny,
+    totalMiscellaneous: miscCny,
+    quantityMatched: data.profit.is_quantity_matched,
+  };
+};
+
+const calcProfitUSD = (data: ContractDetailData): ProfitCalc => {
+  const sc = data.sales_contract;
+  const salesAmount = sc.total_amount;
+  const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
+  const freight = data.profit.total_freight;
+  const misc = data.profit.total_miscellaneous;
+  const isExTax = sc.is_price_excluding_tax;
+  const salesIncTax = isExTax ? salesAmount * 1.13 : salesAmount;
+  const salesExTax = isExTax ? salesAmount : salesAmount / 1.13;
+  const operatingProfit = salesExTax - purchaseTotalAmount / 1.13 - freight - misc;
+  const taxAmount = (salesIncTax - purchaseTotalAmount) * 0.1881;
+  const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc;
+  return {
+    operatingProfit, taxAmount, netProfit,
+    salesAmountIncTax: salesIncTax,
     purchaseAmountIncTax: purchaseTotalAmount,
-    salesAmountExTax: sc.total_amount / 1.13,
+    salesAmountExTax: salesExTax,
     purchaseAmountExTax: purchaseTotalAmount / 1.13,
-    totalFreight: data.profit.total_freight,
-    totalMiscellaneous: data.profit.total_miscellaneous,
+    totalFreight: freight,
+    totalMiscellaneous: misc,
     quantityMatched: data.profit.is_quantity_matched,
   };
 };
@@ -67,6 +100,9 @@ const ContractDetailPage: React.FC = () => {
   const [detailData, setDetailData] = useState<ContractDetailData | null>(null);
   const [uploading, setUploading] = useState(false);
   const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -229,14 +265,27 @@ const ContractDetailPage: React.FC = () => {
   const renderSalesInfo = () => {
     if (!detailData) return null;
     const sc = detailData.sales_contract;
+    const isCrossBorder = sc.is_cross_border;
+    const totalAmountLabel = isCrossBorder
+      ? (sc.is_price_excluding_tax ? '总金额（不含税，USD）' : '总金额（USD）')
+      : (sc.is_price_excluding_tax ? '总金额（不含税）' : '总金额');
+    const totalAmountDisplay = isCrossBorder
+      ? `$${sc.total_amount.toFixed(4)}（≈ ¥${(sc.total_amount  * exchangeRate).toFixed(4)}）`
+      : formatCurrency(sc.total_amount);
+    const unitPriceLabel = isCrossBorder
+      ? (sc.is_price_excluding_tax ? '单价（不含税，USD）' : '单价（USD）')
+      : (sc.is_price_excluding_tax ? '单价（不含税）' : '单价');
+    const unitPriceDisplay = isCrossBorder
+      ? `$${sc.unit_price.toFixed(4)}（≈ ¥${(sc.unit_price  * exchangeRate).toFixed(4)}）`
+      : formatCurrency(sc.unit_price);
     return (
       <Card title="销售合同基本信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
         <Descriptions bordered size="small" column={4}>
           <Descriptions.Item label="合同编号">{sc.no}</Descriptions.Item>
           <Descriptions.Item label="品名">{sc.product_name}</Descriptions.Item>
           <Descriptions.Item label="客户">{sc.expand?.customer?.name || sc.customer_name || '-'}</Descriptions.Item>
-          <Descriptions.Item label="总金额">{formatCurrency(sc.total_amount)}</Descriptions.Item>
-          <Descriptions.Item label="单价">{formatCurrency(sc.unit_price)}</Descriptions.Item>
+          <Descriptions.Item label={totalAmountLabel}>{totalAmountDisplay}</Descriptions.Item>
+          <Descriptions.Item label={unitPriceLabel}>{unitPriceDisplay}</Descriptions.Item>
           <Descriptions.Item label="总数量">{sc.total_quantity} 吨</Descriptions.Item>
           <Descriptions.Item label="已执行数量">{sc.executed_quantity} 吨</Descriptions.Item>
           <Descriptions.Item label="执行比例">{sc.execution_percent ? percentFormat(sc.execution_percent) : '-'}</Descriptions.Item>
@@ -265,90 +314,182 @@ const ContractDetailPage: React.FC = () => {
     if (!detailData) return null;
     return (
       <>
-        {detailData.purchase_contracts.map((pc) => (
-          <Card
-            key={pc.id}
-            title={`采购合同 ${pc.no}`}
-            style={cardStyle}
-            styles={{ body: cardBodyStyle }}
-          >
-            <Descriptions bordered size="small" column={4}>
-              <Descriptions.Item label="合同编号">{pc.no}</Descriptions.Item>
-              <Descriptions.Item label="品名">{pc.product_name}</Descriptions.Item>
-              <Descriptions.Item label="供应商">{pc.expand?.supplier?.name || pc.supplier_name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="总金额">{formatCurrency(pc.total_amount)}</Descriptions.Item>
-              <Descriptions.Item label="单价">{formatCurrency(pc.unit_price)}</Descriptions.Item>
-              <Descriptions.Item label="总数量">{pc.total_quantity} 吨</Descriptions.Item>
-              <Descriptions.Item label="已执行数量">{pc.executed_quantity} 吨</Descriptions.Item>
-              <Descriptions.Item label="已付金额">{formatCurrency(pc.paid_amount)}</Descriptions.Item>
-              <Descriptions.Item label="已开票金额">{formatCurrency(pc.invoiced_amount)}</Descriptions.Item>
-              <Descriptions.Item label="签约日期">{formatDate(pc.sign_date || '')}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag color={pc.status === 'executing' ? 'blue' : pc.status === 'completed' ? 'green' : 'red'}>
-                  {pc.status === 'executing' ? '执行中' : pc.status === 'completed' ? '已完成' : pc.status}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="备注">{pc.remark || '-'}</Descriptions.Item>
-              <Descriptions.Item label="采购负责人">{pc.purchasing_manager || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{formatDate(pc.created_at || '')}</Descriptions.Item>
-            </Descriptions>
-            <div style={{ marginTop: 12 }}>
-              {renderRecordAttachments('purchase_contracts', pc.id, pc.attachments)}
-            </div>
-          </Card>
-        ))}
+        {detailData.purchase_contracts.map((pc) => {
+          const isCrossBorder = pc.is_cross_border;
+          const totalAmountLabel = isCrossBorder ? '总金额（USD）' : '总金额';
+          const totalAmountDisplay = isCrossBorder
+            ? `$${pc.total_amount.toFixed(4)}（≈ ¥${(pc.total_amount  * exchangeRate).toFixed(4)}）`
+            : formatCurrency(pc.total_amount);
+          const unitPriceLabel = isCrossBorder ? '单价（USD）' : '单价';
+          const unitPriceDisplay = isCrossBorder
+            ? `$${pc.unit_price.toFixed(4)}（≈ ¥${(pc.unit_price  * exchangeRate).toFixed(4)}）`
+            : formatCurrency(pc.unit_price);
+          return (
+            <Card
+              key={pc.id}
+              title={`采购合同 ${pc.no}${isCrossBorder ? '（跨境）' : ''}`}
+              style={cardStyle}
+              styles={{ body: cardBodyStyle }}
+            >
+              <Descriptions bordered size="small" column={4}>
+                <Descriptions.Item label="合同编号">{pc.no}</Descriptions.Item>
+                <Descriptions.Item label="品名">{pc.product_name}</Descriptions.Item>
+                <Descriptions.Item label="供应商">{pc.expand?.supplier?.name || pc.supplier_name || '-'}</Descriptions.Item>
+                <Descriptions.Item label={totalAmountLabel}>{totalAmountDisplay}</Descriptions.Item>
+                <Descriptions.Item label={unitPriceLabel}>{unitPriceDisplay}</Descriptions.Item>
+                <Descriptions.Item label="总数量">{pc.total_quantity} 吨</Descriptions.Item>
+                <Descriptions.Item label="已执行数量">{pc.executed_quantity} 吨</Descriptions.Item>
+                <Descriptions.Item label="已付金额">{formatCurrency(pc.paid_amount)}</Descriptions.Item>
+                <Descriptions.Item label="已开票金额">{formatCurrency(pc.invoiced_amount)}</Descriptions.Item>
+                <Descriptions.Item label="签约日期">{formatDate(pc.sign_date || '')}</Descriptions.Item>
+                <Descriptions.Item label="状态">
+                  <Tag color={pc.status === 'executing' ? 'blue' : pc.status === 'completed' ? 'green' : 'red'}>
+                    {pc.status === 'executing' ? '执行中' : pc.status === 'completed' ? '已完成' : pc.status}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="备注">{pc.remark || '-'}</Descriptions.Item>
+                <Descriptions.Item label="采购负责人">{pc.purchasing_manager || '-'}</Descriptions.Item>
+                <Descriptions.Item label="创建时间">{formatDate(pc.created_at || '')}</Descriptions.Item>
+              </Descriptions>
+              <div style={{ marginTop: 12 }}>
+                {renderRecordAttachments('purchase_contracts', pc.id, pc.attachments)}
+              </div>
+            </Card>
+          );
+        })}
       </>
     );
   };
 
   const renderProfitAnalysis = () => {
     if (!detailData) return null;
-    const calculations = calcProfit(detailData);
+    const sc = detailData.sales_contract;
+    const allPurchaseCrossBorder = detailData.purchase_contracts.length > 0 && detailData.purchase_contracts.every(pc => pc.is_cross_border);
+    const isDualCurrency = sc.is_cross_border && allPurchaseCrossBorder;
+    const bothCrossBorder = isDualCurrency;
+
+    const cnyCalc = calcProfitCNY(detailData, exchangeRate);
+    const usdCalc = bothCrossBorder ? calcProfitUSD(detailData) : null;
 
     return (
       <Card title="利润分析" style={cardStyle} styles={{ body: { padding: 24 } }}>
-        {!calculations.quantityMatched && (
+        {!cnyCalc.quantityMatched && (
           <Alert
             message="数量不匹配"
-            description={`销售合同总数量 (${detailData.sales_contract.total_quantity} 吨) 与采购合同总数量之和 (${detailData.profit.purchase_quantity} 吨) 不相等`}
+            description={`销售合同总数量 (${sc.total_quantity} 吨) 与采购合同总数量之和 (${detailData.profit.purchase_quantity} 吨) 不相等`}
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
           />
         )}
-        <Descriptions bordered size="small" column={4}>
-          <Descriptions.Item label="销售总金额（含税）">{formatCurrency(calculations.salesAmountIncTax)}</Descriptions.Item>
-          <Descriptions.Item label="采购总金额（含税）">{formatCurrency(calculations.purchaseAmountIncTax)}</Descriptions.Item>
-          <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(calculations.salesAmountExTax)}</Descriptions.Item>
-          <Descriptions.Item label="采购总金额（不含税）">{formatCurrency(calculations.purchaseAmountExTax)}</Descriptions.Item>
-          <Descriptions.Item label="运费合计">{formatCurrency(calculations.totalFreight)}</Descriptions.Item>
-          <Descriptions.Item label="杂费合计">{formatCurrency(calculations.totalMiscellaneous)}</Descriptions.Item>
-          <Descriptions.Item label="营业利润">
-            <span style={{ color: calculations.operatingProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
-              {formatCurrency(calculations.operatingProfit)}
-            </span>
-          </Descriptions.Item>
-          <Descriptions.Item label="税额">
-            <span style={{ fontWeight: 'bold' }}>{formatCurrency(calculations.taxAmount)}</span>
-          </Descriptions.Item>
-          <Descriptions.Item label="净利润">
-            <span style={{ color: calculations.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
-              {formatCurrency(calculations.netProfit)}
-            </span>
-          </Descriptions.Item>
-        </Descriptions>
-        <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-          <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
-          <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
-          <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
-        </div>
+        {sc.is_cross_border && (
+          <Alert
+            message="跨境交易"
+            description={`汇率: 1 USD = ${exchangeRate} CNY。USD 金额已按此汇率换算为 CNY 后进行利润计算。`}
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        {bothCrossBorder ? (
+          <Tabs items={[
+            {
+              key: 'cny',
+              label: '人民币分析（CNY）',
+              children: (
+                <>
+                  <Descriptions bordered size="small" column={4}>
+                    <Descriptions.Item label="销售总金额（含税）">{formatCurrency(cnyCalc.salesAmountIncTax)}</Descriptions.Item>
+                    <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
+                    <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="采购总金额（不含税）">{formatCurrency(cnyCalc.purchaseAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="运费合计">{formatCurrency(cnyCalc.totalFreight)}</Descriptions.Item>
+                    <Descriptions.Item label="杂费合计">{formatCurrency(cnyCalc.totalMiscellaneous)}</Descriptions.Item>
+                    <Descriptions.Item label="营业利润">
+                      <span style={{ color: cnyCalc.operatingProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.operatingProfit)}</span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="税额">
+                      <span style={{ fontWeight: 'bold' }}>{formatCurrency(cnyCalc.taxAmount)}</span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="净利润">
+                      <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
+                    </Descriptions.Item>
+                  </Descriptions>
+                  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+                    <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+                    <div>汇率: 1 USD = {exchangeRate} CNY</div>
+                  </div>
+                </>
+              ),
+            },
+            {
+              key: 'usd',
+              label: '美元分析（USD）',
+              children: (
+                <>
+                  <Descriptions bordered size="small" column={4}>
+                    <Descriptions.Item label="销售总金额（含税）">{formatUSD(usdCalc!.salesAmountIncTax)}</Descriptions.Item>
+                    <Descriptions.Item label="采购总金额（含税）">{formatUSD(usdCalc!.purchaseAmountIncTax)}</Descriptions.Item>
+                    <Descriptions.Item label="销售总金额（不含税）">{formatUSD(usdCalc!.salesAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="采购总金额（不含税）">{formatUSD(usdCalc!.purchaseAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="运费合计">{formatUSD(usdCalc!.totalFreight)}</Descriptions.Item>
+                    <Descriptions.Item label="杂费合计">{formatUSD(usdCalc!.totalMiscellaneous)}</Descriptions.Item>
+                    <Descriptions.Item label="营业利润">
+                      <span style={{ color: usdCalc!.operatingProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatUSD(usdCalc!.operatingProfit)}</span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="税额">
+                      <span style={{ fontWeight: 'bold' }}>{formatUSD(usdCalc!.taxAmount)}</span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="净利润">
+                      <span style={{ color: usdCalc!.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatUSD(usdCalc!.netProfit)}</span>
+                    </Descriptions.Item>
+                  </Descriptions>
+                  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+                    <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+                  </div>
+                </>
+              ),
+            },
+          ]} />
+        ) : (
+          <>
+            <Descriptions bordered size="small" column={4}>
+              <Descriptions.Item label="销售总金额（含税）">{formatCurrency(cnyCalc.salesAmountIncTax)}</Descriptions.Item>
+              <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
+              <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
+              <Descriptions.Item label="采购总金额（不含税）">{formatCurrency(cnyCalc.purchaseAmountExTax)}</Descriptions.Item>
+              <Descriptions.Item label="运费合计">{formatCurrency(cnyCalc.totalFreight)}</Descriptions.Item>
+              <Descriptions.Item label="杂费合计">{formatCurrency(cnyCalc.totalMiscellaneous)}</Descriptions.Item>
+              <Descriptions.Item label="营业利润">
+                <span style={{ color: cnyCalc.operatingProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.operatingProfit)}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="税额">
+                <span style={{ fontWeight: 'bold' }}>{formatCurrency(cnyCalc.taxAmount)}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="净利润">
+                <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
+              </Descriptions.Item>
+            </Descriptions>
+            <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+              <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+              <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+              <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+              {sc.is_cross_border && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
+            </div>
+          </>
+        )}
       </Card>
     );
   };
 
   const renderRecordAttachments = (collection: string, recordId: string, attachments: string[] | undefined) => {
     const files = attachments && attachments.length > 0
-      ? (Array.isArray(attachments) ? attachments : [attachments]).map((name: string) => ({
+      ? attachments.map((name: string) => ({
           uid: `${recordId}-${name}`,
           name,
           status: 'done' as const,

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { PurchaseArrivalAPI } from '@/api/purchase-arrival';
 import type { PurchaseArrival } from '@/types/purchase-arrival';
 
@@ -11,6 +13,9 @@ export const ArrivalDetail: React.FC = () => {
   const { message } = App.useApp();
   const [arrival, setArrival] = useState<PurchaseArrival | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,6 +61,11 @@ export const ArrivalDetail: React.FC = () => {
       </div>
     );
   }
+
+  const isCB = arrival.expand?.purchase_contract?.is_cross_border === true;
+  const fmtAmt = (v: number) => isCB
+    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
+    : `¥${v.toFixed(4)}`;
 
   return (
     <div style={{ padding: 24 }}>
@@ -106,8 +116,8 @@ export const ArrivalDetail: React.FC = () => {
           <Descriptions.Item label="收货地址" span={2}>
             {arrival.delivery_address}
           </Descriptions.Item>
-          <Descriptions.Item label="运费金额1" span={1}>
-            ¥{arrival.freight_1?.toFixed(2) || '0.00'}
+          <Descriptions.Item label={isCB ? '运费金额1（USD）' : '运费金额1'} span={1}>
+            {fmtAmt(arrival.freight_1 || 0)}
           </Descriptions.Item>
           <Descriptions.Item label="运费1状态" span={1}>
             {arrival.freight_1_status === 'paid' ? '已付' : '未付'}
@@ -115,13 +125,13 @@ export const ArrivalDetail: React.FC = () => {
           <Descriptions.Item label="运费1付款日期" span={1}>
             {arrival.freight_1_date || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label="杂费" span={1}>
-            ¥{arrival.miscellaneous_expenses?.toFixed(2) || '0.00'}
+          <Descriptions.Item label={isCB ? '杂费（USD）' : '杂费'} span={1}>
+            {fmtAmt(arrival.miscellaneous_expenses || 0)}
           </Descriptions.Item>
           {arrival.wether_transit === 'yes' && (
             <>
-              <Descriptions.Item label="运费金额2" span={1}>
-                ¥{arrival.freight_2?.toFixed(2) || '0.00'}
+              <Descriptions.Item label={isCB ? '运费金额2（USD）' : '运费金额2'} span={1}>
+                {fmtAmt(arrival.freight_2 || 0)}
               </Descriptions.Item>
               <Descriptions.Item label="运费2状态" span={1}>
                 {arrival.freight_2_status === 'paid' ? '已付' : '未付'}
@@ -160,38 +170,27 @@ export const ArrivalDetail: React.FC = () => {
               <Descriptions.Item label="执行进度" span={1}>
                 {arrival.expand.purchase_contract.execution_percent?.toFixed(1) || '0'}%
               </Descriptions.Item>
-              <Descriptions.Item label="合同总金额" span={1}>
-                ¥{arrival.expand.purchase_contract.total_amount?.toFixed(2) || '0.00'}
+              <Descriptions.Item label={isCB ? '合同总金额（USD）' : '合同总金额'} span={1}>
+                {fmtAmt(arrival.expand.purchase_contract.total_amount || 0)}
               </Descriptions.Item>
             </Descriptions>
           </>
         )}
 
         <Divider>附件</Divider>
-        {arrival.attachments ? (
+        {arrival.attachments && arrival.attachments.length > 0 ? (
           <Flex vertical gap="small">
-            {Array.isArray(arrival.attachments)
-              ? arrival.attachments.map((file: string) => (
-                  <a
-                    key={file}
-                    href={`https://api.henghuacheng.cn/api/files/purchase_arrivals/${arrival.id}/${file}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {file}
-                  </a>
-                ))
-              : (arrival.attachments as unknown as string) && (
-                  <a
-                    href={`https://api.henghuacheng.cn/api/files/purchase_arrivals/${arrival.id}/${arrival.attachments}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {arrival.attachments as unknown as string}
-                  </a>
-                )}
+            {arrival.attachments.map((file: string) => (
+                <a
+                  key={file}
+                  href={`${pb.baseUrl}/api/files/purchase_arrivals/${arrival.id}/${file}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                >
+                  <DownloadOutlined /> {file}
+                </a>
+              ))}
           </Flex>
         ) : (
           <p style={{ color: '#999' }}>暂无附件</p>

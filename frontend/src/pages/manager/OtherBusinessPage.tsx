@@ -13,16 +13,14 @@ const bidResultMap: Record<string, { label: string; color: string }> = {
   lost: { label: '未中标', color: 'red' },
 };
 
-const renderFileLinks = (collectionName: string, recordId: string, files: string | string[] | undefined) => {
-  if (!files) return '-';
-  const fileList = Array.isArray(files) ? files : [files];
-  if (fileList.length === 0) return '-';
+const renderFileLinks = (collectionName: string, recordId: string, files: string[] | undefined) => {
+  if (!files || files.length === 0) return '-';
   return (
     <Flex vertical gap="small">
-      {fileList.map((file: string) => (
+      {files.map((file: string) => (
         <a
           key={file}
-          href={`https://api.henghuacheng.cn/api/files/${collectionName}/${recordId}/${file}`}
+          href={`${pb.baseUrl}/api/files/${collectionName}/${recordId}/${file}`}
           target="_blank"
           rel="noopener noreferrer"
           download
@@ -36,15 +34,15 @@ const renderFileLinks = (collectionName: string, recordId: string, files: string
 
 const serviceOrderColumns = [
   { title: '订单号', dataIndex: 'order_no', key: 'order_no', width: 120 },
-  { title: '单价', dataIndex: 'unit_price', key: 'unit_price', width: 90, render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '单价', dataIndex: 'unit_price', key: 'unit_price', width: 90, render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
   { title: '数量', dataIndex: 'quantity', key: 'quantity', width: 70 },
-  { title: '收款金额(USD)', dataIndex: 'receipt_amount', key: 'receipt_amount', width: 120, render: (v: number) => v ? `$${v.toLocaleString()}` : '-' },
+  { title: '收款金额(USD)', dataIndex: 'receipt_amount', key: 'receipt_amount', width: 120, render: (v: number) => v ? `$${v.toFixed(4)}` : '-' },
   { title: '收款时间', dataIndex: 'receipt_date', key: 'receipt_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
-  { title: '收款金额RMB', dataIndex: 'receipt_amount_rmb', key: 'receipt_amount_rmb', width: 110, render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '收款金额RMB', dataIndex: 'receipt_amount_rmb', key: 'receipt_amount_rmb', width: 110, render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
   { title: '兑换日期', dataIndex: 'receipt_rmb_date', key: 'receipt_rmb_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
-  { title: '开票金额(RMB)', dataIndex: 'invoice_amount', key: 'invoice_amount', width: 120, render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '开票金额(RMB)', dataIndex: 'invoice_amount', key: 'invoice_amount', width: 120, render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
   { title: '开票时间', dataIndex: 'invoice_date', key: 'invoice_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
-  { title: '报税金额(RMB)', dataIndex: 'tax_amount', key: 'tax_amount', width: 120, render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+  { title: '报税金额(RMB)', dataIndex: 'tax_amount', key: 'tax_amount', width: 120, render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
   { title: '报税时间', dataIndex: 'tax_date', key: 'tax_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true },
   { title: '负责人', dataIndex: 'manager', key: 'manager', width: 80 },
@@ -135,7 +133,7 @@ const OtherBusinessPage: React.FC = () => {
       dataIndex: 'payment_amount',
       key: 'payment_amount',
       width: 110,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', width: 110, render: (v: string) => v?.split(' ')[0] || '-' },
     {
@@ -157,14 +155,14 @@ const OtherBusinessPage: React.FC = () => {
       dataIndex: 'tender_fee',
       key: 'tender_fee',
       width: 100,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '投标保证金',
       dataIndex: 'bid_bond',
       key: 'bid_bond',
       width: 110,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     { title: '开标时间', dataIndex: 'open_date', key: 'open_date', width: 110, render: (v: string) => v?.split(' ')[0] || '-' },
     {
@@ -229,7 +227,7 @@ const OtherBusinessPage: React.FC = () => {
           <Descriptions.Item label="记录编号">{r.no}</Descriptions.Item>
           <Descriptions.Item label="支出类型">{r.expense_type}</Descriptions.Item>
           <Descriptions.Item label="描述说明" span={2}>{r.description}</Descriptions.Item>
-          <Descriptions.Item label="付款金额">{r.payment_amount ? `¥${r.payment_amount.toLocaleString()}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="付款金额">{r.payment_amount ? `¥${r.payment_amount.toFixed(4)}` : '-'}</Descriptions.Item>
           <Descriptions.Item label="付款日期">{r.pay_date?.split(' ')[0] || '-'}</Descriptions.Item>
           <Descriptions.Item label="付款方式">{r.method || '-'}</Descriptions.Item>
           <Descriptions.Item label="采购负责人">{r.purchasing_manager || '-'}</Descriptions.Item>
@@ -248,18 +246,18 @@ const OtherBusinessPage: React.FC = () => {
           <Descriptions.Item label="招标编号">{r.bidding_no}</Descriptions.Item>
           <Descriptions.Item label="产品名称">{r.product_name}</Descriptions.Item>
           <Descriptions.Item label="数量">{r.quantity}</Descriptions.Item>
-          <Descriptions.Item label="标书费">{r.tender_fee ? `¥${r.tender_fee.toLocaleString()}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="标书费">{r.tender_fee ? `¥${r.tender_fee.toFixed(4)}` : '-'}</Descriptions.Item>
           <Descriptions.Item label="付标书费时间">{r.tender_fee_date?.split(' ')[0] || '-'}</Descriptions.Item>
           <Descriptions.Item label="标书费发票附件" span={2}>{renderFileLinks('bidding_records', r.id, r.tender_fee_invoice)}</Descriptions.Item>
-          <Descriptions.Item label="投标保证金">{r.bid_bond ? `¥${r.bid_bond.toLocaleString()}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="投标保证金">{r.bid_bond ? `¥${r.bid_bond.toFixed(4)}` : '-'}</Descriptions.Item>
           <Descriptions.Item label="付保证金时间">{r.bid_bond_date?.split(' ')[0] || '-'}</Descriptions.Item>
           <Descriptions.Item label="开标时间">{r.open_date?.split(' ')[0] || '-'}</Descriptions.Item>
           <Descriptions.Item label="中标结果">
             {resultInfo ? <Tag color={resultInfo.color}>{resultInfo.label}</Tag> : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="保证金退还时间">{r.bond_return_date?.split(' ')[0] || '-'}</Descriptions.Item>
-          <Descriptions.Item label="退还金额">{r.bond_return_amount ? `¥${r.bond_return_amount.toLocaleString()}` : '-'}</Descriptions.Item>
-          <Descriptions.Item label="招标代理费">{r.agency_fee ? `¥${r.agency_fee.toLocaleString()}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="退还金额">{r.bond_return_amount ? `¥${r.bond_return_amount.toFixed(4)}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="招标代理费">{r.agency_fee ? `¥${r.agency_fee.toFixed(4)}` : '-'}</Descriptions.Item>
           <Descriptions.Item label="关联销售合同">
             {r.expand?.sales_contract ? `${r.expand.sales_contract.no} - ${r.expand.sales_contract.product_name}` : '-'}
           </Descriptions.Item>

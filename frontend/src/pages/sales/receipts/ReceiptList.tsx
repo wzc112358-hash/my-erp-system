@@ -180,7 +180,7 @@ export const ReceiptList: React.FC = () => {
       title: '收款金额',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: number) => amount?.toFixed(2),
+      render: (amount: number) => amount?.toFixed(4),
     },
     {
       title: '产品数量',

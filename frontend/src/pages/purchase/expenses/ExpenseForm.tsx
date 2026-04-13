@@ -79,7 +79,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
             <InputNumber
               placeholder="请输入付款金额"
               min={0}
-              precision={2}
+              precision={4}
               style={{ width: '100%' }}
             />
           </Form.Item>

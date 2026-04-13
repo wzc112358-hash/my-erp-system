@@ -5,7 +5,7 @@ export interface ServiceContract {
   product_name: string;
   sign_date: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   sales_manager?: string;
   creator_user?: string;
   created: string;
@@ -47,7 +47,7 @@ export interface ServiceOrder {
   tax_date?: string;
   tax_amount?: number;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   manager?: string;
   creator_user?: string;
   created: string;

@@ -22,6 +22,8 @@ export interface SalesShipment {
       total_quantity: number;
       executed_quantity: number;
       execution_percent: number;
+      is_price_excluding_tax: boolean;
+      is_cross_border: boolean;
     };
   };
 }

@@ -10,6 +10,10 @@ export const NotificationAPI = {
       filters.push(`is_read = ${params.is_read}`);
     }
 
+    if (pb.authStore.record) {
+      filters.push(`recipient = "${pb.authStore.record.id}"`);
+    }
+
     const result = await pb.collection('notifications').getList<Notification>(
       params.page || 1,
       params.per_page || 10,
@@ -46,11 +50,15 @@ export const NotificationAPI = {
   },
 
   getUnreadCount: async (): Promise<number> => {
+    const userId = pb.authStore.record?.id;
+    const filter = userId
+      ? `is_read = false && recipient = "${userId}"`
+      : 'is_read = false';
     const result = await pb.collection('notifications').getList<Notification>(
       1,
       1,
       {
-        filter: 'is_read = false',
+        filter,
       }
     );
     return result.totalItems;

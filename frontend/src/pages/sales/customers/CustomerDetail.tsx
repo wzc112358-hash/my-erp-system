@@ -71,7 +71,7 @@ export const CustomerDetail: React.FC = () => {
       title: '合同金额',
       dataIndex: 'total_amount',
       key: 'total_amount',
-      render: (amount: number) => `¥${amount.toLocaleString()}`,
+      render: (amount: number) => `¥${amount.toFixed(4)}`,
     },
     {
       title: '状态',

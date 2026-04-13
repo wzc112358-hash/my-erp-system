@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 
 import type {
   ComparisonSalesContract,
@@ -188,6 +189,7 @@ export const ComparisonAPI = {
   },
 
   getComparisonData: async (salesContractId: string) => {
+    const rate = await getUsdToCnyRate();
     const [salesContract, purchaseContractsResult] = await Promise.all([
       pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
         expand: 'customer',
@@ -340,22 +342,33 @@ export const ComparisonAPI = {
       invoice_per_contract: invoicePerContract,
     };
 
-    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => sum + pc.total_amount, 0);
+    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => {
+      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+      return sum + amountCny;
+    }, 0);
     const purchaseTotalQuantity = purchaseContracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
     const isQuantityMatched = Math.abs(salesContract.total_quantity - purchaseTotalQuantity) < 0.01;
+
+    const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
+    const freightCny = totalFreight;
+    const miscCny = totalMiscellaneous;
 
     const profit: ProfitAnalysis = {
       unit_profit:
         purchaseContracts.length > 0
-          ? salesContract.unit_price - purchaseContracts[0].unit_price
+          ? (salesContract.is_price_excluding_tax
+            ? salesAmountCny / salesContract.total_quantity * 1.13 - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price)
+            : salesAmountCny / salesContract.total_quantity - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price))
           : 0,
-      total_profit: salesContract.total_amount / 1.13 - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
-      sales_amount: salesContract.total_amount,
+      total_profit: salesContract.is_price_excluding_tax
+        ? salesAmountCny - purchaseTotalAmount / 1.13 - freightCny - miscCny
+        : salesAmountCny / 1.13 - purchaseTotalAmount / 1.13 - freightCny - miscCny,
+      sales_amount: salesAmountCny,
       purchase_amount: purchaseTotalAmount,
       sales_quantity: salesContract.total_quantity,
       purchase_quantity: purchaseTotalQuantity,
-      total_freight: totalFreight,
-      total_miscellaneous: totalMiscellaneous,
+      total_freight: freightCny,
+      total_miscellaneous: miscCny,
       is_quantity_matched: isQuantityMatched,
     };
 
@@ -419,6 +432,7 @@ export const ComparisonAPI = {
   },
 
   getContractDetail: async (salesContractId: string): Promise<ContractDetailData> => {
+    const rate = await getUsdToCnyRate();
     const [salesContract, purchaseContractsResult] = await Promise.all([
       pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
         expand: 'customer',
@@ -465,7 +479,10 @@ export const ComparisonAPI = {
     const saleInvoices = saleInvoicesResult.items as unknown as SaleInvoiceRecord[];
     const purchaseInvoices = purchaseInvoicesResult.items as unknown as PurchaseInvoiceRecord[];
 
-    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => sum + pc.total_amount, 0);
+    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => {
+      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+      return sum + amountCny;
+    }, 0);
     const purchaseTotalQuantity = purchaseContracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
     const isQuantityMatched = Math.abs(salesContract.total_quantity - purchaseTotalQuantity) < 0.01;
 
@@ -475,18 +492,27 @@ export const ComparisonAPI = {
       freight_1: number;
       freight_2?: number;
       miscellaneous_expenses: number;
+      purchase_contract: string;
     }[];
     arrivalsRaw.forEach((a) => {
-      totalFreight += (a.freight_1 || 0) + (a.freight_2 || 0);
-      totalMiscellaneous += a.miscellaneous_expenses || 0;
+      const pc = purchaseContracts.find(p => p.id === a.purchase_contract);
+      const crossRate = pc?.is_cross_border ? rate : 1;
+      totalFreight += ((a.freight_1 || 0) + (a.freight_2 || 0)) * crossRate;
+      totalMiscellaneous += (a.miscellaneous_expenses || 0) * crossRate;
     });
+
+    const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
 
     const profit: ProfitAnalysis = {
       unit_profit: purchaseContracts.length > 0
-        ? salesContract.unit_price - purchaseContracts[0].unit_price
+        ? (salesContract.is_price_excluding_tax
+          ? salesAmountCny / salesContract.total_quantity * 1.13 - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price)
+          : salesAmountCny / salesContract.total_quantity - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price))
         : 0,
-      total_profit: salesContract.total_amount / 1.13 - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
-      sales_amount: salesContract.total_amount,
+      total_profit: salesContract.is_price_excluding_tax
+        ? salesAmountCny - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous
+        : salesAmountCny / 1.13 - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
+      sales_amount: salesAmountCny,
       purchase_amount: purchaseTotalAmount,
       sales_quantity: salesContract.total_quantity,
       purchase_quantity: purchaseTotalQuantity,

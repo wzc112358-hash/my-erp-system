@@ -64,6 +64,7 @@ export const PurchaseContractAPI = {
     formData.append('creator_user', pb.authStore.record?.id || '');
     if (data.remark) formData.append('remark', data.remark);
     if (data.purchasing_manager) formData.append('purchasing_manager', data.purchasing_manager);
+    if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
     if (data.attachments && data.attachments.length > 0) {
       data.attachments.forEach((file) => {
         formData.append('attachments', file);
@@ -87,6 +88,7 @@ export const PurchaseContractAPI = {
     if (data.sign_date !== undefined) formData.append('sign_date', data.sign_date);
     if (data.remark !== undefined) formData.append('remark', data.remark);
     if (data.purchasing_manager !== undefined) formData.append('purchasing_manager', data.purchasing_manager || '');
+    if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
     if (data.attachments && data.attachments.length > 0) {
       data.attachments.forEach((file) => {
         formData.append('attachments', file);

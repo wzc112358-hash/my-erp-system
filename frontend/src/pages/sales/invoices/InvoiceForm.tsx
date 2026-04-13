@@ -94,7 +94,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
     }
     if (selectedContract && selectedContract.uninvoiced_amount !== undefined) {
       if (value > selectedContract.uninvoiced_amount) {
-        return Promise.reject(new Error(`发票金额不能超过合同剩余未开票金额 ${selectedContract.uninvoiced_amount.toFixed(2)}`));
+        return Promise.reject(new Error(`发票金额不能超过合同剩余未开票金额 ${selectedContract.uninvoiced_amount.toFixed(4)}`));
       }
     }
     return Promise.resolve();
@@ -161,7 +161,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
         <Row gutter={16}>
           <Col span={24}>
             <Alert
-              message={`合同剩余未开票金额: ¥${selectedContract.uninvoiced_amount.toFixed(2)}`}
+              message={`合同剩余未开票金额: ¥${selectedContract.uninvoiced_amount.toFixed(4)}`}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -205,7 +205,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
             label="产品数量"
             rules={[{ required: true, message: '请输入产品数量' }]}
           >
-            <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入产品数量" onChange={handleProductAmountChange} />
+            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入产品数量" onChange={handleProductAmountChange} />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
@@ -217,7 +217,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
               { validator: validateAmount },
             ]}
           >
-            <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入发票金额" />
+            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入发票金额" />
           </Form.Item>
         </Col>
       </Row>

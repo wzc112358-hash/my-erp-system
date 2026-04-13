@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { PaymentAPI } from '@/api/purchase-contract';
 import type { PurchasePayment } from '@/types/purchase-contract';
 
@@ -11,6 +13,9 @@ export const PaymentDetail: React.FC = () => {
   const { message } = App.useApp();
   const [data, setData] = useState<PurchasePayment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -58,6 +63,8 @@ export const PaymentDetail: React.FC = () => {
   }
 
   const contract = data.expand?.purchase_contract as Record<string, unknown> | undefined;
+  const isCB = contract?.is_cross_border === true;
+  const amtVal = data.amount || 0;
 
   return (
     <div style={{ padding: 24 }}>
@@ -80,8 +87,8 @@ export const PaymentDetail: React.FC = () => {
           <Descriptions.Item label="产品名称" span={1}>
             {data.product_name}
           </Descriptions.Item>
-          <Descriptions.Item label="付款金额" span={1}>
-            ¥{data.amount?.toFixed(2)}
+          <Descriptions.Item label={isCB ? '付款金额（USD）' : '付款金额'} span={1}>
+            {isCB ? `$${amtVal.toFixed(4)}（≈ ¥${(amtVal * exchangeRate).toFixed(4)}）` : `¥${amtVal.toFixed(4)}`}
           </Descriptions.Item>
           <Descriptions.Item label="产品数量" span={1}>
             {data.product_amount} 吨
@@ -113,38 +120,32 @@ export const PaymentDetail: React.FC = () => {
               <Descriptions.Item label="执行进度" span={1}>
                 {((contract.payment_percent as number) || 0).toFixed(1)}%
               </Descriptions.Item>
-              <Descriptions.Item label="合同总金额" span={1}>
-                ¥{((contract.total_amount as number) || 0).toFixed(2)}
+              <Descriptions.Item label={isCB ? '合同总金额（USD）' : '合同总金额'} span={1}>
+                {(() => {
+                  const v = (contract.total_amount as number) || 0;
+                  return isCB
+                    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
+                    : `¥${v.toFixed(4)}`;
+                })()}
               </Descriptions.Item>
             </Descriptions>
           </>
         )}
 
         <Divider>付款凭证</Divider>
-        {data.attachments ? (
+        {data.attachments && data.attachments.length > 0 ? (
           <Flex vertical gap="small">
-            {Array.isArray(data.attachments)
-              ? data.attachments.map((file: string) => (
-                  <a
-                    key={file}
-                    href={`https://api.henghuacheng.cn/api/files/purchase_payments/${data.id}/${file}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {file}
-                  </a>
-                ))
-              : (data.attachments as unknown as string) && (
-                  <a
-                    href={`https://api.henghuacheng.cn/api/files/purchase_payments/${data.id}/${data.attachments}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {data.attachments as unknown as string}
-                  </a>
-                )}
+            {data.attachments.map((file: string) => (
+                <a
+                  key={file}
+                  href={`${pb.baseUrl}/api/files/purchase_payments/${data.id}/${file}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                >
+                  <DownloadOutlined /> {file}
+                </a>
+              ))}
           </Flex>
         ) : (
           <p style={{ color: '#999' }}>暂无凭证</p>

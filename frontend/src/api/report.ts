@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { ReportData, ReportParams, ReportSummary } from '@/types/report';
 
 interface SalesContractData {
@@ -9,6 +10,8 @@ interface SalesContractData {
   total_quantity: number;
   unit_price: number;
   total_amount: number;
+  is_price_excluding_tax: boolean;
+  is_cross_border: boolean;
   sign_date: string;
   status: string;
   expand?: {
@@ -27,6 +30,7 @@ interface PurchaseContractData {
   total_quantity: number;
   unit_price: number;
   total_amount: number;
+  is_cross_border: boolean;
   sign_date: string;
   status: string;
   expand?: {
@@ -94,6 +98,7 @@ function getYearFromDate(dateStr: string): number {
 export const ReportAPI = {
   getReportData: async (params: ReportParams): Promise<{ data: ReportData[]; summary: ReportSummary }> => {
     const { startMonth, endMonth, year } = params;
+    const rate = await getUsdToCnyRate();
 
     const [salesContractsResult, purchaseContractsResult] = await Promise.all([
       pb.collection('sales_contracts').getList<SalesContractData>(1, 500, {
@@ -232,16 +237,18 @@ export const ReportAPI = {
           salesSignDate = salesContract.sign_date;
           salesQuantity = salesContract.total_quantity;
           salesUnitPrice = salesContract.unit_price;
-          salesTotalAmount = salesContract.total_amount / 1.13;
-          
+          const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
+          salesTotalAmount = salesContract.is_price_excluding_tax ? salesAmountCny : salesAmountCny / 1.13;
+
           const existingCount = salesContractRows.get(pc.expand.sales_contract.id) || 0;
           salesContractRows.set(pc.expand.sales_contract.id, existingCount + 1);
         }
       }
 
       const supplierName = pc.expand?.supplier?.name || '';
-      const purchaseTaxTotalAmount = pc.total_amount;
-      const purchaseTotalAmount = pc.total_amount / 1.13;
+      const purchaseAmountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+      const purchaseTaxTotalAmount = purchaseAmountCny;
+      const purchaseTotalAmount = purchaseAmountCny / 1.13;
       const arrivalDate = salesShipmentsMap.get(pc.expand?.sales_contract?.id || '') || '';
 
       if (!salesContract) {
@@ -255,7 +262,7 @@ export const ReportAPI = {
         supplierName,
         purchaseQuantity: pc.total_quantity,
         purchaseUnitPrice: pc.unit_price,
-        purchaseTotalAmount: purchaseTotalAmount,
+        purchaseTotalAmount,
         purchaseTaxTotalAmount,
         purchasePaymentDate: purchasePaymentDateMap.get(pc.id) || '',
         purchaseInvoiceDate: purchaseInvoiceDateMap.get(pc.id) || '',
@@ -303,7 +310,8 @@ export const ReportAPI = {
         if (count === 0) {
           for (const sc of salesContracts) {
             if (sc.no === row.salesContractNo) {
-              salesContractTaxTotal.set(row.salesContractNo, sc.total_amount);
+              const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+              salesContractTaxTotal.set(row.salesContractNo, sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny);
               break;
             }
           }
@@ -357,6 +365,10 @@ export const ReportAPI = {
       const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
       const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
 
+      const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+      const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
+      const salesIncTax = sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny;
+
       reportData.push({
         purchaseContractNo: '',
         purchaseSignDate: '',
@@ -373,16 +385,16 @@ export const ReportAPI = {
         customerName: sc.expand?.customer?.name || '',
         salesQuantity: sc.total_quantity,
         salesUnitPrice: sc.unit_price,
-        salesTotalAmount: sc.total_amount / 1.13,
-        salesTaxTotalAmount: sc.total_amount,
+        salesTotalAmount: salesExTax,
+        salesTaxTotalAmount: salesIncTax,
         freight,
         miscellaneous,
         arrivalDate: salesShipmentsMap.get(sc.id) || '',
         salesReceiptDate: salesReceiptDateMap.get(sc.id) || '',
         salesInvoiceDate: salesInvoiceDateMap.get(sc.id) || '',
-        tax: (sc.total_amount) * 0.1881,
-        profit: sc.total_amount / 1.13 - freight - miscellaneous,
-        netProfit: sc.total_amount / 1.13 - sc.total_amount * 0.1881 - freight - miscellaneous,
+        tax: salesIncTax * 0.1881,
+        profit: salesExTax - freight - miscellaneous,
+        netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,
@@ -432,6 +444,7 @@ export const ReportAPI = {
     salesIds: string[],
     purchaseIds: string[]
   ): Promise<{ data: ReportData[]; summary: ReportSummary }> => {
+    const rate = await getUsdToCnyRate();
     const allIds = [...salesIds, ...purchaseIds];
     if (allIds.length === 0) {
       return { data: [], summary: { totalSalesAmount: 0, totalPurchaseAmount: 0, totalSalesTaxAmount: 0, totalPurchaseTaxAmount: 0, totalTax: 0, totalFreight: 0, totalMiscellaneous: 0, totalProfit: 0, totalNetProfit: 0 } };
@@ -606,7 +619,8 @@ export const ReportAPI = {
           salesSignDate = salesContract.sign_date;
           salesQuantity = salesContract.total_quantity;
           salesUnitPrice = salesContract.unit_price;
-          salesTotalAmount = salesContract.total_amount / 1.13;
+          const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
+          salesTotalAmount = salesContract.is_price_excluding_tax ? salesAmountCny : salesAmountCny / 1.13;
 
           const existingCount = salesContractRows.get(pc.expand.sales_contract.id) || 0;
           salesContractRows.set(pc.expand.sales_contract.id, existingCount + 1);
@@ -614,8 +628,9 @@ export const ReportAPI = {
       }
 
       const supplierName = pc.expand?.supplier?.name || '';
-      const purchaseTaxTotalAmount = pc.total_amount;
-      const purchaseTotalAmount = pc.total_amount / 1.13;
+      const purchaseAmountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+      const purchaseTaxTotalAmount = purchaseAmountCny;
+      const purchaseTotalAmount = purchaseAmountCny / 1.13;
       const arrivalDate = salesShipmentsMap.get(pc.expand?.sales_contract?.id || '') || '';
 
       if (!salesContract) {
@@ -629,7 +644,7 @@ export const ReportAPI = {
         supplierName,
         purchaseQuantity: pc.total_quantity,
         purchaseUnitPrice: pc.unit_price,
-        purchaseTotalAmount: purchaseTotalAmount,
+        purchaseTotalAmount,
         purchaseTaxTotalAmount,
         purchasePaymentDate: purchasePaymentDateMap.get(pc.id) || '',
         purchaseInvoiceDate: purchaseInvoiceDateMap.get(pc.id) || '',
@@ -677,7 +692,8 @@ export const ReportAPI = {
         if (count === 0) {
           for (const sc of salesContracts) {
             if (sc.no === row.salesContractNo) {
-              salesContractTaxTotal.set(row.salesContractNo, sc.total_amount);
+              const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+              salesContractTaxTotal.set(row.salesContractNo, sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny);
               break;
             }
           }
@@ -725,6 +741,10 @@ export const ReportAPI = {
       const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
       const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
 
+      const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+      const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
+      const salesIncTax = sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny;
+
       reportData.push({
         purchaseContractNo: '',
         purchaseSignDate: '',
@@ -741,16 +761,16 @@ export const ReportAPI = {
         customerName: sc.expand?.customer?.name || '',
         salesQuantity: sc.total_quantity,
         salesUnitPrice: sc.unit_price,
-        salesTotalAmount: sc.total_amount / 1.13,
-        salesTaxTotalAmount: sc.total_amount,
+        salesTotalAmount: salesExTax,
+        salesTaxTotalAmount: salesIncTax,
         freight,
         miscellaneous,
         arrivalDate: salesShipmentsMap.get(sc.id) || '',
         salesReceiptDate: salesReceiptDateMap.get(sc.id) || '',
         salesInvoiceDate: salesInvoiceDateMap.get(sc.id) || '',
-        tax: (sc.total_amount) * 0.1881,
-        profit: sc.total_amount / 1.13 - freight - miscellaneous,
-        netProfit: sc.total_amount / 1.13 - sc.total_amount * 0.1881 - freight - miscellaneous,
+        tax: salesIncTax * 0.1881,
+        profit: salesExTax - freight - miscellaneous,
+        netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,

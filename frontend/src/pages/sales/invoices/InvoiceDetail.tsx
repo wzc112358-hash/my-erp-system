@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Descriptions, Button, Space, App, Card, Table } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
 import { SaleInvoiceAPI } from '@/api/sales-invoice';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { SaleInvoice } from '@/types/sales-contract';
 
 export const InvoiceDetail: React.FC = () => {
@@ -11,6 +13,7 @@ export const InvoiceDetail: React.FC = () => {
   const { message } = App.useApp();
   const [data, setData] = useState<SaleInvoice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exchangeRate, setExchangeRate] = useState(7.25);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,6 +35,10 @@ export const InvoiceDetail: React.FC = () => {
     };
     fetchData();
   }, [id, message]);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   const handleDownload = (url: string, filename: string) => {
     const link = document.createElement('a');
@@ -73,14 +80,12 @@ export const InvoiceDetail: React.FC = () => {
 
   const getAttachmentData = () => {
     const files = data.attachments;
-    if (!files) return [];
-    
-    const fileList = Array.isArray(files) ? files : [files];
-    return fileList
+    if (!files || files.length === 0) return [];
+    return files
       .filter(Boolean)
       .map((filename, index) => ({
         key: index,
-        url: `https://api.henghuacheng.cn/api/files/sale_invoices/${data.id}/${filename}`,
+        url: `${pb.baseUrl}/api/files/sale_invoices/${data.id}/${filename}`,
         filename,
       }));
   };
@@ -102,7 +107,11 @@ export const InvoiceDetail: React.FC = () => {
           <Descriptions.Item label="发票类型">{data.invoice_type}</Descriptions.Item>
           <Descriptions.Item label="产品名称">{data.product_name}</Descriptions.Item>
           <Descriptions.Item label="产品数量">{data.product_amount} 吨</Descriptions.Item>
-          <Descriptions.Item label="发票金额">¥{data.amount?.toFixed(2)}</Descriptions.Item>
+          <Descriptions.Item label="发票金额">
+            {data.expand?.sales_contract?.is_cross_border
+              ? `$${data.amount?.toFixed(4)}（≈ ¥${(data.amount * exchangeRate)?.toFixed(4)}）`
+              : `¥${data.amount?.toFixed(4)}`}
+          </Descriptions.Item>
           <Descriptions.Item label="开票日期">{data.issue_date}</Descriptions.Item>
           <Descriptions.Item label="关联合同编号" span={1}>
             {data.expand?.sales_contract?.no || '-'}

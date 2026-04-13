@@ -122,7 +122,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="tender_fee" label="标书费">
-            <InputNumber placeholder="请输入标书费" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="请输入标书费" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -151,7 +151,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Row gutter={16}>
         <Col xs={24} md={12}>
           <Form.Item name="bid_bond" label="投标保证金">
-            <InputNumber placeholder="请输入投标保证金" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="请输入投标保证金" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
@@ -191,7 +191,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
         </Col>
         <Col xs={24} md={12}>
           <Form.Item name="bond_return_amount" label="退还金额">
-            <InputNumber placeholder="请输入退还金额" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="请输入退还金额" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
       </Row>
@@ -200,7 +200,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="agency_fee" label="招标代理费">
-            <InputNumber placeholder="请输入招标代理费" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="请输入招标代理费" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} md={16}>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Table, Button, Space, Form, Input, Select, App, Popconfirm, Modal, Progress, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { SalesContractAPI } from '@/api/sales-contract';
 import type { SalesContract, SalesContractFormData } from '@/types/sales-contract';
@@ -15,6 +15,7 @@ const statusMap: Record<string, { text: string; color: string }> = {
 
 export const ContractList: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { message } = App.useApp();
   const [data, setData] = useState<SalesContract[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +61,17 @@ export const ContractList: React.FC = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, search, status]);
+
+  useEffect(() => {
+    const purchaseContractId = searchParams.get('purchaseContract');
+    if (purchaseContractId) {
+      setEditingContract(null);
+      form.resetFields();
+      form.setFieldsValue({ purchase_contract: purchaseContractId });
+      setFormVisible(true);
+      window.history.replaceState({}, '', '/sales/contracts');
+    }
+  }, [searchParams]);
 
   const handleSearch = () => {
     setPage(1);
@@ -176,7 +188,7 @@ export const ContractList: React.FC = () => {
       dataIndex: 'total_amount',
       key: 'total_amount',
       width: 120,
-      render: (amount: number) => amount ? `¥${amount.toLocaleString()}` : '-',
+      render: (amount: number) => amount ? `¥${amount.toFixed(4)}` : '-',
     },
     {
       title: '到货进度',

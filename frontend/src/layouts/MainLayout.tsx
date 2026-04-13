@@ -19,6 +19,8 @@ import { TopNav } from './TopNav';
 import type { UserRole } from '@/types/layout';
 import type { User } from '@/types/auth';
 import { useNotificationStore } from '@/stores/notification';
+import { useManagerPendingStore } from '@/stores/manager-pending';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 
 const { Sider, Content } = Layout;
 
@@ -38,6 +40,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'receipts', label: '收款', icon: <DollarOutlined />, path: '/sales/receipts' },
     { key: 'services', label: '服务合同', icon: <FileTextOutlined />, path: '/sales/services' },
     { key: 'bidding', label: '投标管理', icon: <FileTextOutlined />, path: '/sales/bidding' },
+    { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/sales/exchange-rate' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/sales/notifications' },
   ],
   purchasing: [
@@ -47,6 +50,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'invoices', label: '收票', icon: <FileDoneOutlined />, path: '/purchase/invoices' },
     { key: 'payments', label: '付款', icon: <BankOutlined />, path: '/purchase/payments' },
     { key: 'expenses', label: '资金支出', icon: <DollarOutlined />, path: '/purchase/expenses' },
+    { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/purchase/exchange-rate' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/purchase/notifications' },
   ],
   manager: [
@@ -55,6 +59,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
+    { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/manager/exchange-rate' },
   ],
 };
 
@@ -69,6 +74,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const { unreadCount, fetchUnreadCount } = useNotificationStore();
+  const { pendingCount, fetchPendingCount } = useManagerPendingStore();
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
 
   useEffect(() => {
     const handleResize = () => {
@@ -82,10 +89,16 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
   useEffect(() => {
     if (user.type === 'purchasing' || user.type === 'sales') {
       fetchUnreadCount();
-      const interval = setInterval(fetchUnreadCount, 30000);
+      getUsdToCnyRate().then(setExchangeRate);
+      const interval = setInterval(fetchUnreadCount, 60000);
       return () => clearInterval(interval);
     }
-  }, [user.type, fetchUnreadCount]);
+    if (user.type === 'manager') {
+      fetchPendingCount();
+      const interval = setInterval(fetchPendingCount, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [user.type, fetchUnreadCount, fetchPendingCount]);
 
   const menuItems = MENU_CONFIG[user.type] || [];
 
@@ -123,12 +136,32 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
           <Badge count={unreadCount} offset={[10, 0]}>
             {item.label}
           </Badge>
+        ) : item.key === 'progress-flow' && pendingCount > 0 ? (
+          <Badge count={pendingCount} offset={[10, 0]} style={{ backgroundColor: '#ff4d4f' }}>
+            {item.label}
+          </Badge>
         ) : item.label,
         icon: item.icon,
       }))}
       onClick={handleMenuClick}
     />
   );
+
+  const renderRateInfo = () => {
+    if (user.type !== 'sales' && user.type !== 'purchasing') return null;
+    return (
+      <div style={{
+        padding: '12px 24px',
+        borderTop: '1px solid rgba(0,0,0,0.06)',
+        fontSize: 12,
+        color: '#999',
+        textAlign: 'center',
+      }}>
+        <DollarOutlined style={{ marginRight: 4 }} />
+        当前汇率：1 USD = {exchangeRate} CNY
+      </div>
+    );
+  };
 
   const renderSidebar = () => (
     <>
@@ -154,6 +187,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
             </h2>
           </div>
           {renderMenu()}
+          {renderRateInfo()}
         </Drawer>
       ) : (
         <Sider
@@ -161,6 +195,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
           style={{
             background: 'linear-gradient(180deg, #d8d9da 0%, #eaecec 40%, #ffffff 100%)',
             borderRight: '1px solid rgba(0,0,0,0.06)',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           <div
@@ -176,7 +212,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
               采购销售系统
             </h2>
           </div>
-          {renderMenu()}
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {renderMenu()}
+          </div>
+          {renderRateInfo()}
         </Sider>
       )}
     </>

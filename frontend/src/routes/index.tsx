@@ -37,6 +37,7 @@ const ContractDetailPage = lazy(() => import('@/pages/manager/ContractDetailPage
 const ProgressFlowPage = lazy(() => import('@/pages/manager/ProgressFlowPage').then(m => ({ default: m.ProgressFlowPage })));
 const PerformancePage = lazy(() => import('@/pages/manager/PerformancePage').then(m => ({ default: m.default })));
 const OtherBusinessPage = lazy(() => import('@/pages/manager/OtherBusinessPage').then(m => ({ default: m.default })));
+const ExchangeRatePage = lazy(() => import('@/pages/manager/ExchangeRatePage').then(m => ({ default: m.ExchangeRatePage })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
@@ -184,6 +185,10 @@ export const router = createBrowserRouter([
             element: <SalesNotificationList />,
           },
           {
+            path: 'exchange-rate',
+            element: <ExchangeRatePage />,
+          },
+          {
             path: 'services',
             element: <ServiceList />,
           },
@@ -256,6 +261,10 @@ export const router = createBrowserRouter([
             path: 'expenses/:id',
             element: <ExpenseDetail />,
           },
+          {
+            path: 'exchange-rate',
+            element: <ExchangeRatePage />,
+          },
         ],
       },
 {
@@ -284,6 +293,10 @@ export const router = createBrowserRouter([
           {
             path: 'other-business',
             element: <OtherBusinessPage />,
+          },
+          {
+            path: 'exchange-rate',
+            element: <ExchangeRatePage />,
           },
         ],
       },

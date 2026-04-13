@@ -7,7 +7,7 @@ export const TestPage: React.FC = () => {
 
   const testConnection = async () => {
     try {
-      const res = await fetch('https://api.henghuacheng.cn/api/health');
+      const res = await fetch(`${pb.baseUrl}/api/health`);
       if (res.ok) {
         setStatus('Connected! Server is running (health check OK).');
       } else if (res.status === 404) {

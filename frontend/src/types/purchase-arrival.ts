@@ -36,6 +36,7 @@ export interface PurchaseArrival {
       total_quantity: number;
       executed_quantity: number;
       execution_percent: number;
+      is_cross_border: boolean;
     };
     sales_contract?: {
       id: string;

@@ -78,12 +78,12 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="unit_price" label="单价">
-            <InputNumber placeholder="单价" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="单价" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="quantity" label="数量">
-            <InputNumber placeholder="数量" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="数量" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -92,7 +92,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
             label="收款金额 (USD)"
             rules={[{ required: true, message: '请输入收款金额' }]}
           >
-            <InputNumber placeholder="USD" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="USD" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
       </Row>
@@ -109,7 +109,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="receipt_amount_rmb" label="收款金额RMB（兑换人民币金额）">
-            <InputNumber placeholder="¥" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="¥" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -122,7 +122,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="invoice_amount" label="开票金额（RMB）">
-            <InputNumber placeholder="开票金额" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="开票金额" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -132,7 +132,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="tax_amount" label="报税金额（RMB）">
-            <InputNumber placeholder="报税金额" min={0} precision={2} style={{ width: '100%' }} />
+            <InputNumber placeholder="报税金额" min={0} precision={4} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
       </Row>

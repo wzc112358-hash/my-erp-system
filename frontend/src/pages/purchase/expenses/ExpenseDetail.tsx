@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Spin, App, Flex, Button } from 'antd';
 import { DownloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
 import { ExpenseRecordAPI } from '@/api/expense-record';
 import type { ExpenseRecord } from '@/types/expense-record';
 
@@ -66,37 +67,26 @@ export const ExpenseDetail: React.FC = () => {
           <Descriptions.Item label="支出类型">{record.expense_type}</Descriptions.Item>
           <Descriptions.Item label="描述说明" span={2}>{record.description}</Descriptions.Item>
           <Descriptions.Item label="付款金额">
-            {record.payment_amount ? `¥${record.payment_amount.toLocaleString()}` : '-'}
+            {record.payment_amount ? `¥${record.payment_amount.toFixed(4)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付款日期">{record.pay_date?.split(' ')[0]}</Descriptions.Item>
           <Descriptions.Item label="付款方式">{record.method || '-'}</Descriptions.Item>
           <Descriptions.Item label="采购负责人">{record.purchasing_manager || '-'}</Descriptions.Item>
           <Descriptions.Item label="备注" span={2}>{record.remark || '-'}</Descriptions.Item>
           <Descriptions.Item label="附件" span={2}>
-            {record.attachments ? (
+            {record.attachments && record.attachments.length > 0 ? (
               <Flex vertical gap="small">
-                {Array.isArray(record.attachments)
-                  ? record.attachments.map((file: string) => (
-                      <a
-                        key={file}
-                        href={`https://api.henghuacheng.cn/api/files/expense_records/${record.id}/${file}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {file}
-                      </a>
-                    ))
-                  : (record.attachments as unknown as string) && (
-                      <a
-                        href={`https://api.henghuacheng.cn/api/files/expense_records/${record.id}/${record.attachments}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {record.attachments as unknown as string}
-                      </a>
-                    )}
+                {record.attachments.map((file: string) => (
+                    <a
+                      key={file}
+                      href={`${pb.baseUrl}/api/files/expense_records/${record.id}/${file}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                    >
+                      <DownloadOutlined /> {file}
+                    </a>
+                  ))}
               </Flex>
             ) : '-'}
           </Descriptions.Item>

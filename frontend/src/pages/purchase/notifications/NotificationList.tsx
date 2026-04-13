@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
 import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { NotificationAPI } from '@/api/notification';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { useNotificationStore } from '@/stores/notification';
@@ -10,10 +11,13 @@ import type { SalesContract } from '@/types/sales-contract';
 
 const typeMap: Record<string, { text: string; color: string }> = {
   sales_contract_created: { text: '销售合同创建', color: 'blue' },
+  sales_contract_reminder: { text: '销售合同提醒', color: 'blue' },
+  exchange_rate_changed: { text: '汇率变更', color: 'orange' },
 };
 
 export const NotificationList: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const { decrementUnread } = useNotificationStore();
   const [data, setData] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -223,6 +227,17 @@ export const NotificationList: React.FC = () => {
               查看销售合同
             </Button>
           ),
+          selectedNotification?.sales_contract && (
+            <Button
+              key="create"
+              onClick={() => {
+                setDetailVisible(false);
+                navigate(`/purchase/contracts?salesContract=${selectedNotification.sales_contract}`);
+              }}
+            >
+              去创建采购合同
+            </Button>
+          ),
         ]}
         width={600}
       >
@@ -251,7 +266,7 @@ export const NotificationList: React.FC = () => {
                 <strong>关联销售合同：</strong>
                 <p>合同编号：{selectedNotification.expand.sales_contract.no}</p>
                 <p>产品名称：{selectedNotification.expand.sales_contract.product_name}</p>
-                <p>合同金额：¥{selectedNotification.expand.sales_contract.total_amount?.toLocaleString()}</p>
+                <p>产品数量：{selectedNotification.expand.sales_contract.total_quantity} 吨</p>
               </div>
             )}
           </div>
@@ -280,14 +295,8 @@ export const NotificationList: React.FC = () => {
             <Descriptions.Item label="客户">
               {selectedContract.expand?.customer?.name || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="产品单价">
-              ¥{selectedContract.unit_price?.toLocaleString()}
-            </Descriptions.Item>
             <Descriptions.Item label="合同总数量">
               {selectedContract.total_quantity} 吨
-            </Descriptions.Item>
-            <Descriptions.Item label="合同总金额" span={2}>
-              ¥{selectedContract.total_amount?.toLocaleString()}
             </Descriptions.Item>
             <Descriptions.Item label="签订日期">
               {selectedContract.sign_date?.split(' ')[0] || '-'}
@@ -300,24 +309,6 @@ export const NotificationList: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="执行进度">
               {selectedContract.execution_percent?.toFixed(1)}%
-            </Descriptions.Item>
-            <Descriptions.Item label="已收款金额">
-              ¥{selectedContract.receipted_amount?.toLocaleString()}
-            </Descriptions.Item>
-            <Descriptions.Item label="收款进度">
-              {selectedContract.receipt_percent?.toFixed(1)}%
-            </Descriptions.Item>
-            <Descriptions.Item label="欠款金额">
-              ¥{selectedContract.debt_amount?.toLocaleString()}
-            </Descriptions.Item>
-            <Descriptions.Item label="欠款进度">
-              {selectedContract.debt_percent?.toFixed(1)}%
-            </Descriptions.Item>
-            <Descriptions.Item label="已开票金额">
-              ¥{selectedContract.invoiced_amount?.toLocaleString()}
-            </Descriptions.Item>
-            <Descriptions.Item label="开票进度">
-              {selectedContract.invoice_percent?.toFixed(1)}%
             </Descriptions.Item>
             <Descriptions.Item label="备注" span={2}>
               {selectedContract.remark || '-'}

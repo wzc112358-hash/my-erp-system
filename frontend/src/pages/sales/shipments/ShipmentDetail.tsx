@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { SalesShipmentAPI } from '@/api/sales-shipment';
 import type { SalesShipment } from '@/types/sales-shipment';
 
@@ -11,6 +13,9 @@ export const ShipmentDetail: React.FC = () => {
   const { message } = App.useApp();
   const [shipment, setShipment] = useState<SalesShipment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -111,38 +116,37 @@ export const ShipmentDetail: React.FC = () => {
               <Descriptions.Item label="到货进度" span={1}>
                 {shipment.expand.sales_contract.execution_percent?.toFixed(1) || '0'}%
               </Descriptions.Item>
-              <Descriptions.Item label="合同总金额" span={1}>
-                ¥{shipment.expand.sales_contract.total_amount?.toFixed(2) || '0.00'}
+              <Descriptions.Item label={(() => {
+                const sc = shipment.expand!.sales_contract;
+                if (sc.is_cross_border) return sc.is_price_excluding_tax ? '合同总金额（不含税，USD）' : '合同总金额（USD）';
+                return sc.is_price_excluding_tax ? '合同总金额（不含税）' : '合同总金额';
+              })()} span={1}>
+                {(() => {
+                  const sc = shipment.expand!.sales_contract;
+                  const v = sc.total_amount || 0;
+                  return sc.is_cross_border
+                    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
+                    : `¥${v.toFixed(4)}`;
+                })()}
               </Descriptions.Item>
             </Descriptions>
           </>
         )}
 
         <Divider>附件</Divider>
-        {shipment.attachments ? (
+        {shipment.attachments && shipment.attachments.length > 0 ? (
           <Flex vertical gap="small">
-            {Array.isArray(shipment.attachments)
-              ? shipment.attachments.map((file: string) => (
-                  <a
-                    key={file}
-                    href={`https://api.henghuacheng.cn/api/files/sales_shipments/${shipment.id}/${file}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {file}
-                  </a>
-                ))
-              : (shipment.attachments as unknown as string) && (
-                  <a
-                    href={`https://api.henghuacheng.cn/api/files/sales_shipments/${shipment.id}/${shipment.attachments}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    <DownloadOutlined /> {shipment.attachments as unknown as string}
-                  </a>
-                )}
+            {shipment.attachments.map((file: string) => (
+                <a
+                  key={file}
+                  href={`${pb.baseUrl}/api/files/sales_shipments/${shipment.id}/${file}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                >
+                  <DownloadOutlined /> {file}
+                </a>
+              ))}
           </Flex>
         ) : (
           <p style={{ color: '#999' }}>暂无附件</p>

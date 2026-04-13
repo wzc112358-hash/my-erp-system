@@ -15,6 +15,8 @@ export interface Notification {
       product_name: string;
       customer: string;
       total_amount: number;
+      total_quantity: number;
+      is_cross_border?: boolean;
     };
     recipient?: {
       id: string;

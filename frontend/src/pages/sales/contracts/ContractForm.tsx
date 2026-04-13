@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Select, InputNumber, DatePicker, Button, Row, Col, Space, message, Upload } from 'antd';
+import { Form, Input, Select, InputNumber, DatePicker, Button, Row, Col, Space, message, Upload, Switch, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { SalesContractFormData, SalesContract } from '@/types/sales-contract';
 import { CustomerAPI } from '@/api/customer';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 
 interface CustomerOption {
   id: string;
@@ -28,6 +29,13 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [purchaseContracts, setPurchaseContracts] = useState<PurchaseContractOption[]>([]);
   const [totalAmount, setTotalAmount] = useState<number>(0);
+  const [isExTax, setIsExTax] = useState(initialValues?.is_price_excluding_tax || false);
+  const [isCrossBorder, setIsCrossBorder] = useState(initialValues?.is_cross_border || false);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   useEffect(() => {
     const fetchCustomers = async () => {
@@ -94,6 +102,8 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
           ? {
               ...initialValues,
               sign_date: initialValues.sign_date ? dayjs(initialValues.sign_date.split(' ')[0]) : undefined,
+              is_price_excluding_tax: initialValues.is_price_excluding_tax || false,
+              is_cross_border: initialValues.is_cross_border || false,
               attachments: Array.isArray(initialValues.attachments)
                 ? initialValues.attachments.map((file, index) => ({
                     uid: `${index}`,
@@ -108,6 +118,8 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
               product_name: '',
               unit_price: undefined,
               total_quantity: undefined,
+              is_price_excluding_tax: false,
+              is_cross_border: false,
               sign_date: undefined,
               remark: '',
               attachments: [],
@@ -172,11 +184,19 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
         </Col>
       </Row>
 
+      <Form.Item name="is_price_excluding_tax" label="按不含税单价填写" valuePropName="checked">
+        <Switch onChange={(checked) => setIsExTax(checked)} />
+      </Form.Item>
+
+      <Form.Item name="is_cross_border" label="跨境交易（USD）" valuePropName="checked">
+        <Switch onChange={(checked) => setIsCrossBorder(checked)} />
+      </Form.Item>
+
       <Row gutter={16}>
         <Col xs={24} md={12}>
           <Form.Item
             name="unit_price"
-            label="产品单价"
+            label={isCrossBorder ? '产品单价（USD）' : isExTax ? '产品单价（不含税）' : '产品单价'}
             rules={[
               { required: true, message: '请输入产品单价' },
               {
@@ -192,7 +212,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             <InputNumber
               placeholder="请输入产品单价"
               min={0.01}
-              precision={2}
+              precision={4}
               style={{ width: '100%' }}
             />
           </Form.Item>
@@ -216,7 +236,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             <InputNumber
               placeholder="请输入产品数量"
               min={0.01}
-              precision={2}
+              precision={4}
               style={{ width: '100%' }}
             />
           </Form.Item>
@@ -225,10 +245,18 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
 
       <Row gutter={16}>
         <Col xs={24} md={12}>
-          <Form.Item label="合同总金额">
+          <Form.Item label={isCrossBorder ? '合同总金额（USD）' : isExTax ? '合同总金额（不含税）' : '合同总金额'}>
             <div style={{ padding: '9.5px 11px', background: '#f5f5f5', borderRadius: 6, color: '#333' }}>
-              ¥ {totalAmount.toLocaleString()}
+              {isCrossBorder ? '$' : '¥'} {totalAmount.toFixed(4)}
             </div>
+            {isCrossBorder && (
+              <Alert
+                message={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(4)}（汇率：${exchangeRate}）`}
+                type="info"
+                style={{ marginTop: 8 }}
+                showIcon
+              />
+            )}
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>

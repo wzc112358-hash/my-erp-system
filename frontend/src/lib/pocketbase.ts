@@ -24,6 +24,7 @@ const getApiBaseUrl = (): string => {
 };
 
 export const pb = new PocketBase(getApiBaseUrl());
+pb.autoCancellation(false);
 
 export const switchSystem = (system: string) => {
   localStorage.setItem('erp_system', system);

@@ -163,7 +163,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
               placeholder="请输入产品数量"
               style={{ width: '100%' }}
               min={0.01}
-              precision={2}
+              precision={4}
               onChange={handleProductAmountChange}
             />
           </Form.Item>
@@ -180,7 +180,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
             <InputNumber
               placeholder="请输入付款金额"
               style={{ width: '100%' }}
-              precision={2}
+              precision={4}
               min={0}
             />
           </Form.Item>

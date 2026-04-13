@@ -113,13 +113,13 @@ export const ReportPage: React.FC = () => {
           产品名称: row.productName,
           供应商名称: row.supplierName,
           '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(2) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(2) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(2) || '0.00',
+          采购单价: row.purchaseUnitPrice?.toFixed(4) || '0.00',
+          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(4) || '0.00',
+          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(4) || '0.00',
           采购付款日期: '',
           采购收票日期: '',
-          运费: row.freight?.toFixed(2) || '0.00',
-          杂费: row.miscellaneous?.toFixed(2) || '0.00',
+          运费: row.freight?.toFixed(4) || '0.00',
+          杂费: row.miscellaneous?.toFixed(4) || '0.00',
           销售合同号: '',
           '签订日期(销售)': '',
           客户名称: '',
@@ -148,13 +148,13 @@ export const ReportPage: React.FC = () => {
           产品名称: row.productName,
           供应商名称: row.supplierName,
           '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(2) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(2) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(2) || '0.00',
+          采购单价: row.purchaseUnitPrice?.toFixed(4) || '0.00',
+          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(4) || '0.00',
+          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(4) || '0.00',
           采购付款日期: row.purchasePaymentDate ? new Date(row.purchasePaymentDate).toLocaleDateString() : '',
           采购收票日期: row.purchaseInvoiceDate ? new Date(row.purchaseInvoiceDate).toLocaleDateString() : '',
-          运费: row.freight?.toFixed(2) || '0.00',
-          杂费: row.miscellaneous?.toFixed(2) || '0.00',
+          运费: row.freight?.toFixed(4) || '0.00',
+          杂费: row.miscellaneous?.toFixed(4) || '0.00',
           销售合同号: '',
           '签订日期(销售)': '',
           客户名称: '',
@@ -179,30 +179,30 @@ export const ReportPage: React.FC = () => {
           产品名称: row.productName,
           供应商名称: row.supplierName,
           '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(2) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(2) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(2) || '0.00',
+          采购单价: row.purchaseUnitPrice?.toFixed(4) || '0.00',
+          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(4) || '0.00',
+          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(4) || '0.00',
           采购付款日期: row.purchasePaymentDate ? new Date(row.purchasePaymentDate).toLocaleDateString() : '',
           采购收票日期: row.purchaseInvoiceDate ? new Date(row.purchaseInvoiceDate).toLocaleDateString() : '',
-          运费: row.freight?.toFixed(2) || '0.00',
-          杂费: row.miscellaneous?.toFixed(2) || '0.00',
+          运费: row.freight?.toFixed(4) || '0.00',
+          杂费: row.miscellaneous?.toFixed(4) || '0.00',
           销售合同号: row.salesContractNo,
           '签订日期(销售)': row.salesSignDate
             ? new Date(row.salesSignDate).toLocaleDateString()
             : '',
           客户名称: row.customerName,
           产品数量销售: row.salesQuantity,
-          销售单价: row.salesUnitPrice?.toFixed(2) || '0.00',
-          '销售总价(不含税)': row.salesTotalAmount?.toFixed(2) || '0.00',
-          销售含税总价: row.salesTaxTotalAmount?.toFixed(2) || '0.00',
+          销售单价: row.salesUnitPrice?.toFixed(4) || '0.00',
+          '销售总价(不含税)': row.salesTotalAmount?.toFixed(4) || '0.00',
+          销售含税总价: row.salesTaxTotalAmount?.toFixed(4) || '0.00',
           客户到货时间: row.arrivalDate
             ? new Date(row.arrivalDate).toLocaleDateString()
             : '',
           销售收款日期: row.salesReceiptDate ? new Date(row.salesReceiptDate).toLocaleDateString() : '',
           销售开票日期: row.salesInvoiceDate ? new Date(row.salesInvoiceDate).toLocaleDateString() : '',
-          税额: row.tax?.toFixed(2) || '0.00',
-          营业利润: row.profit?.toFixed(2) || '0.00',
-          净利润: row.netProfit?.toFixed(2) || '0.00',
+          税额: row.tax?.toFixed(4) || '0.00',
+          营业利润: row.profit?.toFixed(4) || '0.00',
+          净利润: row.netProfit?.toFixed(4) || '0.00',
         });
       }
       rowIndex++;
@@ -228,25 +228,25 @@ export const ReportPage: React.FC = () => {
       供应商名称: '',
       '产品数量(吨)': '',
       采购单价: '',
-      '采购总价(不含税)': summary.totalPurchaseAmount.toFixed(2),
-      采购含税总价: summary.totalPurchaseTaxAmount.toFixed(2),
+      '采购总价(不含税)': summary.totalPurchaseAmount.toFixed(4),
+      采购含税总价: summary.totalPurchaseTaxAmount.toFixed(4),
       采购付款日期: '',
       采购收票日期: '',
-      运费: summary.totalFreight.toFixed(2),
-      杂费: summary.totalMiscellaneous.toFixed(2),
+      运费: summary.totalFreight.toFixed(4),
+      杂费: summary.totalMiscellaneous.toFixed(4),
       销售合同号: '',
       '签订日期(销售)': '',
       客户名称: '',
       产品数量销售: '',
       销售单价: '',
-      '销售总价(不含税)': summary.totalSalesAmount.toFixed(2),
-      销售含税总价: summary.totalSalesTaxAmount.toFixed(2),
+      '销售总价(不含税)': summary.totalSalesAmount.toFixed(4),
+      销售含税总价: summary.totalSalesTaxAmount.toFixed(4),
       客户到货时间: '',
       销售收款日期: '',
       销售开票日期: '',
-      税额: summary.totalTax.toFixed(2),
-      营业利润: summary.totalProfit.toFixed(2),
-      净利润: summary.totalNetProfit.toFixed(2),
+      税额: summary.totalTax.toFixed(4),
+      营业利润: summary.totalProfit.toFixed(4),
+      净利润: summary.totalNetProfit.toFixed(4),
     };
 
     const ws = XLSX.utils.json_to_sheet([...exportData, summaryRow] as Record<string, unknown>[]);
@@ -328,7 +328,7 @@ export const ReportPage: React.FC = () => {
       key: 'purchaseUnitPrice',
       width: 100,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '采购总价(不含税)(不含税)',
@@ -336,7 +336,7 @@ export const ReportPage: React.FC = () => {
       key: 'purchaseTotalAmount',
       width: 120,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '采购含税总价',
@@ -344,7 +344,7 @@ export const ReportPage: React.FC = () => {
       key: 'purchaseTaxTotalAmount',
       width: 120,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '采购付款日期',
@@ -366,7 +366,7 @@ export const ReportPage: React.FC = () => {
       key: 'freight',
       width: 80,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '杂费',
@@ -374,7 +374,7 @@ export const ReportPage: React.FC = () => {
       key: 'miscellaneous',
       width: 80,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '销售合同号',
@@ -423,7 +423,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '销售总价(不含税)(不含税)',
@@ -434,7 +434,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '销售含税总价',
@@ -445,7 +445,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '客户到货时间',
@@ -486,7 +486,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '营业利润',
@@ -497,7 +497,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
     {
       title: '净利润',
@@ -508,7 +508,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(2) || '0.00',
+      render: (val: number) => val?.toFixed(4) || '0.00',
     },
   ];
 
@@ -517,23 +517,23 @@ export const ReportPage: React.FC = () => {
     footer: (_: unknown, record?: ReportData) => {
       if (record) return undefined;
       return col.dataIndex === 'purchaseTotalAmount'
-        ? summary.totalPurchaseAmount.toFixed(2)
+        ? summary.totalPurchaseAmount.toFixed(4)
         : col.dataIndex === 'purchaseTaxTotalAmount'
-        ? summary.totalPurchaseTaxAmount.toFixed(2)
+        ? summary.totalPurchaseTaxAmount.toFixed(4)
         : col.dataIndex === 'salesTotalAmount'
-        ? summary.totalSalesAmount.toFixed(2)
+        ? summary.totalSalesAmount.toFixed(4)
         : col.dataIndex === 'salesTaxTotalAmount'
-        ? summary.totalSalesTaxAmount.toFixed(2)
+        ? summary.totalSalesTaxAmount.toFixed(4)
         : col.dataIndex === 'tax'
-        ? summary.totalTax.toFixed(2)
+        ? summary.totalTax.toFixed(4)
         : col.dataIndex === 'freight'
-        ? summary.totalFreight.toFixed(2)
+        ? summary.totalFreight.toFixed(4)
         : col.dataIndex === 'miscellaneous'
-        ? summary.totalMiscellaneous.toFixed(2)
+        ? summary.totalMiscellaneous.toFixed(4)
         : col.dataIndex === 'profit'
-        ? summary.totalProfit.toFixed(2)
+        ? summary.totalProfit.toFixed(4)
         : col.dataIndex === 'netProfit'
-        ? summary.totalNetProfit.toFixed(2)
+        ? summary.totalNetProfit.toFixed(4)
         : undefined;
     },
   }));
@@ -625,12 +625,12 @@ export const ReportPage: React.FC = () => {
             size="small"
             footer={() => (
               <div style={{ fontWeight: 'bold' }}>
-                总计: 采购总价(不含税) {summary.totalPurchaseAmount.toFixed(2)} | 采购含税总价{' '}
-                {summary.totalPurchaseTaxAmount.toFixed(2)} | 运费{' '}
-                {summary.totalFreight.toFixed(2)} | 杂费 {summary.totalMiscellaneous.toFixed(2)} | 销售总价(不含税){' '}
-                {summary.totalSalesAmount.toFixed(2)} | 销售含税总价 {summary.totalSalesTaxAmount.toFixed(2)} | 税额{' '}
-                {summary.totalTax.toFixed(2)} | 营业利润{' '}
-                {summary.totalProfit.toFixed(2)} | 净利润 {summary.totalNetProfit.toFixed(2)}
+                总计: 采购总价(不含税) {summary.totalPurchaseAmount.toFixed(4)} | 采购含税总价{' '}
+                {summary.totalPurchaseTaxAmount.toFixed(4)} | 运费{' '}
+                {summary.totalFreight.toFixed(4)} | 杂费 {summary.totalMiscellaneous.toFixed(4)} | 销售总价(不含税){' '}
+                {summary.totalSalesAmount.toFixed(4)} | 销售含税总价 {summary.totalSalesTaxAmount.toFixed(4)} | 税额{' '}
+                {summary.totalTax.toFixed(4)} | 营业利润{' '}
+                {summary.totalProfit.toFixed(4)} | 净利润 {summary.totalNetProfit.toFixed(4)}
               </div>
             )}
           />

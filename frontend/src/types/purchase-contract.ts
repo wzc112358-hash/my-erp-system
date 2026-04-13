@@ -7,6 +7,7 @@ export interface PurchaseContract {
   total_amount: number;
   unit_price: number;
   total_quantity: number;
+  is_cross_border: boolean;
   executed_quantity: number;
   execution_percent: number;
   invoiced_amount: number;
@@ -20,7 +21,7 @@ export interface PurchaseContract {
   sign_date: string;
   status: 'executing' | 'completed' | 'cancelled';
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   purchasing_manager?: string;
   created: string;
@@ -59,6 +60,7 @@ export interface PurchaseContractFormData {
   product_name: string;
   unit_price: number;
   total_quantity: number;
+  is_cross_border?: boolean;
   sign_date: string;
   remark?: string;
   purchasing_manager?: string;
@@ -77,21 +79,28 @@ export interface PurchaseArrival {
   product_name: string;
   purchase_contract: string;
   tracking_contract_no: string;
-  plan_date: string;
-  actual_date?: string;
+  shipment_date: string;
   quantity: number;
   logistics_company: string;
   shipment_address: string;
+  wether_transit: string;
+  transit_warehouse?: string;
   delivery_address: string;
-  freight: number;
-  freight_status: 'paid' | 'unpaid';
-  invoice_status: 'issued' | 'unissued';
-  recipient?: string;
-  recipient_phone?: string;
-  status: 'pending' | 'arrived' | 'stocked';
+  freight_1: number;
+  freight_2?: number;
+  miscellaneous_expenses: number;
+  freight_1_status?: string;
+  freight_2_status?: string;
+  freight_1_date?: string;
+  freight_2_date?: string;
+  invoice_1_status?: string;
+  invoice_2_status?: string;
   remark?: string;
+  attachments?: string[];
   creator: string;
   created: string;
+  updated?: string;
+  manager_confirmed?: string;
 }
 
 export interface PurchaseInvoice {
@@ -108,7 +117,7 @@ export interface PurchaseInvoice {
   tax_amount?: number;
   receive_date: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   created: string;
   manager_confirmed?: string;
@@ -118,6 +127,7 @@ export interface PurchaseInvoice {
       id: string;
       no: string;
       product_name: string;
+      is_cross_border?: boolean;
     };
     creator?: {
       id: string;
@@ -160,7 +170,7 @@ export interface PurchasePayment {
   pay_date: string;
   method?: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator: string;
   created: string;
   manager_confirmed?: string;
@@ -169,6 +179,8 @@ export interface PurchasePayment {
       id: string;
       no: string;
       product_name: string;
+      total_amount?: number;
+      is_cross_border?: boolean;
     };
     creator?: {
       id: string;

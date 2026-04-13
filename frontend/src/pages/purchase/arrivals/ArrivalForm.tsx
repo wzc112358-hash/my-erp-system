@@ -235,7 +235,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             label="到货数量"
             rules={[{ required: true, message: '请输入到货数量' }]}
           >
-            <InputNumber min={0.01} precision={2} style={{ width: '100%' }} placeholder="请输入到货数量" />
+            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入到货数量" />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
@@ -291,7 +291,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             label="运费金额1"
             rules={[{ required: true, message: '请输入运费金额1' }]}
           >
-            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入运费金额1" />
+            <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入运费金额1" />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -322,7 +322,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
               label="运费金额2"
               rules={[{ required: true, message: '请输入运费金额2' }]}
             >
-              <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入运费金额2" />
+              <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入运费金额2" />
             </Form.Item>
           </Col>
           <Col xs={24} sm={12} md={8}>
@@ -354,7 +354,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             label="杂费"
             rules={[{ required: true, message: '请输入杂费' }]}
           >
-            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入杂费" />
+            <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入杂费" />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>

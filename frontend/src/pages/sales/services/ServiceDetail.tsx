@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Table, Spin, App, Flex, Button, Modal, Popconfirm, Form } from 'antd';
 import { DownloadOutlined, ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { pb } from '@/lib/pocketbase';
 import { ServiceContractAPI } from '@/api/service-contract';
 import type { ServiceContract, ServiceOrder, ServiceOrderFormData } from '@/types/service-contract';
 import { ServiceOrderForm } from './ServiceOrderForm';
@@ -157,7 +158,7 @@ export const ServiceDetail: React.FC = () => {
       dataIndex: 'unit_price',
       key: 'unit_price',
       width: 90,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '数量',
@@ -171,7 +172,7 @@ export const ServiceDetail: React.FC = () => {
       dataIndex: 'receipt_amount',
       key: 'receipt_amount',
       width: 110,
-      render: (v: number) => v ? `$${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `$${v.toFixed(4)}` : '-',
     },
     {
       title: '收款时间',
@@ -185,7 +186,7 @@ export const ServiceDetail: React.FC = () => {
       dataIndex: 'receipt_amount_rmb',
       key: 'receipt_amount_rmb',
       width: 110,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '收款日期RMB（兑换日期）',
@@ -199,7 +200,7 @@ export const ServiceDetail: React.FC = () => {
       dataIndex: 'invoice_amount',
       key: 'invoice_amount',
       width: 100,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '开票时间',
@@ -213,7 +214,7 @@ export const ServiceDetail: React.FC = () => {
       dataIndex: 'tax_amount',
       key: 'tax_amount',
       width: 90,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '报税时间',
@@ -269,30 +270,19 @@ export const ServiceDetail: React.FC = () => {
           <Descriptions.Item label="销售负责人">{contract.sales_manager || '-'}</Descriptions.Item>
           <Descriptions.Item label="备注">{contract.remark || '-'}</Descriptions.Item>
           <Descriptions.Item label="合同附件" span={2}>
-            {contract.attachments ? (
+            {contract.attachments && contract.attachments.length > 0 ? (
               <Flex vertical gap="small">
-                {Array.isArray(contract.attachments)
-                  ? contract.attachments.map((file: string) => (
-                      <a
-                        key={file}
-                        href={`https://api.henghuacheng.cn/api/files/service_contracts/${contract.id}/${file}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {file}
-                      </a>
-                    ))
-                  : (contract.attachments as unknown as string) && (
-                      <a
-                        href={`https://api.henghuacheng.cn/api/files/service_contracts/${contract.id}/${contract.attachments}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {contract.attachments as unknown as string}
-                      </a>
-                    )}
+                {contract.attachments.map((file: string) => (
+                    <a
+                      key={file}
+                      href={`${pb.baseUrl}/api/files/service_contracts/${contract.id}/${file}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                    >
+                      <DownloadOutlined /> {file}
+                    </a>
+                  ))}
               </Flex>
             ) : '-'}
           </Descriptions.Item>

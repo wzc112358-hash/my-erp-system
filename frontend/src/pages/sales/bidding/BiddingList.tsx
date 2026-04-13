@@ -208,14 +208,14 @@ export const BiddingList: React.FC = () => {
       dataIndex: 'tender_fee',
       key: 'tender_fee',
       width: 100,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '投标保证金',
       dataIndex: 'bid_bond',
       key: 'bid_bond',
       width: 110,
-      render: (v: number) => v ? `¥${v.toLocaleString()}` : '-',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
     },
     {
       title: '开标时间',

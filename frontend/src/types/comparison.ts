@@ -7,6 +7,8 @@ export interface ComparisonSalesContract {
   unit_price: number;
   total_amount: number;
   total_quantity: number;
+  is_price_excluding_tax: boolean;
+  is_cross_border: boolean;
   executed_quantity: number;
   execution_percent?: number;
   receipted_amount: number;
@@ -66,6 +68,7 @@ export interface ComparisonPurchaseContract {
   unit_price: number;
   total_amount: number;
   total_quantity: number;
+  is_cross_border: boolean;
   executed_quantity: number;
   execution_percent?: number;
   invoiced_amount: number;

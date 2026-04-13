@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, Space, App, Spin, Divider, Table, Tag } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { PurchaseInvoice } from '@/types/purchase-contract';
 import { pb } from '@/lib/pocketbase';
 
@@ -12,6 +13,7 @@ export const InvoiceDetail: React.FC = () => {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
   const [invoice, setInvoice] = useState<PurchaseInvoice | null>(null);
+  const [exchangeRate, setExchangeRate] = useState(7.25);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,6 +34,10 @@ export const InvoiceDetail: React.FC = () => {
     };
     fetchData();
   }, [id, message]);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   const handleDownload = (filePath: string) => {
     const url = pb.files.getUrl(invoice as PurchaseInvoice, filePath);
@@ -109,7 +115,11 @@ export const InvoiceDetail: React.FC = () => {
           <Descriptions.Item label="产品名称">{invoice.product_name}</Descriptions.Item>
           <Descriptions.Item label="发票类型">{invoice.invoice_type}</Descriptions.Item>
           <Descriptions.Item label="产品数量">{invoice.product_amount} 吨</Descriptions.Item>
-          <Descriptions.Item label="发票金额">{invoice.amount?.toFixed(2)}</Descriptions.Item>
+          <Descriptions.Item label="发票金额">
+            {invoice.expand?.purchase_contract?.is_cross_border
+              ? `$${invoice.amount?.toFixed(4)}（≈ ¥${(invoice.amount * exchangeRate)?.toFixed(4)}）`
+              : `¥${invoice.amount?.toFixed(4)}`}
+          </Descriptions.Item>
           <Descriptions.Item label="收票日期">{invoice.receive_date}</Descriptions.Item>
           <Descriptions.Item label="是否验票">
             {invoice.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}

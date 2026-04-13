@@ -7,7 +7,7 @@ export interface ExpenseRecord {
   pay_date: string;
   method?: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   purchasing_manager?: string;
   creator_user?: string;
   created: string;

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Table, Progress, Spin, Row, Col, App, Flex, Button, Modal, Tag } from 'antd';
 import { DownloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { BiddingRecordAPI } from '@/api/bidding-record';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { SalesContract, SalesShipment, SaleInvoice, SaleReceipt } from '@/types/sales-contract';
 import type { PurchaseContract } from '@/types/purchase-contract';
 import type { BiddingRecord } from '@/types/bidding-record';
@@ -28,6 +30,19 @@ export const ContractDetail: React.FC = () => {
   const [showPurchaseContract, setShowPurchaseContract] = useState(false);
   const [purchaseContract, setPurchaseContract] = useState<PurchaseContract | null>(null);
   const [purchaseContractLoading, setPurchaseContractLoading] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  const loadRate = useCallback(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
+
+  useEffect(() => { loadRate(); }, [loadRate]);
+
+  const isCB = contract?.is_cross_border;
+  const fmtAmt = useCallback((v: number) => {
+    if (!isCB) return `¥${(v ?? 0).toFixed(4)}`;
+    return `$${(v ?? 0).toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`;
+  }, [isCB, exchangeRate]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -106,25 +121,33 @@ export const ContractDetail: React.FC = () => {
     { title: '发货日期', dataIndex: 'date', key: 'date', render: (d: string) => d?.split(' ')[0] },
     { title: '数量', dataIndex: 'quantity', key: 'quantity' },
     { title: '物流公司', dataIndex: 'logistics_company', key: 'logistics_company' },
-    { title: '运费', dataIndex: 'freight', key: 'freight', render: (f: number) => f ? `¥${f.toLocaleString()}` : '-' },
-    { title: '运费状态', dataIndex: 'freight_status', key: 'freight_status', render: (s: string) => s === 'paid' ? '已付' : '未付' },
-    { title: '发票状态', dataIndex: 'invoice_status', key: 'invoice_status', render: (s: string) => s === 'issued' ? '已开' : '未开' },
+    { title: '送货地址', dataIndex: 'delivery_address', key: 'delivery_address', render: (v: string) => v || '-' },
+    { title: '备注', dataIndex: 'remark', key: 'remark', render: (v: string) => v || '-' },
+    { title: '操作', key: 'action', render: (_: unknown, record: SalesShipment) => (
+      <Button size="small" onClick={() => navigate(`/sales/shipments/${record.id}`)}>查看</Button>
+    )},
   ];
 
   const invoiceColumns = [
     { title: '发票号码', dataIndex: 'no', key: 'no' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '产品数量', dataIndex: 'product_amount', key: 'product_amount' },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toLocaleString()}` : '-' },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (d: string) => d?.split(' ')[0] },
+    { title: '操作', key: 'action', render: (_: unknown, record: SaleInvoice) => (
+      <Button size="small" onClick={() => navigate(`/sales/invoices/${record.id}`)}>查看</Button>
+    )},
   ];
 
   const receiptColumns = [
-    { title: '收款日期', dataIndex: 'receipt_date', key: 'receipt_date', render: (d: string) => d?.split(' ')[0] },
-    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toLocaleString()}` : '-' },
-    { title: '产品数量', dataIndex: 'product_amount', key: 'product_amount' },
+    { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
+    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
+    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
     { title: '收款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
-    { title: '收款账户', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },
+    { title: '收款账号', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },
+    { title: '操作', key: 'action', render: (_: unknown, record: SaleReceipt) => (
+      <Button size="small" onClick={() => navigate(`/sales/receipts/${record.id}`)}>查看</Button>
+    )},
   ];
 
   const bidResultMap: Record<string, { label: string; color: string }> = {
@@ -138,15 +161,15 @@ export const ContractDetail: React.FC = () => {
     { title: '招标编号', dataIndex: 'bidding_no', key: 'bidding_no' },
     { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
     { title: '数量', dataIndex: 'quantity', key: 'quantity' },
-    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
-    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toLocaleString()}` : '-' },
+    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
     { title: '开标时间', dataIndex: 'open_date', key: 'open_date', render: (v: string) => v?.split(' ')[0] || '-' },
     { title: '中标结果', dataIndex: 'bid_result', key: 'bid_result', render: (v: string) => {
       const info = bidResultMap[v];
       return info ? <Tag color={info.color}>{info.label}</Tag> : '-';
     }},
     { title: '操作', key: 'action', render: (_: unknown, record: BiddingRecord) => (
-      <Button type="link" onClick={() => navigate(`/sales/bidding/${record.id}`)}>查看</Button>
+      <Button size="small" onClick={() => navigate(`/sales/bidding/${record.id}`)}>查看</Button>
     )},
   ];
 
@@ -180,36 +203,25 @@ export const ContractDetail: React.FC = () => {
             )}
           </Descriptions.Item>
           <Descriptions.Item label="签订日期">{contract.sign_date?.split(' ')[0]}</Descriptions.Item>
-          <Descriptions.Item label="合同金额">¥{contract.total_amount?.toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="产品单价">¥{contract.unit_price?.toLocaleString()}</Descriptions.Item>
+          <Descriptions.Item label={contract.is_price_excluding_tax ? '合同金额（不含税）' : isCB ? '合同金额（USD）' : '合同金额'}>{fmtAmt(contract.total_amount)}</Descriptions.Item>
+          <Descriptions.Item label={contract.is_price_excluding_tax ? '产品单价（不含税）' : isCB ? '产品单价（USD）' : '产品单价'}>{fmtAmt(contract.unit_price)}</Descriptions.Item>
           <Descriptions.Item label="产品数量">{contract.total_quantity} 吨</Descriptions.Item>
           <Descriptions.Item label="销售负责人">{contract.sales_manager || '-'}</Descriptions.Item>
           <Descriptions.Item label="备注" span={2}>{contract.remark || '-'}</Descriptions.Item>
           <Descriptions.Item label="合同附件" span={2}>
-            {contract.attachments ? (
+            {contract.attachments && contract.attachments.length > 0 ? (
               <Flex vertical gap="small">
-                {Array.isArray(contract.attachments)
-                  ? contract.attachments.map((file: string) => (
-                      <a
-                        key={file}
-                        href={`https://api.henghuacheng.cn/api/files/sales_contracts/${contract.id}/${file}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {file}
-                      </a>
-                    ))
-                  : (contract.attachments as unknown as string) && (
-                      <a
-                        href={`https://api.henghuacheng.cn/api/files/sales_contracts/${contract.id}/${contract.attachments}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                      >
-                        <DownloadOutlined /> {contract.attachments as unknown as string}
-                      </a>
-                    )}
+                {contract.attachments.map((file: string) => (
+                    <a
+                      key={file}
+                      href={`${pb.baseUrl}/api/files/sales_contracts/${contract.id}/${file}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                    >
+                      <DownloadOutlined /> {file}
+                    </a>
+                  ))}
               </Flex>
             ) : (
               '-'
@@ -240,21 +252,21 @@ export const ContractDetail: React.FC = () => {
             onClick={() => navigate(`/sales/receipts?contractId=${contract.id}&productName=${encodeURIComponent(contract.product_name)}`)}
           >
             <Progress percent={contract.receipt_percent || 0} status="normal" />
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
-              ¥{(contract.receipted_amount || 0).toLocaleString()} / ¥{contract.total_amount?.toLocaleString()}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8}>
-          <Card 
-            title="开票进度" 
-            hoverable 
-            style={{ cursor: 'pointer' }}
-            onClick={() => navigate(`/sales/invoices?contractId=${contract.id}&productName=${encodeURIComponent(contract.product_name)}`)}
-          >
-            <Progress percent={contract.invoice_percent || 0} status="normal" />
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
-              ¥{(contract.invoiced_amount || 0).toLocaleString()} / ¥{contract.total_amount?.toLocaleString()}
+              <div style={{ textAlign: 'center', marginTop: 8 }}>
+                {fmtAmt(contract.receipted_amount || 0)} / {fmtAmt(contract.total_amount)}
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Card 
+              title="开票进度" 
+              hoverable 
+              style={{ cursor: 'pointer' }}
+              onClick={() => navigate(`/sales/invoices?contractId=${contract.id}&productName=${encodeURIComponent(contract.product_name)}`)}
+            >
+              <Progress percent={contract.invoice_percent || 0} status="normal" />
+              <div style={{ textAlign: 'center', marginTop: 8 }}>
+                {fmtAmt(contract.invoiced_amount || 0)} / {fmtAmt(contract.total_amount)}
             </div>
           </Card>
         </Col>
@@ -262,7 +274,7 @@ export const ContractDetail: React.FC = () => {
 
       <Card title="欠款信息" style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
-          <Descriptions.Item label="欠款金额">¥{(contract.debt_amount || 0).toLocaleString()}</Descriptions.Item>
+          <Descriptions.Item label="欠款金额">{fmtAmt(contract.debt_amount || 0)}</Descriptions.Item>
           <Descriptions.Item label="欠款比例">{contract.debt_percent || 0}%</Descriptions.Item>
         </Descriptions>
       </Card>
@@ -345,8 +357,8 @@ export const ContractDetail: React.FC = () => {
             <Descriptions.Item label="产品名称">{purchaseContract.product_name}</Descriptions.Item>
             <Descriptions.Item label="供应商">{purchaseContract.expand?.supplier?.name || '-'}</Descriptions.Item>
             <Descriptions.Item label="签订日期">{purchaseContract.sign_date?.split(' ')[0]}</Descriptions.Item>
-            <Descriptions.Item label="合同金额">¥{purchaseContract.total_amount?.toLocaleString()}</Descriptions.Item>
-            <Descriptions.Item label="产品单价">¥{purchaseContract.unit_price?.toLocaleString()}</Descriptions.Item>
+            <Descriptions.Item label="合同金额">¥{purchaseContract.total_amount?.toFixed(4)}</Descriptions.Item>
+            <Descriptions.Item label="产品单价">¥{purchaseContract.unit_price?.toFixed(4)}</Descriptions.Item>
             <Descriptions.Item label="产品数量">{purchaseContract.total_quantity} 吨</Descriptions.Item>
           </Descriptions>
         ) : (

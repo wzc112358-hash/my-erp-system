@@ -6,7 +6,7 @@ export interface BiddingRecord {
   quantity: number;
   tender_fee: number;
   tender_fee_date: string;
-  tender_fee_invoice?: string | string[];
+  tender_fee_invoice?: string[];
   bid_bond: number;
   bid_bond_date: string;
   open_date: string;
@@ -16,7 +16,7 @@ export interface BiddingRecord {
   agency_fee?: number;
   sales_contract?: string;
   remark?: string;
-  attachments?: string | string[];
+  attachments?: string[];
   creator_user?: string;
   created: string;
   updated: string;

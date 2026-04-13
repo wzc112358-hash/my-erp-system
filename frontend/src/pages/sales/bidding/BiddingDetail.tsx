@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Spin, App, Flex, Button, Tag } from 'antd';
 import { DownloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { pb } from '@/lib/pocketbase';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import type { BiddingRecord } from '@/types/bidding-record';
 
@@ -10,8 +11,6 @@ const bidResultMap: Record<string, { label: string; color: string }> = {
   won: { label: '中标', color: 'green' },
   lost: { label: '未中标', color: 'red' },
 };
-
-const FILE_BASE = 'https://api.henghuacheng.cn/api/files/bidding_records';
 
 export const BiddingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -58,16 +57,14 @@ export const BiddingDetail: React.FC = () => {
     return null;
   }
 
-  const renderFileLinks = (files: string | string[] | undefined) => {
-    if (!files) return '-';
-    const fileList = Array.isArray(files) ? files : [files];
-    if (fileList.length === 0) return '-';
+  const renderFileLinks = (files: string[] | undefined) => {
+    if (!files || files.length === 0) return '-';
     return (
       <Flex vertical gap="small">
-        {fileList.map((file: string) => (
+        {files.map((file: string) => (
           <a
             key={file}
-            href={`${FILE_BASE}/${record.id}/${file}`}
+            href={`${pb.baseUrl}/api/files/bidding_records/${record.id}/${file}`}
             target="_blank"
             rel="noopener noreferrer"
             download
@@ -99,7 +96,7 @@ export const BiddingDetail: React.FC = () => {
           <Descriptions.Item label="数量">{record.quantity}</Descriptions.Item>
 
           <Descriptions.Item label="标书费">
-            {record.tender_fee ? `¥${record.tender_fee.toLocaleString()}` : '-'}
+            {record.tender_fee ? `¥${record.tender_fee.toFixed(4)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付标书费时间">
             {record.tender_fee_date?.split(' ')[0] || '-'}
@@ -109,7 +106,7 @@ export const BiddingDetail: React.FC = () => {
           </Descriptions.Item>
 
           <Descriptions.Item label="投标保证金">
-            {record.bid_bond ? `¥${record.bid_bond.toLocaleString()}` : '-'}
+            {record.bid_bond ? `¥${record.bid_bond.toFixed(4)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付保证金时间">
             {record.bid_bond_date?.split(' ')[0] || '-'}
@@ -126,11 +123,11 @@ export const BiddingDetail: React.FC = () => {
             {record.bond_return_date?.split(' ')[0] || '-'}
           </Descriptions.Item>
           <Descriptions.Item label="退还金额">
-            {record.bond_return_amount ? `¥${record.bond_return_amount.toLocaleString()}` : '-'}
+            {record.bond_return_amount ? `¥${record.bond_return_amount.toFixed(4)}` : '-'}
           </Descriptions.Item>
 
           <Descriptions.Item label="招标代理费">
-            {record.agency_fee ? `¥${record.agency_fee.toLocaleString()}` : '-'}
+            {record.agency_fee ? `¥${record.agency_fee.toFixed(4)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="关联销售合同">
             {record.expand?.sales_contract ? (

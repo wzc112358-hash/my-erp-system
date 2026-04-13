@@ -28,6 +28,14 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 			e.Record.Set("uninvoiced_percent", 100)
 			e.Record.Set("status", "executing")
 
+			if !e.Record.GetBool("is_price_excluding_tax") {
+				e.Record.Set("is_price_excluding_tax", false)
+			}
+
+			if !e.Record.GetBool("is_cross_border") {
+				e.Record.Set("is_cross_border", false)
+			}
+
 			return e.Next()
 		},
 		Priority: 0,
@@ -54,12 +62,22 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 			}
 
 			title := "新销售合同需要采购"
-			message := fmt.Sprintf("销售合同 %s 已创建，客户: %s，品名: %s，数量: %.2f吨，金额: %.2f元",
-				e.Record.GetString("no"),
-				customer.GetString("name"),
-				e.Record.GetString("product_name"),
-				e.Record.GetFloat("total_quantity"),
-				e.Record.GetFloat("total_amount"))
+			var message string
+			if e.Record.GetBool("is_cross_border") {
+				message = fmt.Sprintf("销售合同 %s 已创建，客户: %s，品名: %s，数量: %.2f吨，金额: $%.2f USD",
+					e.Record.GetString("no"),
+					customer.GetString("name"),
+					e.Record.GetString("product_name"),
+					e.Record.GetFloat("total_quantity"),
+					e.Record.GetFloat("total_amount"))
+			} else {
+				message = fmt.Sprintf("销售合同 %s 已创建，客户: %s，品名: %s，数量: %.2f吨，金额: ¥%.2f元",
+					e.Record.GetString("no"),
+					customer.GetString("name"),
+					e.Record.GetString("product_name"),
+					e.Record.GetFloat("total_quantity"),
+					e.Record.GetFloat("total_amount"))
+			}
 
 			purchasingUsers, err := GetUsersByType(app, "purchasing")
 			if err != nil {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
 import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { SalesNotificationAPI } from '@/api/sales-notification';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { useNotificationStore } from '@/stores/notification';
@@ -10,10 +11,13 @@ import type { PurchaseContract } from '@/types/purchase-contract';
 
 const typeMap: Record<string, { text: string; color: string }> = {
   purchase_contract_created: { text: '采购合同创建', color: 'blue' },
+  purchase_contract_reminder: { text: '采购合同提醒', color: 'blue' },
+  exchange_rate_changed: { text: '汇率变更', color: 'orange' },
 };
 
 export const NotificationList: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const { decrementUnread } = useNotificationStore();
   const [data, setData] = useState<SalesNotification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -229,6 +233,17 @@ export const NotificationList: React.FC = () => {
               查看采购合同
             </Button>
           ),
+          selectedNotification?.purchase_contract && (
+            <Button
+              key="create"
+              onClick={() => {
+                setDetailVisible(false);
+                navigate(`/sales/contracts?purchaseContract=${selectedNotification.purchase_contract}`);
+              }}
+            >
+              去创建销售合同
+            </Button>
+          ),
         ]}
         width={600}
       >
@@ -257,7 +272,7 @@ export const NotificationList: React.FC = () => {
                 <strong>关联采购合同：</strong>
                 <p>合同编号：{selectedNotification.expand.purchase_contract.no}</p>
                 <p>产品名称：{selectedNotification.expand.purchase_contract.product_name}</p>
-                <p>合同金额：¥{selectedNotification.expand.purchase_contract.total_amount?.toLocaleString()}</p>
+                <p>合同金额：{selectedNotification.expand.purchase_contract.is_cross_border ? `$${selectedNotification.expand.purchase_contract.total_amount?.toFixed(4)} USD` : `¥${selectedNotification.expand.purchase_contract.total_amount?.toFixed(4)}`}</p>
               </div>
             )}
           </div>
@@ -287,13 +302,13 @@ export const NotificationList: React.FC = () => {
               {selectedContract.expand?.supplier?.name || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="产品单价">
-              ¥{selectedContract.unit_price?.toLocaleString()}
+              ¥{selectedContract.unit_price?.toFixed(4)}
             </Descriptions.Item>
             <Descriptions.Item label="合同总数量">
               {selectedContract.total_quantity} 吨
             </Descriptions.Item>
             <Descriptions.Item label="合同总金额" span={2}>
-              ¥{selectedContract.total_amount?.toLocaleString()}
+              ¥{selectedContract.total_amount?.toFixed(4)}
             </Descriptions.Item>
             <Descriptions.Item label="签订日期">
               {selectedContract.sign_date?.split(' ')[0] || '-'}
@@ -308,13 +323,13 @@ export const NotificationList: React.FC = () => {
               {selectedContract.execution_percent?.toFixed(1)}%
             </Descriptions.Item>
             <Descriptions.Item label="已收票金额">
-              ¥{selectedContract.invoiced_amount?.toLocaleString()}
+              ¥{selectedContract.invoiced_amount?.toFixed(4)}
             </Descriptions.Item>
             <Descriptions.Item label="收票进度">
               {selectedContract.invoiced_percent?.toFixed(1)}%
             </Descriptions.Item>
             <Descriptions.Item label="已付款金额">
-              ¥{selectedContract.paid_amount?.toLocaleString()}
+              ¥{selectedContract.paid_amount?.toFixed(4)}
             </Descriptions.Item>
             <Descriptions.Item label="付款进度">
               {selectedContract.paid_percent?.toFixed(1)}%

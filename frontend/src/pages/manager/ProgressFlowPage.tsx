@@ -7,12 +7,14 @@ import { App, Button, Card, Select, Spin, Empty, Modal, Descriptions, Tag, Uploa
 import { ComparisonAPI } from '@/api/comparison';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { useManagerPendingStore } from '@/stores/manager-pending';
 import './ProgressFlow.css';
 
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 100;
 
-const formatCurrency = (v: number) => `¥${(v ?? 0).toLocaleString()}`;
+const formatCurrency = (v: number) => `¥${(v ?? 0).toFixed(4)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 
 const FLOW_TYPE_TITLE: Record<string, string> = {
@@ -77,14 +79,14 @@ const CustomFlowNode: React.FC<{ data: FlowNodeData }> = ({ data }) => {
         background: getNodeBgColor(data.flowType),
       }}
     >
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <div className="flow-node-title">{data.title}</div>
       <div className="flow-node-label">{data.label}</div>
       {data.sublabel && <div className="flow-node-info">{data.sublabel}</div>}
       {data.amount != null && <div className="flow-node-amount">{formatCurrency(data.amount)}</div>}
       {data.date && <div className="flow-node-date">{data.date}</div>}
       {data.managerConfirmed && <div className="flow-node-status">{getStatusTag(data.managerConfirmed)}</div>}
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 };
@@ -94,7 +96,7 @@ const nodeTypes = { custom: CustomFlowNode };
 function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 140, nodesep: 50 });
+  g.setGraph({ rankdir: 'LR', ranksep: 140, nodesep: 50 });
 
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -128,6 +130,13 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
     } as FlowNodeData,
   });
 
+  interface SubNodeEntry {
+    nId: string;
+    created: string;
+  }
+
+  const salesSubNodes: SubNodeEntry[] = [];
+
   data.sales_shipments.forEach((s) => {
     const nId = `ss-${s.id}`;
     g.setNode(nId, { width: NODE_WIDTH, height: NODE_HEIGHT });
@@ -142,7 +151,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         attachments: s.attachments,
       } as FlowNodeData,
     });
-    edges.push({ id: `e-${scId}-${nId}`, source: scId, target: nId, ...edgeDefaults });
+    salesSubNodes.push({ nId, created: (s as unknown as { created?: string }).created || '' });
   });
 
   data.sale_invoices.forEach((si) => {
@@ -161,7 +170,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         attachments: si.attachments,
       } as FlowNodeData,
     });
-    edges.push({ id: `e-${scId}-${nId}`, source: scId, target: nId, ...edgeDefaults });
+    salesSubNodes.push({ nId, created: (si as unknown as { created?: string }).created || '' });
   });
 
   data.sale_receipts.forEach((r) => {
@@ -180,8 +189,16 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         attachments: r.attachments,
       } as FlowNodeData,
     });
-    edges.push({ id: `e-${scId}-${nId}`, source: scId, target: nId, ...edgeDefaults });
+    salesSubNodes.push({ nId, created: (r as unknown as { created?: string }).created || '' });
   });
+
+  salesSubNodes.sort((a, b) => a.created.localeCompare(b.created));
+  if (salesSubNodes.length > 0) {
+    edges.push({ id: `e-${scId}-${salesSubNodes[0].nId}`, source: scId, target: salesSubNodes[0].nId, ...edgeDefaults });
+    for (let i = 1; i < salesSubNodes.length; i++) {
+      edges.push({ id: `e-${salesSubNodes[i - 1].nId}-${salesSubNodes[i].nId}`, source: salesSubNodes[i - 1].nId, target: salesSubNodes[i].nId, ...edgeDefaults });
+    }
+  }
 
   data.purchase_contracts.forEach((pc) => {
     const pcId = `pc-${pc.id}`;
@@ -200,6 +217,8 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
     });
     edges.push({ id: `e-${scId}-${pcId}`, source: scId, target: pcId, ...edgeDefaults });
 
+    const pcSubNodes: SubNodeEntry[] = [];
+
     data.purchase_arrivals.filter(a => a.purchase_contract === pc.id).forEach((a) => {
       const aId = `pa-${a.id}`;
       g.setNode(aId, { width: NODE_WIDTH, height: NODE_HEIGHT });
@@ -215,7 +234,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
           attachments: a.attachments,
         } as FlowNodeData,
       });
-      edges.push({ id: `e-${pcId}-${aId}`, source: pcId, target: aId, ...edgeDefaults });
+      pcSubNodes.push({ nId: aId, created: (a as unknown as { created?: string }).created || '' });
     });
 
     data.purchase_invoices.filter(i => i.purchase_contract === pc.id).forEach((i) => {
@@ -234,7 +253,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
           attachments: i.attachments,
         } as FlowNodeData,
       });
-      edges.push({ id: `e-${pcId}-${iId}`, source: pcId, target: iId, ...edgeDefaults });
+      pcSubNodes.push({ nId: iId, created: (i as unknown as { created?: string }).created || '' });
     });
 
     data.purchase_payments.filter(p => p.purchase_contract === pc.id).forEach((p) => {
@@ -253,8 +272,16 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
           attachments: p.attachments,
         } as FlowNodeData,
       });
-      edges.push({ id: `e-${pcId}-${pId}`, source: pcId, target: pId, ...edgeDefaults });
+      pcSubNodes.push({ nId: pId, created: (p as unknown as { created?: string }).created || '' });
     });
+
+    pcSubNodes.sort((a, b) => a.created.localeCompare(b.created));
+    if (pcSubNodes.length > 0) {
+      edges.push({ id: `e-${pcId}-${pcSubNodes[0].nId}`, source: pcId, target: pcSubNodes[0].nId, ...edgeDefaults });
+      for (let i = 1; i < pcSubNodes.length; i++) {
+        edges.push({ id: `e-${pcSubNodes[i - 1].nId}-${pcSubNodes[i].nId}`, source: pcSubNodes[i - 1].nId, target: pcSubNodes[i].nId, ...edgeDefaults });
+      }
+    }
   });
 
   edges.forEach((edge) => {
@@ -273,13 +300,18 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
   return { nodes, edges };
 }
 
-const renderModalDetail = (data: FlowNodeData) => {
+const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
   const r = data.record;
   if (!r) return null;
 
+  const formatAmountCrossBorder = (amount: number, isCrossBorder: boolean) => {
+    if (!isCrossBorder) return formatCurrency(amount);
+    return `$${(amount ?? 0).toFixed(4)}（≈ ¥${(amount  * exchangeRate).toFixed(4)}）`;
+  };
+
   const renderAttachments = () => {
     const files = data.attachments && data.attachments.length > 0
-      ? (Array.isArray(data.attachments) ? data.attachments : [data.attachments]).map((name: string) => ({
+      ? data.attachments.map((name: string) => ({
           uid: `${data.recordId}-${name}`,
           name,
           status: 'done' as const,
@@ -301,9 +333,9 @@ const renderModalDetail = (data: FlowNodeData) => {
         <Descriptions bordered size="small" column={2}>
           <Descriptions.Item label="合同编号">{r.no as string}</Descriptions.Item>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
-          <Descriptions.Item label="总金额">{formatCurrency(r.total_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label={r.is_price_excluding_tax ? (r.is_cross_border ? '总金额（不含税，USD）' : '总金额（不含税）') : (r.is_cross_border ? '总金额（USD）' : '总金额')}>{formatAmountCrossBorder(r.total_amount as number, r.is_cross_border as boolean)}</Descriptions.Item>
           <Descriptions.Item label="总数量">{r.total_quantity as number} 吨</Descriptions.Item>
-          <Descriptions.Item label="单价">{formatCurrency(r.unit_price as number)}</Descriptions.Item>
+          <Descriptions.Item label={r.is_price_excluding_tax ? (r.is_cross_border ? '单价（不含税，USD）' : '单价（不含税）') : (r.is_cross_border ? '单价（USD）' : '单价')}>{formatAmountCrossBorder(r.unit_price as number, r.is_cross_border as boolean)}</Descriptions.Item>
           <Descriptions.Item label="已执行数量">{r.executed_quantity as number} 吨</Descriptions.Item>
           <Descriptions.Item label="已收金额">{formatCurrency(r.receipted_amount as number)}</Descriptions.Item>
           <Descriptions.Item label="已开票金额">{formatCurrency(r.invoiced_amount as number)}</Descriptions.Item>
@@ -319,9 +351,9 @@ const renderModalDetail = (data: FlowNodeData) => {
         <Descriptions bordered size="small" column={2}>
           <Descriptions.Item label="合同编号">{r.no as string}</Descriptions.Item>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
-          <Descriptions.Item label="总金额">{formatCurrency(r.total_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label={r.is_cross_border ? '总金额（USD）' : '总金额'}>{formatAmountCrossBorder(r.total_amount as number, r.is_cross_border as boolean)}</Descriptions.Item>
           <Descriptions.Item label="总数量">{r.total_quantity as number} 吨</Descriptions.Item>
-          <Descriptions.Item label="单价">{formatCurrency(r.unit_price as number)}</Descriptions.Item>
+          <Descriptions.Item label={r.is_cross_border ? '单价（USD）' : '单价'}>{formatAmountCrossBorder(r.unit_price as number, r.is_cross_border as boolean)}</Descriptions.Item>
           <Descriptions.Item label="已执行数量">{r.executed_quantity as number} 吨</Descriptions.Item>
           <Descriptions.Item label="已付金额">{formatCurrency(r.paid_amount as number)}</Descriptions.Item>
           <Descriptions.Item label="已开票金额">{formatCurrency(r.invoiced_amount as number)}</Descriptions.Item>
@@ -435,6 +467,7 @@ const renderModalDetail = (data: FlowNodeData) => {
 
 export const ProgressFlowPage: React.FC = () => {
   const { message } = App.useApp();
+  const { setPendingCount } = useManagerPendingStore();
   const [selectedContract, setSelectedContract] = useState<string | undefined>(undefined);
   const [contractOptions, setContractOptions] = useState<FlowContractOption[]>([]);
   const [flowNodes, setFlowNodes] = useState<Node[]>([]);
@@ -444,15 +477,24 @@ export const ProgressFlowPage: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalData, setModalData] = useState<FlowNodeData | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
+
+  const syncPendingCount = useCallback((options: FlowContractOption[]) => {
+    const total = options.reduce((sum, opt) => sum + (opt.pendingCount ?? 0), 0);
+    setPendingCount(total);
+  }, [setPendingCount]);
 
   const refreshOptions = useCallback(async () => {
     try {
       const options = await ComparisonAPI.getUncompletedContracts();
       setContractOptions(options);
+      syncPendingCount(options);
     } catch {
       // silent
     }
-  }, []);
+  }, [syncPendingCount]);
 
   useEffect(() => {
     const fetchOptions = async () => {
@@ -460,6 +502,7 @@ export const ProgressFlowPage: React.FC = () => {
       try {
         const options = await ComparisonAPI.getUncompletedContracts();
         setContractOptions(options);
+        syncPendingCount(options);
       } catch (err) {
         const e = err as { name?: string; message?: string };
         const isAborted = e.name === 'AbortError' || e.name === 'CanceledError' || (e.message?.includes('aborted') ?? false);
@@ -471,7 +514,7 @@ export const ProgressFlowPage: React.FC = () => {
       }
     };
     fetchOptions();
-  }, [message]);
+  }, [message, syncPendingCount]);
 
   useEffect(() => {
     if (!selectedContract) return;
@@ -639,7 +682,7 @@ export const ProgressFlowPage: React.FC = () => {
         width={window.innerWidth <= 767 ? '95%' : 720}
         footer={getModalFooter()}
       >
-        {modalData && renderModalDetail(modalData)}
+        {modalData && renderModalDetail(modalData, exchangeRate)}
       </Modal>
     </div>
   );
