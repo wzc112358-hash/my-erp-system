@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Select, DatePicker, Button, Row, Col, Space, message, Upload } from 'antd';
+import { Form, Input, Select, DatePicker, Button, Row, Col, Space, Switch, message, Upload } from 'antd';
 import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -66,6 +66,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
               no: '',
               product_name: '',
               sign_date: undefined,
+              is_cross_border: false,
               remark: '',
               attachments: [],
             }
@@ -122,6 +123,10 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
 
       <Form.Item name="sales_manager" label="销售负责人">
         <Input placeholder="请输入销售负责人" />
+      </Form.Item>
+
+      <Form.Item name="is_cross_border" label="跨境交易" valuePropName="checked">
+        <Switch checkedChildren="跨境" unCheckedChildren="国内" />
       </Form.Item>
 
       <Form.Item name="remark" label="备注">

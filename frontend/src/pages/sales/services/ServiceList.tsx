@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Table, Button, Space, Form, Input, App, Popconfirm, Modal } from 'antd';
+import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -162,6 +162,13 @@ export const ServiceList: React.FC = () => {
       key: 'sign_date',
       width: 120,
       render: (date: string) => date ? date.split(' ')[0] : '-',
+    },
+    {
+      title: '类型',
+      dataIndex: 'is_cross_border',
+      key: 'is_cross_border',
+      width: 80,
+      render: (v: boolean) => v ? <Tag color="blue">跨境</Tag> : <Tag>国内</Tag>,
     },
     {
       title: '操作',
