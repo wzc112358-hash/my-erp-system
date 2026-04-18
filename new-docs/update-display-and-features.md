@@ -1,7 +1,7 @@
 # 页面显示与功能优化
 
 > 创建日期：2026-04-18
-> 状态：实施中（1-7已完成，8待实施）
+> 状态：实施中（1-8已完成，9待实施）
 
 ---
 
@@ -17,6 +17,7 @@
 | 6 | 经理合同详情页子信息表格新增「货物数量」列（保留产品金额） | `manager/ContractDetailPage` | 经理 |
 | 7 | 经理合同详情页应收金额改为「已执行数量 × 单价」 | `manager/ContractDetailPage` | 经理 |
 | 8 | 销售合同「应收金额」「欠款」逻辑重构（前后端） | 后端 hooks + 销售合同详情/收款详情 + 经理详情 | 销售 + 经理 |
+| 9 | 经理合同详情页支持删除子记录（发货/到货/发票/收付款） | `manager/ContractDetailPage` | 经理 |
 
 ---
 
@@ -376,3 +377,34 @@ debt_percent = (receipted_amount / 应收金额) × 100
 3. 前端销售合同详情页增加应收金额
 4. 前端构建 + 部署
 ```
+
+---
+
+## 七、需求9 — 经理合同详情页支持删除子记录
+
+### 7.1 功能说明
+
+经理在关联对比的合同详情页面中，需要能删除销售/采购合同的子记录（发货、到货、发票、收款、付款），以便在删除合同前先清除关联数据。
+
+### 7.2 涉及的表格和 PocketBase collection
+
+| Tab | 表格 | Collection |
+|-----|------|------------|
+| 销售合同信息 | 销售发货信息 | `sales_shipments` |
+| 销售合同信息 | 销售发票信息 | `sale_invoices` |
+| 销售合同信息 | 销售收款信息 | `sale_receipts` |
+| 采购合同信息 | 采购到货信息 | `purchase_arrivals` |
+| 采购合同信息 | 采购发票信息 | `purchase_invoices` |
+| 采购合同信息 | 采购付款信息 | `purchase_payments` |
+
+### 7.3 实现方式
+
+- 每个表格最后一列添加「操作」列，包含「删除」按钮
+- 点击删除弹出确认框，确认后调用 `pb.collection(collection).delete(id)`
+- 删除成功后刷新详情数据（重新调用 `getContractDetail` 或 `getPurchaseContractDetail`）
+
+### 7.4 修改文件
+
+| 文件 | 操作 |
+|------|------|
+| `frontend/src/pages/manager/ContractDetailPage.tsx` | 6 个表格添加操作列 |

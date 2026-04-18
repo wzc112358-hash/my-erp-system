@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty } from 'antd';
-import { LeftOutlined, UploadOutlined } from '@ant-design/icons';
+import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm } from 'antd';
+import { LeftOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
@@ -567,6 +567,38 @@ const ContractDetailPage: React.FC = () => {
       renderRecordAttachments(collection, record.id, record.attachments),
   });
 
+  const handleDeleteSubRecord = useCallback(async (collection: string, recordId: string) => {
+    try {
+      await pb.collection(collection).delete(recordId);
+      message.success('删除成功');
+      if (id) {
+        const data = isStandalonePurchase
+          ? await ComparisonAPI.getPurchaseContractDetail(id)
+          : await ComparisonAPI.getContractDetail(id);
+        setDetailData(data);
+      }
+    } catch (error) {
+      console.error('Delete sub record error:', error);
+      message.error('删除失败');
+    }
+  }, [id, message, isStandalonePurchase]);
+
+  const deleteColumn = useCallback((collection: string) => ({
+    title: '操作',
+    key: 'action',
+    width: 80,
+    render: (_: unknown, record: { id: string }) => (
+      <Popconfirm
+        title="确定删除此记录？"
+        onConfirm={() => handleDeleteSubRecord(collection, record.id)}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+      </Popconfirm>
+    ),
+  }), [handleDeleteSubRecord]);
+
   const tabItems = useMemo(() => {
     const items = [];
     if (!isStandalonePurchase && detailData?.sales_contract) {
@@ -580,7 +612,7 @@ const ContractDetailPage: React.FC = () => {
               <>
                 <Card title="销售发货信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                   <Table
-                    columns={salesColumns}
+                    columns={[...salesColumns, deleteColumn('sales_shipments')]}
                     dataSource={detailData.sales_shipments}
                     rowKey="id"
                     pagination={false}
@@ -591,7 +623,7 @@ const ContractDetailPage: React.FC = () => {
                 </Card>
                 <Card title="销售发票信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                   <Table
-                    columns={saleInvoiceColumns}
+                    columns={[...saleInvoiceColumns, deleteColumn('sale_invoices')]}
                     dataSource={detailData.sale_invoices}
                     rowKey="id"
                     pagination={false}
@@ -602,7 +634,7 @@ const ContractDetailPage: React.FC = () => {
                 </Card>
                 <Card title="销售收款信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                   <Table
-                    columns={saleReceiptColumns}
+                    columns={[...saleReceiptColumns, deleteColumn('sale_receipts')]}
                     dataSource={detailData.sale_receipts}
                     rowKey="id"
                     pagination={false}
@@ -638,7 +670,7 @@ const ContractDetailPage: React.FC = () => {
             <>
               <Card title="采购到货信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                 <Table
-                  columns={purchaseArrivalColumns}
+                  columns={[...purchaseArrivalColumns, deleteColumn('purchase_arrivals')]}
                   dataSource={detailData.purchase_arrivals}
                   rowKey="id"
                   pagination={false}
@@ -649,7 +681,7 @@ const ContractDetailPage: React.FC = () => {
               </Card>
               <Card title="采购发票信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                 <Table
-                  columns={purchaseInvoiceColumns}
+                  columns={[...purchaseInvoiceColumns, deleteColumn('purchase_invoices')]}
                   dataSource={detailData.purchase_invoices}
                   rowKey="id"
                   pagination={false}
@@ -660,7 +692,7 @@ const ContractDetailPage: React.FC = () => {
               </Card>
               <Card title="采购付款信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                 <Table
-                  columns={purchasePaymentColumns}
+                  columns={[...purchasePaymentColumns, deleteColumn('purchase_payments')]}
                   dataSource={detailData.purchase_payments}
                   rowKey="id"
                   pagination={false}
