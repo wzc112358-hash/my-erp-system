@@ -182,9 +182,30 @@ export const ComparisonAPI = {
       associatedSalesIds: [pc.sales_contract].filter(Boolean),
     }));
 
+    const associatedPurchaseIds = new Set(
+      purchaseContracts.filter(pc => pc.sales_contract).map(pc => pc.id)
+    );
+
+    const standalonePurchaseContracts: OverviewContract[] = purchaseContracts
+      .filter(pc => !associatedPurchaseIds.has(pc.id))
+      .map(pc => ({
+        id: pc.id,
+        type: 'purchase' as const,
+        no: pc.no,
+        productName: pc.product_name,
+        quantity: pc.total_quantity,
+        totalAmount: pc.total_amount,
+        paymentDate: purchasePaymentsMap.get(pc.id) || undefined,
+        shipmentDate: purchaseArrivalsMap.get(pc.id) || undefined,
+        created: pc.created_at || '',
+        supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
+        associatedSalesIds: [],
+      }));
+
     return {
       salesContracts: overviewSalesContracts,
       purchaseContracts: overviewPurchaseContracts,
+      standalonePurchaseContracts,
     };
   },
 
@@ -527,6 +548,70 @@ export const ComparisonAPI = {
       sales_shipments: salesShipments,
       sale_invoices: saleInvoices,
       sale_receipts: saleReceipts,
+      purchase_arrivals: purchaseArrivals,
+      purchase_invoices: purchaseInvoices,
+      purchase_payments: purchasePayments,
+      profit,
+    };
+  },
+
+  getPurchaseContractDetail: async (purchaseContractId: string): Promise<ContractDetailData> => {
+    const rate = await getUsdToCnyRate();
+    const purchaseContract = await pb.collection('purchase_contracts').getOne<ComparisonPurchaseContract>(purchaseContractId, {
+      expand: 'supplier',
+    });
+
+    const filterForPurchase = `purchase_contract="${purchaseContractId}"`;
+
+    const [purchaseArrivalsResult, purchasePaymentsResult, purchaseInvoicesResult] =
+      await Promise.all([
+        pb.collection('purchase_arrivals').getList<PurchaseArrivalRecord>(1, 100, {
+          filter: filterForPurchase,
+        }),
+        pb.collection('purchase_payments').getList<PurchasePaymentRecord>(1, 100, {
+          filter: filterForPurchase,
+        }),
+        pb.collection('purchase_invoices').getList<PurchaseInvoiceRecord>(1, 100, {
+          filter: filterForPurchase,
+        }),
+      ]);
+
+    const purchaseArrivals = purchaseArrivalsResult.items as unknown as PurchaseArrivalRecord[];
+    const purchasePayments = purchasePaymentsResult.items as unknown as PurchasePaymentRecord[];
+    const purchaseInvoices = purchaseInvoicesResult.items as unknown as PurchaseInvoiceRecord[];
+
+    const purchaseTotalAmount = purchaseContract.is_cross_border ? purchaseContract.total_amount * rate : purchaseContract.total_amount;
+
+    let totalFreight = 0;
+    let totalMiscellaneous = 0;
+    const arrivalsRaw = purchaseArrivalsResult.items as unknown as {
+      freight_1: number;
+      freight_2?: number;
+      miscellaneous_expenses: number;
+    }[];
+    arrivalsRaw.forEach((a) => {
+      const crossRate = purchaseContract.is_cross_border ? rate : 1;
+      totalFreight += ((a.freight_1 || 0) + (a.freight_2 || 0)) * crossRate;
+      totalMiscellaneous += (a.miscellaneous_expenses || 0) * crossRate;
+    });
+
+    const profit: ProfitAnalysis = {
+      unit_profit: 0,
+      total_profit: -purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
+      sales_amount: 0,
+      purchase_amount: purchaseTotalAmount,
+      sales_quantity: 0,
+      purchase_quantity: purchaseContract.total_quantity,
+      total_freight: totalFreight,
+      total_miscellaneous: totalMiscellaneous,
+      is_quantity_matched: true,
+    };
+
+    return {
+      purchase_contracts: [purchaseContract],
+      sales_shipments: [],
+      sale_invoices: [],
+      sale_receipts: [],
       purchase_arrivals: purchaseArrivals,
       purchase_invoices: purchaseInvoices,
       purchase_payments: purchasePayments,

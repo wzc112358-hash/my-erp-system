@@ -131,7 +131,7 @@ export const ContractDetail: React.FC = () => {
   const invoiceColumns = [
     { title: '发票号码', dataIndex: 'no', key: 'no' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
-    { title: '产品数量', dataIndex: 'product_amount', key: 'product_amount' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount' },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (d: string) => d?.split(' ')[0] },
     { title: '操作', key: 'action', render: (_: unknown, record: SaleInvoice) => (
@@ -274,8 +274,10 @@ export const ContractDetail: React.FC = () => {
 
       <Card title="欠款信息" style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
+          <Descriptions.Item label="应收金额">{fmtAmt((contract.executed_quantity || 0) * (contract.unit_price || 0))}</Descriptions.Item>
+          <Descriptions.Item label="已收金额">{fmtAmt(contract.receipted_amount || 0)}</Descriptions.Item>
           <Descriptions.Item label="欠款金额">{fmtAmt(contract.debt_amount || 0)}</Descriptions.Item>
-          <Descriptions.Item label="欠款比例">{contract.debt_percent || 0}%</Descriptions.Item>
+          <Descriptions.Item label="收款比例">{contract.debt_percent || 0}%</Descriptions.Item>
         </Descriptions>
       </Card>
 

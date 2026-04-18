@@ -149,7 +149,7 @@ export const ContractDetail: React.FC = () => {
     { title: '发票号码', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
     { title: '是否验票', dataIndex: 'is_verified', key: 'is_verified', render: (v: string) => v === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag> },

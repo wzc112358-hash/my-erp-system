@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty } from 'antd';
 import { LeftOutlined, UploadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
@@ -30,6 +30,19 @@ interface ProfitCalc {
 
 const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
+  if (!sc) {
+    const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
+      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+      return sum + amountCny;
+    }, 0);
+    return {
+      operatingProfit: 0, taxAmount: 0, netProfit: 0,
+      salesAmountIncTax: 0, purchaseAmountIncTax: purchaseTotalAmountCny,
+      salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmountCny / 1.13,
+      totalFreight: data.profit.total_freight, totalMiscellaneous: data.profit.total_miscellaneous,
+      quantityMatched: true,
+    };
+  }
   const salesAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
   const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
     const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
@@ -59,6 +72,16 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
 
 const calcProfitUSD = (data: ContractDetailData): ProfitCalc => {
   const sc = data.sales_contract;
+  if (!sc) {
+    const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
+    return {
+      operatingProfit: 0, taxAmount: 0, netProfit: 0,
+      salesAmountIncTax: 0, purchaseAmountIncTax: purchaseTotalAmount,
+      salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmount / 1.13,
+      totalFreight: data.profit.total_freight, totalMiscellaneous: data.profit.total_miscellaneous,
+      quantityMatched: true,
+    };
+  }
   const salesAmount = sc.total_amount;
   const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
   const freight = data.profit.total_freight;
@@ -94,9 +117,11 @@ const StatusTag: React.FC<{ status: string }> = ({ status }) => {
 const ContractDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { message } = App.useApp();
+  const isStandalonePurchase = location.pathname.includes('/overview/purchase/');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('sales');
+  const [activeTab, setActiveTab] = useState(isStandalonePurchase ? 'purchase' : 'sales');
   const [detailData, setDetailData] = useState<ContractDetailData | null>(null);
   const [uploading, setUploading] = useState(false);
   const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
@@ -111,16 +136,23 @@ const ContractDetailPage: React.FC = () => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const data = await ComparisonAPI.getContractDetail(id);
+        let data: ContractDetailData;
+        if (isStandalonePurchase) {
+          data = await ComparisonAPI.getPurchaseContractDetail(id);
+        } else {
+          data = await ComparisonAPI.getContractDetail(id);
+        }
         if (!cancelled) {
           setDetailData(data);
-          try {
-            const biddingResult = await BiddingRecordAPI.getBySalesContract(id);
-            if (!cancelled) {
-              setBiddingRecords(biddingResult.items);
+          if (!isStandalonePurchase) {
+            try {
+              const biddingResult = await BiddingRecordAPI.getBySalesContract(id);
+              if (!cancelled) {
+                setBiddingRecords(biddingResult.items);
+              }
+            } catch {
+              // bidding records are optional
             }
-          } catch {
-            // bidding records are optional
           }
         }
       } catch (error) {
@@ -140,7 +172,7 @@ const ContractDetailPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, message]);
+  }, [id, message, isStandalonePurchase]);
 
   const handleAttachmentUpload = useCallback(async (collection: string, recordId: string, file: File) => {
     setUploading(true);
@@ -149,7 +181,9 @@ const ContractDetailPage: React.FC = () => {
       formData.append('attachments', file);
       await pb.collection(collection).update(recordId, formData);
       if (id) {
-        const data = await ComparisonAPI.getContractDetail(id);
+        const data = isStandalonePurchase
+          ? await ComparisonAPI.getPurchaseContractDetail(id)
+          : await ComparisonAPI.getContractDetail(id);
         setDetailData(data);
       }
       message.success('附件上传成功');
@@ -158,7 +192,7 @@ const ContractDetailPage: React.FC = () => {
     } finally {
       setUploading(false);
     }
-  }, [id, message]);
+  }, [id, message, isStandalonePurchase]);
 
   const salesColumns = [
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
@@ -196,6 +230,7 @@ const ContractDetailPage: React.FC = () => {
     { title: '发票号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
     { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
@@ -207,6 +242,7 @@ const ContractDetailPage: React.FC = () => {
   const saleReceiptColumns = [
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
     { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '收款方式', dataIndex: 'method', key: 'method' },
@@ -238,6 +274,7 @@ const ContractDetailPage: React.FC = () => {
     { title: '发票号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
     { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
@@ -250,6 +287,7 @@ const ContractDetailPage: React.FC = () => {
   const purchasePaymentColumns = [
     { title: '付款编号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
     { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
     { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (v: string) => formatDate(v) },
@@ -263,7 +301,7 @@ const ContractDetailPage: React.FC = () => {
   const cardBodyStyle: React.CSSProperties = { padding: 16 };
 
   const renderSalesInfo = () => {
-    if (!detailData) return null;
+    if (!detailData || !detailData.sales_contract) return null;
     const sc = detailData.sales_contract;
     const isCrossBorder = sc.is_cross_border;
     const totalAmountLabel = isCrossBorder
@@ -289,6 +327,14 @@ const ContractDetailPage: React.FC = () => {
           <Descriptions.Item label="总数量">{sc.total_quantity} 吨</Descriptions.Item>
           <Descriptions.Item label="已执行数量">{sc.executed_quantity} 吨</Descriptions.Item>
           <Descriptions.Item label="执行比例">{sc.execution_percent ? percentFormat(sc.execution_percent) : '-'}</Descriptions.Item>
+          <Descriptions.Item label="应收金额">
+            {(() => {
+              const receivable = sc.executed_quantity * sc.unit_price;
+              return isCrossBorder
+                ? `$${receivable.toFixed(4)}（≈ ¥${(receivable * exchangeRate).toFixed(4)}）`
+                : formatCurrency(receivable);
+            })()}
+          </Descriptions.Item>
           <Descriptions.Item label="已收金额">{formatCurrency(sc.receipted_amount)}</Descriptions.Item>
           <Descriptions.Item label="收款比例">{sc.receipt_percent ? percentFormat(sc.receipt_percent) : '-'}</Descriptions.Item>
           <Descriptions.Item label="欠款金额">{formatCurrency(sc.debt_amount)}</Descriptions.Item>
@@ -362,7 +408,7 @@ const ContractDetailPage: React.FC = () => {
   };
 
   const renderProfitAnalysis = () => {
-    if (!detailData) return null;
+    if (!detailData || !detailData.sales_contract) return null;
     const sc = detailData.sales_contract;
     const allPurchaseCrossBorder = detailData.purchase_contracts.length > 0 && detailData.purchase_contracts.every(pc => pc.is_cross_border);
     const isDualCurrency = sc.is_cross_border && allPurchaseCrossBorder;
@@ -521,65 +567,68 @@ const ContractDetailPage: React.FC = () => {
       renderRecordAttachments(collection, record.id, record.attachments),
   });
 
-  const tabItems = [
-    {
-      key: 'sales',
-      label: '销售合同信息',
-      children: (
-        <Spin spinning={loading}>
-          {renderSalesInfo()}
-          {!loading && detailData && (
-            <>
-              <Card title="销售发货信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
-                <Table
-                  columns={salesColumns}
-                  dataSource={detailData.sales_shipments}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                  locale={{ emptyText: '暂无发货记录' }}
-                  expandable={makeExpandable('sales_shipments')}
-                />
-              </Card>
-              <Card title="销售发票信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
-                <Table
-                  columns={saleInvoiceColumns}
-                  dataSource={detailData.sale_invoices}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                  locale={{ emptyText: '暂无发票记录' }}
-                  expandable={makeExpandable('sale_invoices')}
-                />
-              </Card>
-              <Card title="销售收款信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
-                <Table
-                  columns={saleReceiptColumns}
-                  dataSource={detailData.sale_receipts}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                  locale={{ emptyText: '暂无收款记录' }}
-                  expandable={makeExpandable('sale_receipts')}
-                />
-              </Card>
-              {biddingRecords.length > 0 && (
-                <Card title="关联投标记录" style={cardStyle} styles={{ body: cardBodyStyle }}>
+  const tabItems = useMemo(() => {
+    const items = [];
+    if (!isStandalonePurchase && detailData?.sales_contract) {
+      items.push({
+        key: 'sales',
+        label: '销售合同信息',
+        children: (
+          <Spin spinning={loading}>
+            {renderSalesInfo()}
+            {!loading && detailData && (
+              <>
+                <Card title="销售发货信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
                   <Table
-                    columns={biddingColumns}
-                    dataSource={biddingRecords}
+                    columns={salesColumns}
+                    dataSource={detailData.sales_shipments}
                     rowKey="id"
                     pagination={false}
                     size="small"
+                    locale={{ emptyText: '暂无发货记录' }}
+                    expandable={makeExpandable('sales_shipments')}
                   />
                 </Card>
-              )}
-            </>
-          )}
-        </Spin>
-      ),
-    },
-    {
+                <Card title="销售发票信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
+                  <Table
+                    columns={saleInvoiceColumns}
+                    dataSource={detailData.sale_invoices}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    locale={{ emptyText: '暂无发票记录' }}
+                    expandable={makeExpandable('sale_invoices')}
+                  />
+                </Card>
+                <Card title="销售收款信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
+                  <Table
+                    columns={saleReceiptColumns}
+                    dataSource={detailData.sale_receipts}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    locale={{ emptyText: '暂无收款记录' }}
+                    expandable={makeExpandable('sale_receipts')}
+                  />
+                </Card>
+                {biddingRecords.length > 0 && (
+                  <Card title="关联投标记录" style={cardStyle} styles={{ body: cardBodyStyle }}>
+                    <Table
+                      columns={biddingColumns}
+                      dataSource={biddingRecords}
+                      rowKey="id"
+                      pagination={false}
+                      size="small"
+                    />
+                  </Card>
+                )}
+              </>
+            )}
+          </Spin>
+        ),
+      });
+    }
+    items.push({
       key: 'purchase',
       label: '采购合同信息',
       children: (
@@ -624,8 +673,31 @@ const ContractDetailPage: React.FC = () => {
           )}
         </Spin>
       ),
-    },
-  ];
+    });
+    return items;
+  }, [detailData, loading, isStandalonePurchase, biddingRecords, exchangeRate]);
+
+  const headerTitle = useMemo(() => {
+    if (isStandalonePurchase && detailData?.purchase_contracts[0]) {
+      const pc = detailData.purchase_contracts[0];
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span>{pc.no} - {pc.product_name}</span>
+          <Tag color="blue">{pc.expand?.supplier?.name || pc.supplier_name || '-'}</Tag>
+        </div>
+      );
+    }
+    if (detailData?.sales_contract) {
+      const sc = detailData.sales_contract;
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span>{sc.no} - {sc.product_name}</span>
+          <Tag color="blue">{sc.expand?.customer?.name || sc.customer_name || '-'}</Tag>
+        </div>
+      );
+    }
+    return '合同详情';
+  }, [detailData, isStandalonePurchase]);
 
   if (loading) {
     return (
@@ -646,16 +718,7 @@ const ContractDetailPage: React.FC = () => {
   return (
     <div style={{ padding: 0 }}>
       <Card
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span>
-              {detailData.sales_contract.no} - {detailData.sales_contract.product_name}
-            </span>
-            <Tag color="blue">
-              {detailData.sales_contract.expand?.customer?.name || detailData.sales_contract.customer_name || '-'}
-            </Tag>
-          </div>
-        }
+        title={headerTitle}
         extra={
           <Button
             type="primary"

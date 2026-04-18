@@ -101,6 +101,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const sc = data.sales_contract;
+  if (!sc) return { nodes: [], edges: [] };
   const scId = `sc-${sc.id}`;
 
   const edgeDefaults = {

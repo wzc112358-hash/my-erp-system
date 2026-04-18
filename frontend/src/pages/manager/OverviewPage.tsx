@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal } from 'antd';
-import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined } from '@ant-design/icons';
+import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip } from 'antd';
+import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
+import { SalesContractAPI } from '@/api/sales-contract';
+import { PurchaseContractAPI } from '@/api/purchase-contract';
+import { pb } from '@/lib/pocketbase';
 import type { OverviewContract, PurchaseSummary } from '@/types/comparison';
 import dayjs from 'dayjs';
 
@@ -35,7 +38,8 @@ const SalesContractCard: React.FC<{
   selected: boolean;
   onSelect: (id: string, checked: boolean) => void;
   onClick: () => void;
-}> = ({ contract, selected, onSelect, onClick }) => {
+  onDelete: (type: 'sales' | 'purchase', id: string) => void;
+}> = ({ contract, selected, onSelect, onClick, onDelete }) => {
   return (
     <Card
       size="small"
@@ -64,9 +68,28 @@ const SalesContractCard: React.FC<{
             <span style={{ fontWeight: 'bold', fontSize: 14 }}>
               销售合同: {contract.no}
             </span>
-            <span style={{ color: '#666', fontSize: 12 }}>
-              {contract.customerName}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#666', fontSize: 12 }}>
+                {contract.customerName}
+              </span>
+              <Tooltip title="删除合同">
+                <Popconfirm
+                  title="确定删除此合同？删除后将无法恢复。"
+                  onConfirm={(e) => { e?.stopPropagation(); onDelete('sales', contract.id); }}
+                  onCancel={(e) => e?.stopPropagation()}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Popconfirm>
+              </Tooltip>
+            </div>
           </div>
           
           <div style={{ fontSize: 12, color: '#666', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
@@ -333,6 +356,7 @@ export const OverviewPage: React.FC = () => {
   
   const [salesContracts, setSalesContracts] = useState<OverviewContract[]>([]);
   const [purchaseContracts, setPurchaseContracts] = useState<OverviewContract[]>([]);
+  const [standalonePurchaseContracts, setStandalonePurchaseContracts] = useState<OverviewContract[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [searchText, setSearchText] = useState('');
@@ -360,6 +384,7 @@ export const OverviewPage: React.FC = () => {
       const result = await ComparisonAPI.getAllContractsForOverview();
       setSalesContracts(result.salesContracts);
       setPurchaseContracts(result.purchaseContracts);
+      setStandalonePurchaseContracts(result.standalonePurchaseContracts || []);
     } catch (error) {
       const err = error as { name?: string; message?: string; cause?: { name?: string } };
       const isAborted =
@@ -628,6 +653,39 @@ export const OverviewPage: React.FC = () => {
     setSelectedPurchases(new Set());
   };
 
+  const handleDeleteContract = useCallback(async (type: 'sales' | 'purchase', id: string) => {
+    try {
+      if (type === 'sales') {
+        const [shipments, invoices, receipts] = await Promise.all([
+          pb.collection('sales_shipments').getList(1, 1, { filter: `sales_contract="${id}"` }),
+          pb.collection('sale_invoices').getList(1, 1, { filter: `sales_contract="${id}"` }),
+          pb.collection('sale_receipts').getList(1, 1, { filter: `sales_contract="${id}"` }),
+        ]);
+        if (shipments.totalItems > 0 || invoices.totalItems > 0 || receipts.totalItems > 0) {
+          message.warning('该合同下存在关联记录，无法删除');
+          return;
+        }
+        await SalesContractAPI.delete(id);
+      } else {
+        const [arrivals, invoices, payments] = await Promise.all([
+          pb.collection('purchase_arrivals').getList(1, 1, { filter: `purchase_contract="${id}"` }),
+          pb.collection('purchase_invoices').getList(1, 1, { filter: `purchase_contract="${id}"` }),
+          pb.collection('purchase_payments').getList(1, 1, { filter: `purchase_contract="${id}"` }),
+        ]);
+        if (arrivals.totalItems > 0 || invoices.totalItems > 0 || payments.totalItems > 0) {
+          message.warning('该合同下存在关联记录，无法删除');
+          return;
+        }
+        await PurchaseContractAPI.delete(id);
+      }
+      message.success('删除成功');
+      fetchData();
+    } catch (error) {
+      console.error('Delete contract error:', error);
+      message.error('删除失败');
+    }
+  }, [message, fetchData]);
+
   const handleSortChange = (value: SortField) => {
     if (!value) {
       setSortField(undefined);
@@ -817,6 +875,7 @@ export const OverviewPage: React.FC = () => {
                     selected={selectedSales.has(row.sales.id)}
                     onSelect={handleSalesSelect}
                     onClick={() => navigate(`/manager/overview/contract/${row.sales!.id}`)}
+                    onDelete={handleDeleteContract}
                   />
                 ) : (
                   <div style={{ height: rowHeights.get(idx) || 0, marginBottom: 8 }} />
@@ -856,6 +915,65 @@ export const OverviewPage: React.FC = () => {
         onSelect={handlePurchaseSelect}
         onClose={() => setModalVisible(false)}
       />
+
+      {standalonePurchaseContracts.length > 0 && (
+        <Card title={`独立采购合同 (${standalonePurchaseContracts.length})`} style={{ marginTop: 16, borderRadius: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {standalonePurchaseContracts.map(pc => (
+              <Card
+                key={pc.id}
+                size="small"
+                style={{
+                  borderRadius: 12,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                bodyStyle={{ padding: 12 }}
+                hoverable
+                onClick={() => navigate(`/manager/overview/purchase/${pc.id}`)}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontWeight: 'bold', fontSize: 14 }}>
+                        采购合同: {pc.no}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: '#666', fontSize: 12 }}>{pc.supplierName}</span>
+                        <Tooltip title="删除合同">
+                          <Popconfirm
+                            title="确定删除此合同？删除后将无法恢复。"
+                            onConfirm={(e) => { e?.stopPropagation(); handleDeleteContract('purchase', pc.id); }}
+                            onCancel={(e) => e?.stopPropagation()}
+                            okText="确定"
+                            cancelText="取消"
+                          >
+                            <Button
+                              type="text"
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </Popconfirm>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#666', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+                      <div>品名: <span style={{ color: '#333' }}>{pc.productName}</span></div>
+                      <div>数量: <span style={{ color: '#333' }}>{pc.quantity} 吨</span></div>
+                      <div>总金额: <span style={{ color: '#333' }}>{formatCurrency(pc.totalAmount)}</span></div>
+                      <div>到货日期: <span style={{ color: '#333' }}>{formatDate(pc.shipmentDate || '')}</span></div>
+                      <div>付款日期: <span style={{ color: '#333' }}>{formatDate(pc.paymentDate || '')}</span></div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

@@ -323,7 +323,7 @@ export interface PurchasePaymentRecord {
 }
 
 export interface ContractDetailData {
-  sales_contract: ComparisonSalesContract;
+  sales_contract?: ComparisonSalesContract;
   purchase_contracts: ComparisonPurchaseContract[];
   sales_shipments: SalesShipmentRecord[];
   sale_invoices: SaleInvoiceRecord[];

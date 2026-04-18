@@ -41,13 +41,16 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			}
 
 			totalAmount := SumField(receipts, "amount") + e.Record.GetFloat("amount")
-			totalContractAmount := contract.GetFloat("total_amount")
+			executedQuantity := contract.GetFloat("executed_quantity")
+			unitPrice := contract.GetFloat("unit_price")
+			receivableAmount := executedQuantity * unitPrice
+
 			var receiptPercent, debtAmount, debtPercent float64
 
-			if totalContractAmount > 0 {
-				receiptPercent = (totalAmount / totalContractAmount) * 100
-				debtAmount = totalContractAmount - totalAmount
-				debtPercent = (debtAmount / totalContractAmount) * 100
+			if receivableAmount > 0 {
+				receiptPercent = (totalAmount / receivableAmount) * 100
+				debtAmount = receivableAmount - totalAmount
+				debtPercent = (totalAmount / receivableAmount) * 100
 			}
 
 			e.Record.Set("receipted_amount", totalAmount)
@@ -111,13 +114,13 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 				return fmt.Errorf("收款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
 			}
 
-			totalContractAmount := contract.GetFloat("total_amount")
+			totalContractAmount := contract.GetFloat("executed_quantity") * contract.GetFloat("unit_price")
 			var receiptPercent, debtAmount, debtPercent float64
 
 			if totalContractAmount > 0 {
 				receiptPercent = (totalAmount / totalContractAmount) * 100
 				debtAmount = totalContractAmount - totalAmount
-				debtPercent = (debtAmount / totalContractAmount) * 100
+				debtPercent = (totalAmount / totalContractAmount) * 100
 			}
 
 			e.Record.Set("receipted_amount", totalAmount)
@@ -180,13 +183,13 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			}
 
 			totalAmount := SumField(receipts, "amount")
-			totalContractAmount := contract.GetFloat("total_amount")
+			receivableAmount := contract.GetFloat("executed_quantity") * contract.GetFloat("unit_price")
 			var receiptPercent, debtAmount, debtPercent float64
 
-			if totalContractAmount > 0 {
-				receiptPercent = (totalAmount / totalContractAmount) * 100
-				debtAmount = totalContractAmount - totalAmount
-				debtPercent = (debtAmount / totalContractAmount) * 100
+			if receivableAmount > 0 {
+				receiptPercent = (totalAmount / receivableAmount) * 100
+				debtAmount = receivableAmount - totalAmount
+				debtPercent = (totalAmount / receivableAmount) * 100
 			}
 
 			contract.Set("receipted_amount", totalAmount)

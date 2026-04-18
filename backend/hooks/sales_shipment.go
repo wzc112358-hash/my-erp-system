@@ -126,6 +126,24 @@ func updateSalesContractExecution(app *pocketbase.PocketBase, contractId string)
 		contract.Set("execution_percent", executionPercent)
 	}
 
+	unitPrice := contract.GetFloat("unit_price")
+	receiptedAmount := contract.GetFloat("receipted_amount")
+	receivableAmount := totalQuantity * unitPrice
+
+	var receiptPercent, debtAmount, debtPercent float64
+	if receivableAmount > 0 {
+		receiptPercent = (receiptedAmount / receivableAmount) * 100
+		debtAmount = receivableAmount - receiptedAmount
+		debtPercent = (receiptedAmount / receivableAmount) * 100
+	} else {
+		receiptPercent = 0
+		debtAmount = 0
+		debtPercent = 0
+	}
+	contract.Set("receipt_percent", receiptPercent)
+	contract.Set("debt_amount", debtAmount)
+	contract.Set("debt_percent", debtPercent)
+
 	return updateSalesContractStatus(app, contract)
 }
 

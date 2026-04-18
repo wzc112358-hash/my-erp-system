@@ -279,6 +279,10 @@ export const router = createBrowserRouter([
             element: <ContractDetailPage />,
           },
           {
+            path: 'overview/purchase/:id',
+            element: <ContractDetailPage />,
+          },
+          {
             path: 'progress-flow',
             element: <ProgressFlowPage />,
           },
