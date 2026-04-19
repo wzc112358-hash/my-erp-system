@@ -231,7 +231,7 @@ const ContractDetailPage: React.FC = () => {
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
+    { title: '单价', key: 'unit_price', render: () => formatCurrency(detailData?.sales_contract?.unit_price || 0) },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
@@ -243,7 +243,7 @@ const ContractDetailPage: React.FC = () => {
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
+    { title: '单价', key: 'unit_price', render: () => formatCurrency(detailData?.sales_contract?.unit_price || 0) },
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '收款方式', dataIndex: 'method', key: 'method' },
     { title: '收款账号', dataIndex: 'account', key: 'account' },
@@ -275,7 +275,10 @@ const ContractDetailPage: React.FC = () => {
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
+    { title: '单价', key: 'unit_price', render: (_: unknown, record: { purchase_contract: string }) => {
+      const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
+      return formatCurrency(pc?.unit_price || 0);
+    } },
     { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
@@ -288,7 +291,10 @@ const ContractDetailPage: React.FC = () => {
     { title: '付款编号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => formatCurrency(v) },
+    { title: '单价', key: 'unit_price', render: (_: unknown, record: { purchase_contract: string }) => {
+      const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
+      return formatCurrency(pc?.unit_price || 0);
+    } },
     { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (v: string) => formatDate(v) },
     { title: '付款方式', dataIndex: 'method', key: 'method' },

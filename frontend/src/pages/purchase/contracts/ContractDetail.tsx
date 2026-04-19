@@ -167,7 +167,7 @@ export const ContractDetail: React.FC = () => {
   const paymentColumns = [
     { title: '付款编号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
     { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (d: string) => d?.split(' ')[0] || '-' },
     { title: '付款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },

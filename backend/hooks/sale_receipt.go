@@ -36,7 +36,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(receipts, "product_amount") + newReceiptProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
+			if totalProductAmount > contractTotalQuantity*1.05 {
 				return fmt.Errorf("收款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
 			}
 
@@ -110,7 +110,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			}
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
+			if totalProductAmount > contractTotalQuantity*1.05 {
 				return fmt.Errorf("收款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
 			}
 

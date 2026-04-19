@@ -101,8 +101,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const sc = data.sales_contract;
-  if (!sc) return { nodes: [], edges: [] };
-  const scId = `sc-${sc.id}`;
+  const scId = sc ? `sc-${sc.id}` : '';
 
   const edgeDefaults = {
     type: 'smoothstep' as const,
@@ -111,8 +110,9 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
     animated: false,
   };
 
-  g.setNode(scId, { width: NODE_WIDTH, height: NODE_HEIGHT });
-  nodes.push({
+  if (sc) {
+    g.setNode(scId, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    nodes.push({
     id: scId,
     type: 'custom',
     position: { x: 0, y: 0 },
@@ -130,6 +130,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
       attachments: sc.attachments,
     } as FlowNodeData,
   });
+  }
 
   interface SubNodeEntry {
     nId: string;
@@ -194,7 +195,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
   });
 
   salesSubNodes.sort((a, b) => a.created.localeCompare(b.created));
-  if (salesSubNodes.length > 0) {
+  if (sc && salesSubNodes.length > 0) {
     edges.push({ id: `e-${scId}-${salesSubNodes[0].nId}`, source: scId, target: salesSubNodes[0].nId, ...edgeDefaults });
     for (let i = 1; i < salesSubNodes.length; i++) {
       edges.push({ id: `e-${salesSubNodes[i - 1].nId}-${salesSubNodes[i].nId}`, source: salesSubNodes[i - 1].nId, target: salesSubNodes[i].nId, ...edgeDefaults });
@@ -216,7 +217,9 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         attachments: pc.attachments,
       } as FlowNodeData,
     });
-    edges.push({ id: `e-${scId}-${pcId}`, source: scId, target: pcId, ...edgeDefaults });
+    if (scId) {
+      edges.push({ id: `e-${scId}-${pcId}`, source: scId, target: pcId, ...edgeDefaults });
+    }
 
     const pcSubNodes: SubNodeEntry[] = [];
 
@@ -385,7 +388,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="发票号">{r.no as string}</Descriptions.Item>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
           <Descriptions.Item label="发票类型">{(r.invoice_type as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="产品金额">{formatCurrency(r.product_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="发票金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="开票日期">{formatDate(r.issue_date as string)}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
@@ -399,7 +402,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
         <Descriptions bordered size="small" column={2}>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
           <Descriptions.Item label="收款金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
-          <Descriptions.Item label="产品金额">{formatCurrency(r.product_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="收款日期">{formatDate(r.receive_date as string)}</Descriptions.Item>
           <Descriptions.Item label="收款方式">{(r.method as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="收款账号">{(r.account as string) || '-'}</Descriptions.Item>
@@ -436,7 +439,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="发票号">{r.no as string}</Descriptions.Item>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
           <Descriptions.Item label="发票类型">{(r.invoice_type as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="产品金额">{formatCurrency(r.product_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="发票金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="收票日期">{formatDate(r.receive_date as string)}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
@@ -451,7 +454,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
         <Descriptions bordered size="small" column={2}>
           <Descriptions.Item label="付款编号">{r.no as string}</Descriptions.Item>
           <Descriptions.Item label="品名">{r.product_name as string}</Descriptions.Item>
-          <Descriptions.Item label="产品金额">{formatCurrency(r.product_amount as number)}</Descriptions.Item>
+          <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="付款金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="付款日期">{formatDate(r.pay_date as string)}</Descriptions.Item>
           <Descriptions.Item label="付款方式">{(r.method as string) || '-'}</Descriptions.Item>
@@ -470,6 +473,7 @@ export const ProgressFlowPage: React.FC = () => {
   const { message } = App.useApp();
   const { setPendingCount } = useManagerPendingStore();
   const [selectedContract, setSelectedContract] = useState<string | undefined>(undefined);
+  const [selectedType, setSelectedType] = useState<'sales' | 'purchase' | undefined>(undefined);
   const [contractOptions, setContractOptions] = useState<FlowContractOption[]>([]);
   const [flowNodes, setFlowNodes] = useState<Node[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
@@ -518,12 +522,14 @@ export const ProgressFlowPage: React.FC = () => {
   }, [message, syncPendingCount]);
 
   useEffect(() => {
-    if (!selectedContract) return;
+    if (!selectedContract || !selectedType) return;
     let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
       try {
-        const detail = await ComparisonAPI.getContractDetail(selectedContract);
+        const detail = selectedType === 'purchase'
+          ? await ComparisonAPI.getPurchaseContractDetail(selectedContract)
+          : await ComparisonAPI.getContractDetail(selectedContract);
         if (!cancelled) {
           const graph = buildFlowGraph(detail);
           setFlowNodes(graph.nodes);
@@ -542,10 +548,10 @@ export const ProgressFlowPage: React.FC = () => {
     };
     fetchData();
     return () => { cancelled = true; };
-  }, [selectedContract, message]);
+  }, [selectedContract, selectedType, message]);
 
   const handleConfirm = useCallback(async () => {
-    if (!modalData || modalData.managerConfirmed !== 'pending') return;
+    if (!modalData || modalData.manager_confirmed !== 'pending') return;
     setConfirming(true);
     try {
       await pb.collection(modalData.collectionName).update(modalData.recordId, {
@@ -554,8 +560,10 @@ export const ProgressFlowPage: React.FC = () => {
       message.success('确认成功');
       setModalVisible(false);
       setModalData(null);
-      if (selectedContract) {
-        const detail = await ComparisonAPI.getContractDetail(selectedContract);
+      if (selectedContract && selectedType) {
+        const detail = selectedType === 'purchase'
+          ? await ComparisonAPI.getPurchaseContractDetail(selectedContract)
+          : await ComparisonAPI.getContractDetail(selectedContract);
         const graph = buildFlowGraph(detail);
         setFlowNodes(graph.nodes);
         setFlowEdges(graph.edges);
@@ -566,7 +574,7 @@ export const ProgressFlowPage: React.FC = () => {
     } finally {
       setConfirming(false);
     }
-  }, [modalData, selectedContract, message, refreshOptions]);
+  }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
   const handleReject = useCallback(async () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
@@ -578,8 +586,10 @@ export const ProgressFlowPage: React.FC = () => {
       message.success('已驳回');
       setModalVisible(false);
       setModalData(null);
-      if (selectedContract) {
-        const detail = await ComparisonAPI.getContractDetail(selectedContract);
+      if (selectedContract && selectedType) {
+        const detail = selectedType === 'purchase'
+          ? await ComparisonAPI.getPurchaseContractDetail(selectedContract)
+          : await ComparisonAPI.getContractDetail(selectedContract);
         const graph = buildFlowGraph(detail);
         setFlowNodes(graph.nodes);
         setFlowEdges(graph.edges);
@@ -590,7 +600,7 @@ export const ProgressFlowPage: React.FC = () => {
     } finally {
       setConfirming(false);
     }
-  }, [modalData, selectedContract, message, refreshOptions]);
+  }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
   const getModalFooter = useCallback(() => {
     if (!modalData) return null;
@@ -610,7 +620,8 @@ export const ProgressFlowPage: React.FC = () => {
   const selectOptions = useMemo(() => {
     return contractOptions.map(opt => {
       const dateStr = opt.signDate ? dayjs(opt.signDate).format('YYYY-MM-DD') : '';
-      const baseLabel = `${opt.no} | ${opt.productName} | ${opt.quantity}吨 | ${dateStr}`;
+      const typeTag = opt.type === 'purchase' ? '[采购]' : '[销售]';
+      const baseLabel = `${typeTag} ${opt.no} | ${opt.productName} | ${opt.quantity}吨 | ${dateStr}`;
       return {
         value: opt.id,
         label: baseLabel,
@@ -625,7 +636,11 @@ export const ProgressFlowPage: React.FC = () => {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select
             value={selectedContract}
-            onChange={setSelectedContract}
+            onChange={(value: string) => {
+              const opt = contractOptions.find(o => o.id === value);
+              setSelectedType(opt?.type);
+              setSelectedContract(value);
+            }}
             style={{ width: window.innerWidth <= 767 ? '100%' : 520, minWidth: 200 }}
             showSearch
             placeholder="选择合同查看流程"

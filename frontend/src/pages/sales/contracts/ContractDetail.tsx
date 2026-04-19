@@ -142,7 +142,7 @@ export const ContractDetail: React.FC = () => {
   const receiptColumns = [
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
     { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
-    { title: '产品金额', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
     { title: '收款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
     { title: '收款账号', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },
     { title: '操作', key: 'action', render: (_: unknown, record: SaleReceipt) => (

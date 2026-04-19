@@ -704,7 +704,7 @@ export const ComparisonAPI = {
       return times.length > 0 ? Math.max(...times) : null;
     };
 
-    return salesResult.items
+    const salesOptions = salesResult.items
       .filter((sc) => {
         if (sc.status !== 'completed') return true;
         if (hasPending(sc.id)) return true;
@@ -723,7 +723,28 @@ export const ComparisonAPI = {
         status: sc.status,
         created: sc.created_at || '',
         pendingCount: countPending(sc.id),
-      }))
+      }));
+
+    const standalonePurchases = await pb.collection('purchase_contracts').getList(1, 500, {
+      filter: 'sales_contract = "" || sales_contract = null',
+      sort: '-created_at',
+    });
+
+    const purchaseOptions = (standalonePurchases.items as unknown as { id: string; no: string; product_name: string; total_quantity: number; sign_date?: string; status?: string; created_at?: string }[])
+      .filter((pc) => pc.status !== 'completed')
+      .map((pc) => ({
+        id: pc.id,
+        no: pc.no,
+        productName: pc.product_name,
+        quantity: pc.total_quantity,
+        signDate: pc.sign_date || '',
+        type: 'purchase' as const,
+        status: pc.status || 'executing',
+        created: pc.created_at || '',
+        pendingCount: 0,
+      }));
+
+    return [...salesOptions, ...purchaseOptions]
       .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
   },
 };
