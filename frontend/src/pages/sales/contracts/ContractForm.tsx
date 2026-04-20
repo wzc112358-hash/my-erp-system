@@ -247,11 +247,11 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
         <Col xs={24} md={12}>
           <Form.Item label={isCrossBorder ? '合同总金额（USD）' : isExTax ? '合同总金额（不含税）' : '合同总金额'}>
             <div style={{ padding: '9.5px 11px', background: '#f5f5f5', borderRadius: 6, color: '#333' }}>
-              {isCrossBorder ? '$' : '¥'} {totalAmount.toFixed(4)}
+              {isCrossBorder ? '$' : '¥'} {totalAmount.toFixed(6)}
             </div>
             {isCrossBorder && (
               <Alert
-                message={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(4)}（汇率：${exchangeRate}）`}
+                message={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(6)}（汇率：${exchangeRate}）`}
                 type="info"
                 style={{ marginTop: 8 }}
                 showIcon

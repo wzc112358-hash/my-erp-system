@@ -1,436 +1,217 @@
-# 系统更新与修复总汇
-
-> 本文档汇总了 MY-ERP-SYSTEM 项目的所有更新和修复记录
-> 
-> - **update1**（页面显示与功能优化）：2026-04-18
-> - **update2**（问题修复汇总）：2026-04-19
-> - **update3**（附件上传修改无效修复）：2026-04-19
-
----
-
-## 目录
-
-1. [update1 — 页面显示与功能优化](#一update1--页面显示与功能优化)
-2. [update2 — 问题修复汇总](#二update2--问题修复汇总)
-3. [update3 — 附件上传修改无效修复](#三update3--附件上传修改无效修复)
-
----
-
-# 一、update1 — 页面显示与功能优化
-
-> 创建日期：2026-04-18
-> 状态：全部完成
-
-## 1.1 需求总览
-
-| # | 需求 | 涉及页面 | 角色 |
-|---|------|----------|------|
-| 1 | 销售合同详情页子信息表格添加「货物数量」列 | `sales/contracts/ContractDetail` | 销售 |
-| 2 | 采购合同详情页子信息表格添加「货物数量」列 | `purchase/contracts/ContractDetail` | 采购 |
-| 3 | 经理总览页支持查看无关联销售合同的采购合同 | `manager/OverviewPage` + `ContractDetailPage` + API | 经理 |
-| 4 | 经理总览页添加删除合同功能 | `manager/OverviewPage` + API | 经理 |
-| 5 | 经理合同详情页销售合同信息添加「应收金额」（= 已执行数量 × 单价） | `manager/ContractDetailPage` | 经理 |
-| 6 | 经理合同详情页子信息表格新增「货物数量」列（保留产品金额） | `manager/ContractDetailPage` | 经理 |
-| 7 | 经理合同详情页应收金额改为「已执行数量 × 单价」 | `manager/ContractDetailPage` | 经理 |
-| 8 | 销售合同「应收金额」「欠款」逻辑重构（前后端） | 后端 hooks + 销售合同详情/收款详情 + 经理详情 | 销售 + 经理 |
-| 9 | 经理合同详情页支持删除子记录（发货/到货/发票/收付款） | `manager/ContractDetailPage` | 经理 |
-
-## 1.2 核心改动说明
-
-### 1.2.1 货物数量列添加
-
-在销售合同详情页（发票、收款）、采购合同详情页（收票、付款）表格中新增「货物数量(吨)」列，`product_amount` 字段以纯数字显示。
-
-### 1.2.2 独立采购合同支持
-
-- API 层：`getAllContractsForOverview` 返回新增 `standalonePurchaseContracts`
-- 新增 `getPurchaseContractDetail` 方法
-- `ContractDetailData.sales_contract` 改为可选
-- OverviewPage 底部新增「独立采购合同」区域
-- 新增路由 `/manager/overview/purchase/:id`
-- ContractDetailPage 根据 URL 自动判断显示销售或采购详情
-
-### 1.2.3 删除功能
-
-- 销售合同卡片和独立采购合同卡片右上角添加删除按钮
-- 删除前检查关联子记录，有则提示无法删除
-- 子记录表格添加删除操作列
-
-### 1.2.4 应收金额与欠款逻辑重构
-
-**公式变更**：
-
-| 项目 | 旧公式 | 新公式 |
-|------|--------|--------|
-| 应收金额 | total_amount | executed_quantity × unit_price |
-| 欠款金额 | total_amount - receipted_amount | 应收金额 - receipted_amount |
-| 欠款比例 | (total_amount - receipted_amount) / total_amount | receipted_amount / 应收金额 |
-
-**后端改动**：
-- `sales_contract.go`：创建/更新时用 `executed_quantity × unit_price` 计算 debt
-- `sale_receipt.go`：Create/Update/Delete 三个 hook 改用应收金额计算
-- `sales_shipment.go`：发货更新 `executed_quantity` 时同步更新 debt
-
-## 1.3 修改文件清单
-
-| # | 文件 | 操作 |
-|---|------|------|
-| 1 | `frontend/src/pages/sales/contracts/ContractDetail.tsx` | 发票、收款表格添加货物数量列 |
-| 2 | `frontend/src/pages/purchase/contracts/ContractDetail.tsx` | 收票、付款表格添加货物数量列 |
-| 3 | `frontend/src/api/comparison.ts` | 返回独立采购合同；新增 getPurchaseContractDetail |
-| 4 | `frontend/src/types/comparison.ts` | sales_contract 改为可选 |
-| 5 | `frontend/src/pages/manager/OverviewPage.tsx` | 展示独立采购合同 + 删除按钮 |
-| 6 | `frontend/src/pages/manager/ContractDetailPage.tsx` | 支持纯采购合同详情 + 应收金额 + 货物数量列 + 子记录删除 |
-| 7 | `frontend/src/routes/index.tsx` | 新增 /manager/overview/purchase/:id |
-| 8 | `backend/hooks/sales_contract.go` | 修改 Create/Update hook 中 debt 计算 |
-| 9 | `backend/hooks/sale_receipt.go` | 修改 Create/Update/Delete hook 中 debt 计算 |
-| 10 | `backend/hooks/sales_shipment.go` | 在 updateSalesContractExecution 中增加 debt 联动更新 |
-
----
-
-# 二、update2 — 问题修复汇总
-
-> 创建日期：2026-04-19
-> 来源：员工问题反馈图片汇总
-> 状态：全部完成
-
-## 2.1 问题总览
-
-| # | 问题 | 涉及页面/文件 | 角色 |
-|---|------|--------------|------|
-| 1 | 销售合同详情页收款记录「产品金额」显示为货币，实际应为数量 | `sales/contracts/ContractDetail.tsx` | 销售 |
-| 2 | 采购合同详情页付款记录「产品金额」显示为货币，实际应为数量 | `purchase/contracts/ContractDetail.tsx` | 采购 |
-| 3 | 经理流程图下拉栏无法选择独立采购合同 | `manager/ProgressFlowPage.tsx` + API | 经理 |
-| 4 | 经理流程图节点详情中「产品金额」显示为货币，实际应为数量 | `manager/ProgressFlowPage.tsx` | 经理 |
-| 5 | 销售新建收款记录时数量验证过严，质保金等小数量无法提交 | `backend/hooks/sale_receipt.go` | 销售 |
-
-## 2.2 修复详情
-
-### 2.2.1 产品金额显示修正
-
-**问题**：`product_amount` 字段被显示为货币格式（`¥5.0000`），但实际代表货物数量（吨）。
-
-**修复**：将「产品金额」列标题改为「货物数量(吨)」，渲染为纯数字。
-
-涉及表格：
-- 销售合同详情页 - 收款记录
-- 采购合同详情页 - 付款记录
-- 经理流程图节点详情 - 销售发票/收款/采购发票/付款
-
-### 2.2.2 流程图支持独立采购合同
-
-**问题**：经理流程图下拉列表只显示有销售合同的合同，独立采购合同不可见。
-
-**修复**：
-- `getUncompletedContracts` 返回独立采购合同
-- 下拉选项显示 `[采购]`/`[销售]` 类型标记
-- 选择独立采购合同时调用 `getPurchaseContractDetail`
-
-### 2.2.3 收款数量验证放宽
-
-**问题**：质保金等小数量收款时，后端报错「收款产品数量总和不能超过合同总数量」。
-
-**修复**：验证条件从 `> 总数量` 放宽为 `> 总数量 × 1.05`（允许5%误差）。
-
-## 2.3 修改文件清单
-
-| # | 文件 | 操作 |
-|---|------|------|
-| 1 | `frontend/src/pages/sales/contracts/ContractDetail.tsx` | 收款表格「产品金额」→「货物数量(吨)」 |
-| 2 | `frontend/src/pages/purchase/contracts/ContractDetail.tsx` | 付款表格「产品金额」→「货物数量(吨)」 |
-| 3 | `frontend/src/api/comparison.ts` | getUncompletedContracts 返回独立采购合同 |
-| 4 | `frontend/src/pages/manager/ProgressFlowPage.tsx` | 下拉列表+节点详情显示修复 |
-| 5 | `backend/hooks/sale_receipt.go` | 放宽收款数量验证（允许105%） |
-
----
-
-# 三、update3 — 附件上传修改无效修复
-
-> 创建日期：2026-04-19
-> 问题来源：员工反馈所有模块的附件上传后无法修改（删除/替换无效）
-> 状态：全部完成
-
-## 3.1 问题根因
-
-### 3.1.1 Form 组件附件提取缺陷
-
-所有表单组件使用以下逻辑提取附件：
-
-```typescript
-const attachments = fileList?.map((f) => f.originFileObj).filter(Boolean) as File[] || [];
-```
-
-**问题**：`originFileObj` 只存在于新上传的本地文件。已有文件（从服务器加载）没有此属性，导致：
-
-| 场景 | 结果 |
-|------|------|
-| 编辑记录，添加新附件 | 旧文件丢失 |
-| 编辑记录，删除所有附件 | 旧文件仍然保留 |
-
-### 3.1.2 API 层 update 方法缺陷
-
-```typescript
-if (data.attachments && data.attachments.length > 0) {
-    data.attachments.forEach((file) => formData.append('attachments', file));
-}
-```
-
-**问题**：当 `attachments` 为空数组时（用户删除所有附件），条件不成立，不传递 `attachments` 字段，PocketBase 默认保留所有旧文件。
-
-### 3.1.3 类型定义缺陷
-
-`attachments: File[]` 不支持已有文件名（`string`）。
-
-## 3.2 修复方案
-
-### 3.2.1 新增通用工具函数
-
-创建 `frontend/src/utils/file.ts`：
-
-```typescript
-export const extractAttachments = (fileList: any[] | undefined): (File | string)[] => {
-    if (!fileList || !Array.isArray(fileList)) return [];
-    return fileList
-        .map((f) => {
-            if (f.originFileObj instanceof File) return f.originFileObj;
-            if (typeof f.url === 'string' && f.url) return f.url;
-            if (typeof f.name === 'string' && f.name) return f.name;
-            return null;
-        })
-        .filter((item): item is File | string => item !== null);
-};
-```
-
-### 3.2.2 类型定义修改
-
-所有 `attachments?: File[]` 改为 `attachments?: (File | string)[]`。
-
-涉及类型文件：
-- `sales-contract.ts`
-- `sales-shipment.ts`
-- `sale-invoice.ts`
-- `sale-receipt.ts`
-- `bidding-record.ts`
-- `service-contract.ts`
-- `purchase-contract.ts`
-- `purchase-arrival.ts`
-- `purchase-invoice.ts`
-- `purchase-payment.ts`
-- `expense-record.ts`
-
-### 3.2.3 API 层修改
-
-所有 update 方法统一改为：
-
-```typescript
-if (data.attachments !== undefined) {
-    if (data.attachments.length === 0) {
-        formData.append('attachments', ''); // 显式删除所有附件
-    } else {
-        data.attachments.forEach((file) => {
-            formData.append('attachments', file);
-        });
-    }
-}
-```
-
-### 3.2.4 Form 组件修改
-
-所有 Form 组件使用 `extractAttachments()` 替代 `originFileObj` 过滤。
-
-### 3.2.5 经理详情页附件删除
-
-ContractDetailPage.tsx 中：
-- 每个已有附件旁添加删除按钮
-- 点击删除后重新加载数据
-
-## 3.3 修改文件清单
-
-### 新增文件
-
-| 文件 | 说明 |
-|------|------|
-| `frontend/src/utils/file.ts` | 通用附件提取工具函数 |
-
-### 类型定义修改（11个文件）
-
-所有类型文件中的 `attachments?: File[]` 改为 `attachments?: (File | string)[]`。
-
-### API 层修改（10个文件）
-
-| 文件 | 方法 |
-|------|------|
-| `frontend/src/api/sales-contract.ts` | update |
-| `frontend/src/api/sales-shipment.ts` | update |
-| `frontend/src/api/receipt.ts` | update |
-| `frontend/src/api/bidding-record.ts` | update |
-| `frontend/src/api/service-contract.ts` | update, updateOrder |
-| `frontend/src/api/purchase-contract.ts` | update |
-| `frontend/src/api/purchase-arrival.ts` | update |
-| `frontend/src/api/purchase-invoice.ts` | update |
-| `frontend/src/api/purchase-payment.ts` | update |
-| `frontend/src/api/purchase-expense.ts` | update |
-
-### Form/List 组件修改（15个文件）
-
-| 文件 | 组件 |
-|------|------|
-| `frontend/src/pages/sales/contracts/ContractList.tsx` | handleFormFinish |
-| `frontend/src/pages/sales/shipments/ShipmentForm.tsx` | handleFinish |
-| `frontend/src/pages/sales/invoices/InvoiceForm.tsx` | handleFinish |
-| `frontend/src/pages/sales/receipts/ReceiptForm.tsx` | handleFinish |
-| `frontend/src/pages/sales/bidding/BiddingList.tsx` | handleFormFinish |
-| `frontend/src/pages/sales/services/ServiceList.tsx` | handleFormFinish |
-| `frontend/src/pages/sales/services/ServiceDetail.tsx` | handleOrderFormFinish |
-| `frontend/src/pages/purchase/contracts/ContractList.tsx` | handleFormFinish |
-| `frontend/src/pages/purchase/arrivals/ArrivalForm.tsx` | handleFinish |
-| `frontend/src/pages/purchase/invoices/InvoiceForm.tsx` | handleFinish |
-| `frontend/src/pages/purchase/payments/PaymentForm.tsx` | handleFinish |
-| `frontend/src/pages/purchase/expenses/ExpenseList.tsx` | handleFormFinish |
-
-### 经理详情页修改
-
-| 文件 | 修改内容 |
-|------|---------|
-| `frontend/src/pages/manager/ContractDetailPage.tsx` | 添加已有附件删除功能 |
-
-## 3.4 验证方法
-
-1. **销售合同**：编辑已有销售合同 → 添加新附件 → 保存 → 确认新旧附件都在
-2. **销售合同**：编辑已有销售合同 → 删除所有附件 → 保存 → 确认附件为空
-3. **销售发货**：编辑发货记录 → 替换附件 → 保存 → 确认附件已替换
-4. **采购付款**：编辑付款记录 → 删除附件 → 保存 → 确认附件已删除
-5. **经理详情页**：点击子记录附件上传 → 上传新附件 → 确认追加成功 → 删除已有附件 → 确认删除成功
-
----
-
-# 四、全部更新汇总
-
-## 4.1 按模块统计
-
-| 模块 | update1 | update2 | update3 | 合计 |
-|------|---------|---------|---------|------|
-| 后端 hooks | 3 | 1 | 0 | 4 |
-| 类型定义 | 1 | 0 | 11 | 12 |
-| API 层 | 2 | 1 | 10 | 13 |
-| 销售页面 | 1 | 1 | 7 | 9 |
-| 采购页面 | 1 | 1 | 5 | 7 |
-| 经理页面 | 3 | 1 | 1 | 5 |
-| 路由/其他 | 1 | 0 | 0 | 1 |
-| **合计** | **12** | **5** | **34** | **51** |
-
-## 4.2 核心新增功能
-
-1. **独立采购合同支持**：经理模块可查看和管理无关联销售合同的采购合同
-2. **应收金额计算**：基于已执行数量 × 单价，更准确的欠款计算
-3. **子记录删除**：经理可在详情页直接删除发货/到货/发票/收付款记录
-4. **货物数量显示**：所有表格统一显示「货物数量(吨)」，避免金额/数量混淆
-5. **附件完整管理**：支持新增、保留已有、删除附件的完整生命周期
-
-## 4.3 部署状态
-
-所有更新均已部署到服务器：
-- 后端：本地交叉编译 → 上传服务器 → docker cp 到北京/兰州容器 → docker restart
-- 前端：npm run build → 上传 dist → docker cp 到 erp-frontend 容器
-
-访问地址：`https://erp.henghuacheng.cn`
-
----
-
-# 五、新增修复 — 跨境合同金额显示、采购运输币种、付款数量显示
+# 六、update6 — 数值精度、含税收款、跳转按钮、收款进度修复
 
 > 创建日期：2026-04-20
-> 来源：员工问题反馈图片
-> 状态：待实施
+> 状态：执行中
 
-## 5.1 问题总览
+## 6.1 需求总览
 
-| # | 问题 | 涉及页面/文件 | 角色 |
+| # | 需求 | 涉及页面/模块 | 角色 |
 |---|------|--------------|------|
-| 1 | 跨境合同在首页列表金额显示为人民币，应为美元 | `sales/contracts/ContractList` + `purchase/contracts/ContractList` | 销售+采购 |
-| 2 | 采购运输运费/杂费需要支持币种选择（USD/CNY），详情页显示双币种 | `purchase/arrivals/ArrivalForm` + `ArrivalDetail` + 后端 | 采购 |
-| 3 | 付款详情页"已执行数量"显示为付款金额而非实际执行数量 | `purchase/payments/PaymentDetail` | 采购 |
+| 1 | 全局数值精度统一为6位小数（百分比保留2位） | 所有显示金额/单价/数量的页面 | 全局 |
+| 2 | 销售收款支持含税/不含税选择 | `sale_receipts` 后端 + 收款表单/详情/合同详情 | 销售 |
+| 3 | 子信息详情页添加「查看关联合同」跳转按钮 | 运输/收付款/开收票的详情页（销售+采购） | 销售+采购 |
+| 4 | 销售合同收款进度分母改为应收金额 | `sales/contracts/ContractDetail.tsx` | 销售 |
 
-## 5.2 问题详情
+---
 
-### 问题1 — 跨境合同首页金额显示错误
+## 6.2 问题1 — 全局数值精度统一为6位小数
 
-**现象**：合同列表页中，跨境合同的"合同金额"列显示 `¥54768.0000`，但应为 `$54768.0000 (USD)`。
+### 6.2.1 规则定义
 
-**根因**：列表页的 `total_amount` 列渲染固定为 `¥${amount.toFixed(4)}`，未判断 `is_cross_border` 字段。
+| 数值类型 | 显示精度 | 示例 |
+|---------|---------|------|
+| 金额（合同金额、收款金额、付款金额、发票金额、运费、杂费等） | 6位小数 | `¥421238.880000` |
+| 单价（产品单价、含税单价、不含税单价） | 6位小数 | `¥26327.430000` |
+| 数量（产品数量、执行数量、到货数量、发货数量） | 6位小数 | `16.000000 吨` |
+| 比例/进度（百分比） | 2位小数 | `62.50%` |
+| 汇率 | 6位小数 | `6.834300` |
 
-**修复**：列渲染需接收完整 record，判断 `is_cross_border`：
-- 跨境：显示 `$amount（≈ ¥amount×rate）`
-- 非跨境：显示 `¥amount`
+### 6.2.2 修改范围
 
-**涉及文件**：
+全局搜索所有 `.toFixed(2)`、`.toFixed(4)` 调用，判断其用途：
+- 如果是金额、单价、数量类数值 → 改为 `.toFixed(6)`
+- 如果是百分比、比例 → 保持 `.toFixed(2)`
+
+**关键文件（预计）**：
 - `frontend/src/pages/sales/contracts/ContractList.tsx`
+- `frontend/src/pages/sales/contracts/ContractDetail.tsx`
+- `frontend/src/pages/sales/shipments/*.tsx`
+- `frontend/src/pages/sales/receipts/*.tsx`
+- `frontend/src/pages/sales/invoices/*.tsx`
 - `frontend/src/pages/purchase/contracts/ContractList.tsx`
+- `frontend/src/pages/purchase/contracts/ContractDetail.tsx`
+- `frontend/src/pages/purchase/arrivals/*.tsx`
+- `frontend/src/pages/purchase/payments/*.tsx`
+- `frontend/src/pages/purchase/invoices/*.tsx`
+- `frontend/src/pages/manager/ContractDetailPage.tsx`
+- `frontend/src/pages/manager/OverviewPage.tsx`
 
-### 问题2 — 采购运输运费币种选择
+---
 
-**现象**：跨境采购合同的运输记录中，运费和杂费无法选择币种，详情页只能显示单一币种。
+## 6.3 问题2 — 销售收款支持含税/不含税选择
 
-**需求**：
-1. 新建/编辑到货记录时，运费1、运费2、杂费 各增加币种选择（USD/CNY，默认CNY）
-2. 详情页根据选择的币种显示对应金额，并自动换算显示另一种币种
+### 6.3.1 业务逻辑
 
-**新增字段**（purchase_arrivals 集合）：
-- `freight_1_currency`：select，选项 USD/CNY，默认 CNY
-- `freight_2_currency`：select，选项 USD/CNY，默认 CNY  
-- `miscellaneous_expenses_currency`：select，选项 USD/CNY，默认 CNY
+当销售合同按**不含税**填写时（`is_tax_included = false`），收款记录允许销售员选择按**含税**还是**不含税**来收款：
 
-**涉及文件**：
-- 后端：`purchase_arrivals` schema（PocketBase 后台手动添加）
-- 类型：`frontend/src/types/purchase-arrival.ts`
-- API：`frontend/src/api/purchase-arrival.ts`
-- 表单：`frontend/src/pages/purchase/arrivals/ArrivalForm.tsx`
-- 详情：`frontend/src/pages/purchase/arrivals/ArrivalDetail.tsx`
+- 若收款 `is_tax_included = false`（默认）：应收金额 = 合同金额（不含税）
+- 若收款 `is_tax_included = true`：应收金额 = 合同金额 × 1.13
 
-### 问题3 — 付款详情页已执行数量显示错误
+> 增值税率按 13% 计算，即含税金额 = 不含税金额 × 1.13
 
-**现象**：付款详情页中，关联采购合同的"已执行数量"显示为 `54768吨`（这是合同总金额），实际应为 `16吨`（实际执行数量）。
+### 6.3.2 后端字段
 
-**根因**：`PaymentDetail.tsx` 第118行代码：
-```tsx
-{contract.paid_amount as number} 吨  // 错误：显示的是已付金额
-```
-应改为：
-```tsx
-{contract.executed_quantity as number} 吨  // 正确：显示执行数量
-```
+在 `sale_receipts` 集合新增字段：
 
-**涉及文件**：
-- `frontend/src/pages/purchase/payments/PaymentDetail.tsx`
+| 字段名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `is_tax_included` | Bool | `false` | 该笔收款是否按含税计算 |
 
-## 5.3 修改文件清单
+### 6.3.3 前端修改
 
+**收款表单（`ReceiptForm.tsx`）**：
+- 添加 Switch 开关「按含税收款」
+- 仅当关联销售合同 `is_tax_included = false` 时显示此开关
+- 提交时包含 `is_tax_included` 字段
+
+**收款详情（`ReceiptDetail.tsx`）**：
+- 显示「计税方式」：含税 / 不含税
+
+**销售合同详情（`ContractDetail.tsx`）**：
+- 应收金额计算逻辑调整：
+  - 如果合同本身含税：`应收金额 = 合同金额`
+  - 如果合同不含税且存在按含税收款的记录：`应收金额 = 合同金额 × 1.13`
+  - 如果合同不含税且所有收款都不含税：`应收金额 = 合同金额`
+- 实际上，应收金额应该是根据具体收款记录的 `is_tax_included` 来分别计算
+- 更简单的逻辑：在显示每笔收款时，如果 `is_tax_included = true`，显示含税金额
+
+**欠款信息区域**：
+- 应收金额 = 合同金额（不含税时）或 合同金额 × 1.13（含税时）
+- 需要根据实际收款记录的 `is_tax_included` 汇总计算
+
+### 6.3.4 参考图片
+
+![不含税销售合同的应收金额问题](问题图片/不含税销售合同的应收金额问题.png)
+
+---
+
+## 6.4 问题3 — 子信息详情页添加「查看关联合同」跳转按钮
+
+### 6.4.1 修改范围
+
+将以下详情页中的「关联合同信息」表格/卡片移除，替换为「查看关联合同」按钮：
+
+**销售模块**：
+| 页面 | 当前显示 | 修改后 |
+|------|---------|--------|
+| `sales/shipments/ShipmentDetail.tsx` | 关联销售合同信息表 | 「查看关联销售合同」按钮 |
+| `sales/receipts/ReceiptDetail.tsx` | 关联销售合同信息表 | 「查看关联销售合同」按钮 |
+| `sales/invoices/InvoiceDetail.tsx` | 关联销售合同信息表 | 「查看关联销售合同」按钮 |
+
+**采购模块**：
+| 页面 | 当前显示 | 修改后 |
+|------|---------|--------|
+| `purchase/arrivals/ArrivalDetail.tsx` | 关联采购合同信息表 | 「查看关联采购合同」按钮 |
+| `purchase/payments/PaymentDetail.tsx` | 关联采购合同信息表 | 「查看关联采购合同」按钮 |
+| `purchase/invoices/InvoiceDetail.tsx` | 关联采购合同信息表 | 「查看关联采购合同」按钮 |
+
+### 6.4.2 按钮行为
+
+- 点击按钮 → `navigate(`/sales/contracts/${sales_contract_id}`)` 或 `navigate(`/purchase/contracts/${purchase_contract_id}`)`
+- 按钮样式：Primary Button，带 `LinkOutlined` 图标
+
+---
+
+## 6.5 问题4 — 销售合同收款进度分母改为应收金额
+
+### 6.5.1 问题描述
+
+当前收款进度条显示：`已收金额 / 合同金额`
+
+**正确逻辑**：`已收金额 / 应收金额`
+
+其中应收金额 = 合同金额（含税时）或 合同金额 × 1.13（不含税但按含税收款时）
+
+### 6.5.2 参考图片
+
+![销售模块中的合同详情中的收款进度问题](问题图片/销售模块中的合同详情中的收款进度问题.png)
+
+图中：
+- 合同金额 = ¥200.0000
+- 应收金额 = ¥160.0000（可能是折扣或部分执行后的应收）
+- 已收金额 = ¥100.0000
+- 当前进度显示：`¥100.0000 / ¥200.0000`（50%）
+- **应该显示**：`¥100.0000 / ¥160.0000`（62.5%）
+
+### 6.5.3 修改文件
+
+- `frontend/src/pages/sales/contracts/ContractDetail.tsx`
+- 收款进度组件的分母从 `contract.total_amount` 改为 `contract.receivable_amount`
+
+---
+
+## 6.6 修改文件清单（预计）
+
+### 后端
+| # | 操作 | 说明 |
+|---|------|------|
+| 1 | PocketBase `sale_receipts` 新增 `is_tax_included` bool 字段 | 北京 + 兰州 |
+
+### 前端 — 数值精度
 | # | 文件 | 操作 |
 |---|------|------|
-| 1 | `frontend/src/pages/sales/contracts/ContractList.tsx` | 修改合同金额列渲染，支持跨境显示 |
-| 2 | `frontend/src/pages/purchase/contracts/ContractList.tsx` | 修改合同金额列渲染，支持跨境显示 |
-| 3 | `frontend/src/types/purchase-arrival.ts` | 新增三个 currency 字段 |
-| 4 | `frontend/src/api/purchase-arrival.ts` | 新增字段提交 |
-| 5 | `frontend/src/pages/purchase/arrivals/ArrivalForm.tsx` | 新增币种选择控件 |
-| 6 | `frontend/src/pages/purchase/arrivals/ArrivalDetail.tsx` | 详情页双币种显示 |
-| 7 | `frontend/src/pages/purchase/payments/PaymentDetail.tsx` | 修复已执行数量显示 |
-| 8 | PocketBase `purchase_arrivals` | 后台新增三个 select 字段（北京+兰州）|
+| 1 | `frontend/src/pages/sales/contracts/ContractList.tsx` | 金额/单价精度改为6位 |
+| 2 | `frontend/src/pages/sales/contracts/ContractDetail.tsx` | 金额/单价/数量精度改为6位，进度百分比保持2位 |
+| 3 | `frontend/src/pages/sales/shipments/*.tsx` | 金额/数量精度改为6位 |
+| 4 | `frontend/src/pages/sales/receipts/*.tsx` | 金额精度改为6位 |
+| 5 | `frontend/src/pages/sales/invoices/*.tsx` | 金额精度改为6位 |
+| 6 | `frontend/src/pages/purchase/contracts/ContractList.tsx` | 金额/单价精度改为6位 |
+| 7 | `frontend/src/pages/purchase/contracts/ContractDetail.tsx` | 金额/单价/数量精度改为6位 |
+| 8 | `frontend/src/pages/purchase/arrivals/*.tsx` | 金额/数量精度改为6位 |
+| 9 | `frontend/src/pages/purchase/payments/*.tsx` | 金额精度改为6位 |
+| 10 | `frontend/src/pages/purchase/invoices/*.tsx` | 金额精度改为6位 |
+| 11 | `frontend/src/pages/manager/ContractDetailPage.tsx` | 金额/单价/数量精度改为6位 |
+| 12 | `frontend/src/pages/manager/OverviewPage.tsx` | 金额精度改为6位 |
 
-## 5.4 实施顺序
+### 前端 — 含税收款
+| # | 文件 | 操作 |
+|---|------|------|
+| 13 | `frontend/src/types/sale-receipt.ts` | 新增 `is_tax_included?: boolean` |
+| 14 | `frontend/src/api/sale-receipt.ts` | 提交 `is_tax_included` |
+| 15 | `frontend/src/pages/sales/receipts/ReceiptForm.tsx` | 添加「按含税收款」Switch |
+| 16 | `frontend/src/pages/sales/receipts/ReceiptDetail.tsx` | 显示计税方式 |
+| 17 | `frontend/src/pages/sales/contracts/ContractDetail.tsx` | 应收金额/收款进度逻辑调整 |
+
+### 前端 — 跳转按钮
+| # | 文件 | 操作 |
+|---|------|------|
+| 18 | `frontend/src/pages/sales/shipments/ShipmentDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+| 19 | `frontend/src/pages/sales/receipts/ReceiptDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+| 20 | `frontend/src/pages/sales/invoices/InvoiceDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+| 21 | `frontend/src/pages/purchase/arrivals/ArrivalDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+| 22 | `frontend/src/pages/purchase/payments/PaymentDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+| 23 | `frontend/src/pages/purchase/invoices/InvoiceDetail.tsx` | 移除合同信息表，添加跳转按钮 |
+
+---
+
+## 6.7 实施顺序
 
 ```
-1. PocketBase 后台添加三个币种字段（北京+兰州）
-2. 修改类型定义 purchase-arrival.ts
-3. 修改 API purchase-arrival.ts
-4. 修改 ArrivalForm.tsx 添加币种选择
-5. 修改 ArrivalDetail.tsx 双币种显示
-6. 修改 ContractList.tsx（销售+采购）金额显示
-7. 修改 PaymentDetail.tsx 已执行数量
-8. 构建 + 部署
+1. PocketBase 后台添加 sale_receipts.is_tax_included bool 字段（北京+兰州）
+2. 修改 types/sale-receipt.ts 新增 is_tax_included 字段
+3. 修改 api/sale-receipt.ts 提交 is_tax_included
+4. 修改 ReceiptForm.tsx 添加含税开关
+5. 修改 ReceiptDetail.tsx 显示计税方式
+6. 修改 sales/contracts/ContractDetail.tsx — 收款进度/应收金额逻辑
+7. 全局修改所有 .toFixed(2) → .toFixed(6)（排除百分比）
+8. 修改6个子信息详情页，移除合同信息表，添加跳转按钮
+9. TypeScript 编译检查
+10. 构建 + 部署
 ```
 
-## 5.5 验证方法
+## 6.8 验证方法
 
-1. **跨境合同金额**：销售/采购首页 → 跨境合同显示 `$amount（≈ ¥amount）`，非跨境显示 `¥amount`
-2. **采购运输币种**：新建到货记录 → 运费/杂费可选择 USD/CNY → 详情页根据选择显示对应币种并自动换算
-3. **付款数量**：付款详情页 → 已执行数量显示为实际到货数量（如16吨），而非合同总金额
+1. **数值精度**：销售/采购合同列表/详情 → 金额显示 `¥123456.789000`
+2. **含税收款**：创建不含税销售合同 → 添加收款记录 → 选择「按含税收款」→ 应收金额自动 ×1.13
+3. **跳转按钮**：打开任意到货/发货/收款/付款/发票详情 → 点击「查看关联合同」→ 正确跳转到合同详情
+4. **收款进度**：合同详情页 → 收款进度分母显示为应收金额（而非合同金额）

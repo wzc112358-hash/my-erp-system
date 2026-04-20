@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { PaymentAPI } from '@/api/purchase-contract';
@@ -88,7 +88,7 @@ export const PaymentDetail: React.FC = () => {
             {data.product_name}
           </Descriptions.Item>
           <Descriptions.Item label={isCB ? '付款金额（USD）' : '付款金额'} span={1}>
-            {isCB ? `$${amtVal.toFixed(4)}（≈ ¥${(amtVal * exchangeRate).toFixed(4)}）` : `¥${amtVal.toFixed(4)}`}
+            {isCB ? `$${amtVal.toFixed(6)}（≈ ¥${(amtVal * exchangeRate).toFixed(6)}）` : `¥${amtVal.toFixed(6)}`}
           </Descriptions.Item>
           <Descriptions.Item label="产品数量" span={1}>
             {data.product_amount} 吨
@@ -106,29 +106,14 @@ export const PaymentDetail: React.FC = () => {
 
         {contract && (
           <>
-            <Divider>关联采购合同信息</Divider>
-            <Descriptions bordered column={2}>
-              <Descriptions.Item label="合同编号" span={1}>
-                {contract.no as string}
-              </Descriptions.Item>
-              <Descriptions.Item label="合同总数量" span={1}>
-                {contract.total_quantity as number} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="已执行数量" span={1}>
-                {contract.executed_quantity as number} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="执行进度" span={1}>
-                {((contract.payment_percent as number) || 0).toFixed(1)}%
-              </Descriptions.Item>
-              <Descriptions.Item label={isCB ? '合同总金额（USD）' : '合同总金额'} span={1}>
-                {(() => {
-                  const v = (contract.total_amount as number) || 0;
-                  return isCB
-                    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
-                    : `¥${v.toFixed(4)}`;
-                })()}
-              </Descriptions.Item>
-            </Descriptions>
+            <Divider />
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={() => navigate(`/purchase/contracts/${contract.id}`)}
+            >
+              查看关联采购合同
+            </Button>
           </>
         )}
 

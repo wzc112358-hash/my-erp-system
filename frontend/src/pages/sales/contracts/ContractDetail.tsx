@@ -40,9 +40,16 @@ export const ContractDetail: React.FC = () => {
 
   const isCB = contract?.is_cross_border;
   const fmtAmt = useCallback((v: number) => {
-    if (!isCB) return `¥${(v ?? 0).toFixed(4)}`;
-    return `$${(v ?? 0).toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`;
+    if (!isCB) return `¥${(v ?? 0).toFixed(6)}`;
+    return `$${(v ?? 0).toFixed(6)}（≈ ¥${(v * exchangeRate).toFixed(6)}）`;
   }, [isCB, exchangeRate]);
+
+  // 计算应收金额：合同含税时=合同金额；合同不含税且有含税收款时=合同金额×1.13
+  const receivableAmount = contract
+    ? contract.is_price_excluding_tax && receipts.some(r => r.is_tax_included)
+      ? contract.total_amount * 1.13
+      : contract.total_amount
+    : 0;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -132,7 +139,7 @@ export const ContractDetail: React.FC = () => {
     { title: '发票号码', dataIndex: 'no', key: 'no' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount' },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (d: string) => d?.split(' ')[0] },
     { title: '操作', key: 'action', render: (_: unknown, record: SaleInvoice) => (
       <Button size="small" onClick={() => navigate(`/sales/invoices/${record.id}`)}>查看</Button>
@@ -141,7 +148,7 @@ export const ContractDetail: React.FC = () => {
 
   const receiptColumns = [
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
-    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
+    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
     { title: '收款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
     { title: '收款账号', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },
@@ -161,8 +168,8 @@ export const ContractDetail: React.FC = () => {
     { title: '招标编号', dataIndex: 'bidding_no', key: 'bidding_no' },
     { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
     { title: '数量', dataIndex: 'quantity', key: 'quantity' },
-    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
-    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '标书费', dataIndex: 'tender_fee', key: 'tender_fee', render: (v: number) => v ? `¥${v.toFixed(6)}` : '-' },
+    { title: '投标保证金', dataIndex: 'bid_bond', key: 'bid_bond', render: (v: number) => v ? `¥${v.toFixed(6)}` : '-' },
     { title: '开标时间', dataIndex: 'open_date', key: 'open_date', render: (v: string) => v?.split(' ')[0] || '-' },
     { title: '中标结果', dataIndex: 'bid_result', key: 'bid_result', render: (v: string) => {
       const info = bidResultMap[v];
@@ -251,9 +258,9 @@ export const ContractDetail: React.FC = () => {
             style={{ cursor: 'pointer' }}
             onClick={() => navigate(`/sales/receipts?contractId=${contract.id}&productName=${encodeURIComponent(contract.product_name)}`)}
           >
-            <Progress percent={contract.receipt_percent || 0} status="normal" />
+            <Progress percent={receivableAmount > 0 ? Number(((contract.receipted_amount || 0) / receivableAmount * 100).toFixed(2)) : 0} status="normal" />
               <div style={{ textAlign: 'center', marginTop: 8 }}>
-                {fmtAmt(contract.receipted_amount || 0)} / {fmtAmt(contract.total_amount)}
+                {fmtAmt(contract.receipted_amount || 0)} / {fmtAmt(receivableAmount)}
               </div>
             </Card>
           </Col>
@@ -274,10 +281,10 @@ export const ContractDetail: React.FC = () => {
 
       <Card title="欠款信息" style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
-          <Descriptions.Item label="应收金额">{fmtAmt((contract.executed_quantity || 0) * (contract.unit_price || 0))}</Descriptions.Item>
+          <Descriptions.Item label="应收金额">{fmtAmt(receivableAmount)}</Descriptions.Item>
           <Descriptions.Item label="已收金额">{fmtAmt(contract.receipted_amount || 0)}</Descriptions.Item>
-          <Descriptions.Item label="欠款金额">{fmtAmt(contract.debt_amount || 0)}</Descriptions.Item>
-          <Descriptions.Item label="收款比例">{contract.debt_percent || 0}%</Descriptions.Item>
+          <Descriptions.Item label="欠款金额">{fmtAmt(Math.max(0, receivableAmount - (contract.receipted_amount || 0)))}</Descriptions.Item>
+          <Descriptions.Item label="收款比例">{receivableAmount > 0 ? ((contract.receipted_amount || 0) / receivableAmount * 100).toFixed(2) : '0.00'}%</Descriptions.Item>
         </Descriptions>
       </Card>
 
@@ -359,8 +366,8 @@ export const ContractDetail: React.FC = () => {
             <Descriptions.Item label="产品名称">{purchaseContract.product_name}</Descriptions.Item>
             <Descriptions.Item label="供应商">{purchaseContract.expand?.supplier?.name || '-'}</Descriptions.Item>
             <Descriptions.Item label="签订日期">{purchaseContract.sign_date?.split(' ')[0]}</Descriptions.Item>
-            <Descriptions.Item label="合同金额">¥{purchaseContract.total_amount?.toFixed(4)}</Descriptions.Item>
-            <Descriptions.Item label="产品单价">¥{purchaseContract.unit_price?.toFixed(4)}</Descriptions.Item>
+            <Descriptions.Item label="合同金额">¥{purchaseContract.total_amount?.toFixed(6)}</Descriptions.Item>
+            <Descriptions.Item label="产品单价">¥{purchaseContract.unit_price?.toFixed(6)}</Descriptions.Item>
             <Descriptions.Item label="产品数量">{purchaseContract.total_quantity} 吨</Descriptions.Item>
           </Descriptions>
         ) : (

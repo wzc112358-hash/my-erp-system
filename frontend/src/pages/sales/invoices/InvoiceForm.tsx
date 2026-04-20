@@ -95,7 +95,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
     }
     if (selectedContract && selectedContract.uninvoiced_amount !== undefined) {
       if (value > selectedContract.uninvoiced_amount) {
-        return Promise.reject(new Error(`发票金额不能超过合同剩余未开票金额 ${selectedContract.uninvoiced_amount.toFixed(4)}`));
+        return Promise.reject(new Error(`发票金额不能超过合同剩余未开票金额 ${selectedContract.uninvoiced_amount.toFixed(6)}`));
       }
     }
     return Promise.resolve();
@@ -162,7 +162,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
         <Row gutter={16}>
           <Col span={24}>
             <Alert
-              message={`合同剩余未开票金额: ¥${selectedContract.uninvoiced_amount.toFixed(4)}`}
+              message={`合同剩余未开票金额: ¥${selectedContract.uninvoiced_amount.toFixed(6)}`}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}

@@ -23,6 +23,6 @@ export const updateUsdToCnyRate = async (rate: number): Promise<void> => {
 export const clearRateCache = () => { cachedRate = null; };
 
 export const usdToCny = (usd: number, rate: number) => usd * rate;
-export const formatUSD = (value: number) => `$${value?.toFixed(4)}`;
-export const formatCNY = (value: number) => `¥${value?.toFixed(4)}`;
-export const fmtMoney = (v: number | undefined | null) => v != null ? Number(v).toFixed(4) : '0.0000';
+export const formatUSD = (value: number) => `$${value?.toFixed(6)}`;
+export const formatCNY = (value: number) => `¥${value?.toFixed(6)}`;
+export const fmtMoney = (v: number | undefined | null) => v != null ? Number(v).toFixed(6) : '0.0000';

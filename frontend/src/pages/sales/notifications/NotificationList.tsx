@@ -272,7 +272,7 @@ export const NotificationList: React.FC = () => {
                 <strong>关联采购合同：</strong>
                 <p>合同编号：{selectedNotification.expand.purchase_contract.no}</p>
                 <p>产品名称：{selectedNotification.expand.purchase_contract.product_name}</p>
-                <p>合同金额：{selectedNotification.expand.purchase_contract.is_cross_border ? `$${selectedNotification.expand.purchase_contract.total_amount?.toFixed(4)} USD` : `¥${selectedNotification.expand.purchase_contract.total_amount?.toFixed(4)}`}</p>
+                <p>合同金额：{selectedNotification.expand.purchase_contract.is_cross_border ? `$${selectedNotification.expand.purchase_contract.total_amount?.toFixed(6)} USD` : `¥${selectedNotification.expand.purchase_contract.total_amount?.toFixed(6)}`}</p>
               </div>
             )}
           </div>
@@ -302,13 +302,13 @@ export const NotificationList: React.FC = () => {
               {selectedContract.expand?.supplier?.name || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="产品单价">
-              ¥{selectedContract.unit_price?.toFixed(4)}
+              ¥{selectedContract.unit_price?.toFixed(6)}
             </Descriptions.Item>
             <Descriptions.Item label="合同总数量">
               {selectedContract.total_quantity} 吨
             </Descriptions.Item>
             <Descriptions.Item label="合同总金额" span={2}>
-              ¥{selectedContract.total_amount?.toFixed(4)}
+              ¥{selectedContract.total_amount?.toFixed(6)}
             </Descriptions.Item>
             <Descriptions.Item label="签订日期">
               {selectedContract.sign_date?.split(' ')[0] || '-'}
@@ -323,13 +323,13 @@ export const NotificationList: React.FC = () => {
               {selectedContract.execution_percent?.toFixed(1)}%
             </Descriptions.Item>
             <Descriptions.Item label="已收票金额">
-              ¥{selectedContract.invoiced_amount?.toFixed(4)}
+              ¥{selectedContract.invoiced_amount?.toFixed(6)}
             </Descriptions.Item>
             <Descriptions.Item label="收票进度">
               {selectedContract.invoiced_percent?.toFixed(1)}%
             </Descriptions.Item>
             <Descriptions.Item label="已付款金额">
-              ¥{selectedContract.paid_amount?.toFixed(4)}
+              ¥{selectedContract.paid_amount?.toFixed(6)}
             </Descriptions.Item>
             <Descriptions.Item label="付款进度">
               {selectedContract.paid_percent?.toFixed(1)}%

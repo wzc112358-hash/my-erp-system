@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, Space, App, Spin, Divider, Table, Tag } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import type { PurchaseInvoice } from '@/types/purchase-contract';
@@ -117,8 +117,8 @@ export const InvoiceDetail: React.FC = () => {
           <Descriptions.Item label="产品数量">{invoice.product_amount} 吨</Descriptions.Item>
           <Descriptions.Item label="发票金额">
             {invoice.expand?.purchase_contract?.is_cross_border
-              ? `$${invoice.amount?.toFixed(4)}（≈ ¥${(invoice.amount * exchangeRate)?.toFixed(4)}）`
-              : `¥${invoice.amount?.toFixed(4)}`}
+              ? `$${invoice.amount?.toFixed(6)}（≈ ¥${(invoice.amount * exchangeRate)?.toFixed(6)}）`
+              : `¥${invoice.amount?.toFixed(6)}`}
           </Descriptions.Item>
           <Descriptions.Item label="收票日期">{invoice.receive_date}</Descriptions.Item>
           <Descriptions.Item label="是否验票">
@@ -131,6 +131,17 @@ export const InvoiceDetail: React.FC = () => {
             {invoice.remark || '-'}
           </Descriptions.Item>
         </Descriptions>
+
+        {invoice.expand?.purchase_contract?.id && (
+          <Button
+            type="primary"
+            icon={<LinkOutlined />}
+            style={{ marginTop: 16 }}
+            onClick={() => navigate(`/purchase/contracts/${invoice.expand!.purchase_contract!.id}`)}
+          >
+            查看关联采购合同
+          </Button>
+        )}
 
         {attachments.length > 0 && (
           <>

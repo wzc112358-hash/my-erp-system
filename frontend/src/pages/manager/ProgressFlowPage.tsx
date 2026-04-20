@@ -14,7 +14,7 @@ import './ProgressFlow.css';
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 100;
 
-const formatCurrency = (v: number) => `¥${(v ?? 0).toFixed(4)}`;
+const formatCurrency = (v: number) => `¥${(v ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 
 const FLOW_TYPE_TITLE: Record<string, string> = {
@@ -310,7 +310,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
 
   const formatAmountCrossBorder = (amount: number, isCrossBorder: boolean) => {
     if (!isCrossBorder) return formatCurrency(amount);
-    return `$${(amount ?? 0).toFixed(4)}（≈ ¥${(amount  * exchangeRate).toFixed(4)}）`;
+    return `$${(amount ?? 0).toFixed(6)}（≈ ¥${(amount  * exchangeRate).toFixed(6)}）`;
   };
 
   const renderAttachments = () => {

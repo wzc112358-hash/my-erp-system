@@ -175,6 +175,7 @@ export interface SaleReceipt {
   account?: string;
   remark?: string;
   attachments?: string[];
+  is_tax_included?: boolean;
   creator: string;
   created: string;
   updated?: string;
@@ -189,6 +190,7 @@ export interface SaleReceipt {
       receipt_percent?: number;
       debt_amount?: number;
       debt_percent?: number;
+      is_price_excluding_tax?: boolean;
     };
     creator?: {
       id: string;
@@ -206,6 +208,7 @@ export interface SaleReceiptFormData {
   method?: string;
   account?: string;
   remark?: string;
+  is_tax_included?: boolean;
   attachments?: (File | string)[];
 }
 

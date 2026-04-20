@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Descriptions, Button, Space, App, Card, Table } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import { SaleInvoiceAPI } from '@/api/sales-invoice';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
@@ -109,8 +109,8 @@ export const InvoiceDetail: React.FC = () => {
           <Descriptions.Item label="产品数量">{data.product_amount} 吨</Descriptions.Item>
           <Descriptions.Item label="发票金额">
             {data.expand?.sales_contract?.is_cross_border
-              ? `$${data.amount?.toFixed(4)}（≈ ¥${(data.amount * exchangeRate)?.toFixed(4)}）`
-              : `¥${data.amount?.toFixed(4)}`}
+              ? `$${data.amount?.toFixed(6)}（≈ ¥${(data.amount * exchangeRate)?.toFixed(6)}）`
+              : `¥${data.amount?.toFixed(6)}`}
           </Descriptions.Item>
           <Descriptions.Item label="开票日期">{data.issue_date}</Descriptions.Item>
           <Descriptions.Item label="关联合同编号" span={1}>
@@ -123,6 +123,16 @@ export const InvoiceDetail: React.FC = () => {
             {data.remark || '-'}
           </Descriptions.Item>
         </Descriptions>
+        {data.expand?.sales_contract?.id && (
+          <Button
+            type="primary"
+            icon={<LinkOutlined />}
+            style={{ marginTop: 16 }}
+            onClick={() => navigate(`/sales/contracts/${data.expand!.sales_contract!.id}`)}
+          >
+            查看关联销售合同
+          </Button>
+        )}
       </Card>
 
       <Card title="附件">

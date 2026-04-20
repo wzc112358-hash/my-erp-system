@@ -10,10 +10,10 @@ import type { ContractDetailData } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import dayjs from 'dayjs';
 
-const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(4)}`;
-const formatUSD = (value: number) => `$${(value ?? 0).toFixed(4)}`;
+const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(6)}`;
+const formatUSD = (value: number) => `$${(value ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
-const percentFormat = (value: number) => `${value.toFixed(4)}%`;
+const percentFormat = (value: number) => `${value.toFixed(2)}%`;
 
 interface ProfitCalc {
   operatingProfit: number;
@@ -314,13 +314,13 @@ const ContractDetailPage: React.FC = () => {
       ? (sc.is_price_excluding_tax ? '总金额（不含税，USD）' : '总金额（USD）')
       : (sc.is_price_excluding_tax ? '总金额（不含税）' : '总金额');
     const totalAmountDisplay = isCrossBorder
-      ? `$${sc.total_amount.toFixed(4)}（≈ ¥${(sc.total_amount  * exchangeRate).toFixed(4)}）`
+      ? `$${sc.total_amount.toFixed(6)}（≈ ¥${(sc.total_amount  * exchangeRate).toFixed(6)}）`
       : formatCurrency(sc.total_amount);
     const unitPriceLabel = isCrossBorder
       ? (sc.is_price_excluding_tax ? '单价（不含税，USD）' : '单价（USD）')
       : (sc.is_price_excluding_tax ? '单价（不含税）' : '单价');
     const unitPriceDisplay = isCrossBorder
-      ? `$${sc.unit_price.toFixed(4)}（≈ ¥${(sc.unit_price  * exchangeRate).toFixed(4)}）`
+      ? `$${sc.unit_price.toFixed(6)}（≈ ¥${(sc.unit_price  * exchangeRate).toFixed(6)}）`
       : formatCurrency(sc.unit_price);
     return (
       <Card title="销售合同基本信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
@@ -337,7 +337,7 @@ const ContractDetailPage: React.FC = () => {
             {(() => {
               const receivable = sc.executed_quantity * sc.unit_price;
               return isCrossBorder
-                ? `$${receivable.toFixed(4)}（≈ ¥${(receivable * exchangeRate).toFixed(4)}）`
+                ? `$${receivable.toFixed(6)}（≈ ¥${(receivable * exchangeRate).toFixed(6)}）`
                 : formatCurrency(receivable);
             })()}
           </Descriptions.Item>
@@ -370,11 +370,11 @@ const ContractDetailPage: React.FC = () => {
           const isCrossBorder = pc.is_cross_border;
           const totalAmountLabel = isCrossBorder ? '总金额（USD）' : '总金额';
           const totalAmountDisplay = isCrossBorder
-            ? `$${pc.total_amount.toFixed(4)}（≈ ¥${(pc.total_amount  * exchangeRate).toFixed(4)}）`
+            ? `$${pc.total_amount.toFixed(6)}（≈ ¥${(pc.total_amount  * exchangeRate).toFixed(6)}）`
             : formatCurrency(pc.total_amount);
           const unitPriceLabel = isCrossBorder ? '单价（USD）' : '单价';
           const unitPriceDisplay = isCrossBorder
-            ? `$${pc.unit_price.toFixed(4)}（≈ ¥${(pc.unit_price  * exchangeRate).toFixed(4)}）`
+            ? `$${pc.unit_price.toFixed(6)}（≈ ¥${(pc.unit_price  * exchangeRate).toFixed(6)}）`
             : formatCurrency(pc.unit_price);
           return (
             <Card

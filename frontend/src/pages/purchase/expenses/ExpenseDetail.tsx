@@ -67,7 +67,7 @@ export const ExpenseDetail: React.FC = () => {
           <Descriptions.Item label="支出类型">{record.expense_type}</Descriptions.Item>
           <Descriptions.Item label="描述说明" span={2}>{record.description}</Descriptions.Item>
           <Descriptions.Item label="付款金额">
-            {record.payment_amount ? `¥${record.payment_amount.toFixed(4)}` : '-'}
+            {record.payment_amount ? `¥${record.payment_amount.toFixed(6)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付款日期">{record.pay_date?.split(' ')[0]}</Descriptions.Item>
           <Descriptions.Item label="付款方式">{record.method || '-'}</Descriptions.Item>

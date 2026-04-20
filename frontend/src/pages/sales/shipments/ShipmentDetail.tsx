@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
-import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { SalesShipmentAPI } from '@/api/sales-shipment';
 import type { SalesShipment } from '@/types/sales-shipment';
 
@@ -13,9 +12,6 @@ export const ShipmentDetail: React.FC = () => {
   const { message } = App.useApp();
   const [shipment, setShipment] = useState<SalesShipment | null>(null);
   const [loading, setLoading] = useState(true);
-  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
-
-  useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -102,34 +98,17 @@ export const ShipmentDetail: React.FC = () => {
 
         {shipment.expand?.sales_contract && (
           <>
-            <Divider>关联销售合同信息</Divider>
-            <Descriptions bordered column={2}>
-              <Descriptions.Item label="合同编号" span={1}>
-                {shipment.expand.sales_contract.no}
-              </Descriptions.Item>
-              <Descriptions.Item label="合同总数量" span={1}>
-                {shipment.expand.sales_contract.total_quantity} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="已执行数量" span={1}>
-                {shipment.expand.sales_contract.executed_quantity} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="到货进度" span={1}>
-                {shipment.expand.sales_contract.execution_percent?.toFixed(1) || '0'}%
-              </Descriptions.Item>
-              <Descriptions.Item label={(() => {
-                const sc = shipment.expand!.sales_contract;
-                if (sc.is_cross_border) return sc.is_price_excluding_tax ? '合同总金额（不含税，USD）' : '合同总金额（USD）';
-                return sc.is_price_excluding_tax ? '合同总金额（不含税）' : '合同总金额';
-              })()} span={1}>
-                {(() => {
-                  const sc = shipment.expand!.sales_contract;
-                  const v = sc.total_amount || 0;
-                  return sc.is_cross_border
-                    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
-                    : `¥${v.toFixed(4)}`;
-                })()}
-              </Descriptions.Item>
-            </Descriptions>
+            <Divider />
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={() => {
+                const contractId = shipment.expand?.sales_contract?.id;
+                if (contractId) navigate(`/sales/contracts/${contractId}`);
+              }}
+            >
+              查看关联销售合同
+            </Button>
           </>
         )}
 

@@ -42,8 +42,8 @@ export const ContractDetail: React.FC = () => {
 
   const isCB = contract?.is_cross_border;
   const fmtAmt = useCallback((v: number) => {
-    if (!isCB) return `¥${(v ?? 0).toFixed(4)}`;
-    return `$${(v ?? 0).toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`;
+    if (!isCB) return `¥${(v ?? 0).toFixed(6)}`;
+    return `$${(v ?? 0).toFixed(6)}（≈ ¥${(v * exchangeRate).toFixed(6)}）`;
   }, [isCB, exchangeRate]);
 
   useEffect(() => {
@@ -125,9 +125,9 @@ export const ContractDetail: React.FC = () => {
     { title: '是否中转', dataIndex: 'wether_transit', key: 'wether_transit', render: (v: string) => v === 'yes' ? '是' : '否' },
     { title: '中转仓库', dataIndex: 'transit_warehouse', key: 'transit_warehouse', render: (v: string) => v || '-' },
     { title: '送货地址', dataIndex: 'delivery_address', key: 'delivery_address', render: (v: string) => v || '-' },
-    { title: '运费1', dataIndex: 'freight_1', key: 'freight_1', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
-    { title: '运费2', dataIndex: 'freight_2', key: 'freight_2', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
-    { title: '杂费', dataIndex: 'miscellaneous_expenses', key: 'miscellaneous_expenses', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '运费1', dataIndex: 'freight_1', key: 'freight_1', render: (v: number) => v ? `¥${v.toFixed(6)}` : '-' },
+    { title: '运费2', dataIndex: 'freight_2', key: 'freight_2', render: (v: number) => v ? `¥${v.toFixed(6)}` : '-' },
+    { title: '杂费', dataIndex: 'miscellaneous_expenses', key: 'miscellaneous_expenses', render: (v: number) => v ? `¥${v.toFixed(6)}` : '-' },
     { title: '运费1状态', dataIndex: 'freight_1_status', key: 'freight_1_status', render: (v: string) => v === 'paid' ? <Tag color="green">已付</Tag> : <Tag color="orange">未付</Tag> },
     { title: '运费2状态', dataIndex: 'freight_2_status', key: 'freight_2_status', render: (v: string) => v === 'paid' ? <Tag color="green">已付</Tag> : <Tag color="orange">未付</Tag> },
     { title: '运费1日期', dataIndex: 'freight_1_date', key: 'freight_1_date', render: (v: string) => v?.split(' ')[0] || '-' },
@@ -150,7 +150,7 @@ export const ContractDetail: React.FC = () => {
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
     { title: '是否验票', dataIndex: 'is_verified', key: 'is_verified', render: (v: string) => v === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag> },
     { title: '确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (v: string) => {
@@ -168,7 +168,7 @@ export const ContractDetail: React.FC = () => {
     { title: '付款编号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
-    { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(4)}` : '-' },
+    { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (d: string) => d?.split(' ')[0] || '-' },
     { title: '付款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
     { title: '确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (v: string) => {

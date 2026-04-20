@@ -185,7 +185,7 @@ export const PaymentList: React.FC = () => {
       title: '付款金额',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: number) => amount?.toFixed(4),
+      render: (amount: number) => amount?.toFixed(6),
     },
     {
       title: '产品数量',

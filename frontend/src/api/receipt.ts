@@ -36,6 +36,7 @@ export const ReceiptAPI = {
     formData.append('amount', String(data.amount));
     formData.append('product_amount', String(data.product_amount));
     formData.append('receive_date', data.receive_date);
+    if (data.is_tax_included !== undefined) formData.append('is_tax_included', String(data.is_tax_included));
     if (data.method) formData.append('method', data.method);
     if (data.account) formData.append('account', data.account);
     if (data.remark) formData.append('remark', data.remark);

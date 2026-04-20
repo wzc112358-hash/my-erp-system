@@ -19,7 +19,7 @@ interface ContractRow {
 
 type SortField = 'no' | 'shipmentDate' | 'payDate' | 'salesReceiveDate' | 'salesInvoiceDate' | undefined;
 
-const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(4)}`;
+const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 const formatDateShort = (date: string) => date ? dayjs(date).format('YYYY.MM.DD') : '-';
 

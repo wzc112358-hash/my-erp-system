@@ -185,9 +185,9 @@ export const ContractList: React.FC = () => {
       render: (amount: number, record: PurchaseContract) => {
         if (!amount) return '-';
         if (record.is_cross_border) {
-          return `$${amount.toFixed(4)}`;
+          return `$${amount.toFixed(6)}`;
         }
-        return `¥${amount.toFixed(4)}`;
+        return `¥${amount.toFixed(6)}`;
       },
     },
     {

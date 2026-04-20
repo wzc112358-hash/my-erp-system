@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Card, Descriptions, Button, App, Spin, Divider, Flex, Tag } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { ReceiptAPI } from '@/api/receipt';
@@ -85,7 +85,7 @@ export const ReceiptDetail: React.FC = () => {
             {data.product_name}
           </Descriptions.Item>
           <Descriptions.Item label={isCB ? '收款金额（USD）' : '收款金额'} span={1}>
-            {isCB ? `$${amtVal.toFixed(4)}（≈ ¥${(amtVal * exchangeRate).toFixed(4)}）` : `¥${amtVal.toFixed(4)}`}
+            {isCB ? `$${amtVal.toFixed(6)}（≈ ¥${(amtVal * exchangeRate).toFixed(6)}）` : `¥${amtVal.toFixed(6)}`}
           </Descriptions.Item>
           <Descriptions.Item label="产品数量" span={1}>
             {data.product_amount} 吨
@@ -96,8 +96,11 @@ export const ReceiptDetail: React.FC = () => {
           <Descriptions.Item label="收款方式" span={1}>
             {data.method || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label="收款账户" span={2}>
+          <Descriptions.Item label="收款账户" span={1}>
             {data.account || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="计税方式" span={1}>
+            {data.is_tax_included ? <Tag color="blue">含税（×1.13）</Tag> : <Tag>不含税</Tag>}
           </Descriptions.Item>
           <Descriptions.Item label="备注" span={2}>
             {data.remark || '-'}
@@ -106,32 +109,14 @@ export const ReceiptDetail: React.FC = () => {
 
         {contract && (
           <>
-            <Divider>关联销售合同信息</Divider>
-            <Descriptions bordered column={2}>
-              <Descriptions.Item label="合同编号" span={1}>
-                {contract.no as string}
-              </Descriptions.Item>
-              <Descriptions.Item label="合同总数量" span={1}>
-                {contract.total_quantity as number} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="已执行数量" span={1}>
-                {contract.receipted_amount as number} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="执行进度" span={1}>
-                {((contract.receipt_percent as number) || 0).toFixed(1)}%
-              </Descriptions.Item>
-              <Descriptions.Item label={(() => {
-                if (isCB) return contract.is_price_excluding_tax ? '合同总金额（不含税，USD）' : '合同总金额（USD）';
-                return contract.is_price_excluding_tax ? '合同总金额（不含税）' : '合同总金额';
-              })()} span={1}>
-                {(() => {
-                  const v = (contract.total_amount as number) || 0;
-                  return isCB
-                    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
-                    : `¥${v.toFixed(4)}`;
-                })()}
-              </Descriptions.Item>
-            </Descriptions>
+            <Divider />
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={() => navigate(`/sales/contracts/${contract.id}`)}
+            >
+              查看关联销售合同
+            </Button>
           </>
         )}
 

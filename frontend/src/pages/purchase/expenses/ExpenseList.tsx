@@ -155,7 +155,7 @@ export const ExpenseList: React.FC = () => {
       dataIndex: 'payment_amount',
       key: 'payment_amount',
       width: 120,
-      render: (amount: number) => amount ? `¥${amount.toFixed(4)}` : '-',
+      render: (amount: number) => amount ? `¥${amount.toFixed(6)}` : '-',
     },
     {
       title: '付款日期',

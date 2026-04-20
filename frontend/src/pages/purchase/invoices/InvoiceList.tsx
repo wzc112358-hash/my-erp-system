@@ -179,7 +179,7 @@ export const InvoiceList: React.FC = () => {
       title: '发票金额',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: number) => amount?.toFixed(4),
+      render: (amount: number) => amount?.toFixed(6),
     },
     {
       title: '收票日期',

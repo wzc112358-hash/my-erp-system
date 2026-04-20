@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, App, Spin, Divider, Flex } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { PurchaseArrivalAPI } from '@/api/purchase-arrival';
@@ -62,18 +62,13 @@ export const ArrivalDetail: React.FC = () => {
     );
   }
 
-  const isCB = arrival.expand?.purchase_contract?.is_cross_border === true;
-  const fmtAmt = (v: number) => isCB
-    ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
-    : `¥${v.toFixed(4)}`;
-
   // Helper to display freight/misc with currency conversion
   const fmtFreight = (amount: number, currency: 'USD' | 'CNY' | undefined) => {
     const c = currency || 'CNY';
     if (c === 'USD') {
-      return `$${amount.toFixed(4)}（≈ ¥${(amount * exchangeRate).toFixed(4)}）`;
+      return `$${amount.toFixed(6)}（≈ ¥${(amount * exchangeRate).toFixed(6)}）`;
     }
-    return `¥${amount.toFixed(4)}（≈ $${(amount / exchangeRate).toFixed(4)}）`;
+    return `¥${amount.toFixed(6)}（≈ $${(amount / exchangeRate).toFixed(6)}）`;
   };
 
   return (
@@ -165,24 +160,17 @@ export const ArrivalDetail: React.FC = () => {
 
         {arrival.expand?.purchase_contract && (
           <>
-            <Divider>关联采购合同信息</Divider>
-            <Descriptions bordered column={2}>
-              <Descriptions.Item label="合同编号" span={1}>
-                {arrival.expand.purchase_contract.no}
-              </Descriptions.Item>
-              <Descriptions.Item label="合同总数量" span={1}>
-                {arrival.expand.purchase_contract.total_quantity} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="已执行数量" span={1}>
-                {arrival.expand.purchase_contract.executed_quantity} 吨
-              </Descriptions.Item>
-              <Descriptions.Item label="执行进度" span={1}>
-                {arrival.expand.purchase_contract.execution_percent?.toFixed(1) || '0'}%
-              </Descriptions.Item>
-              <Descriptions.Item label={isCB ? '合同总金额（USD）' : '合同总金额'} span={1}>
-                {fmtAmt(arrival.expand.purchase_contract.total_amount || 0)}
-              </Descriptions.Item>
-            </Descriptions>
+            <Divider />
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={() => {
+                const contractId = arrival.expand?.purchase_contract?.id;
+                if (contractId) navigate(`/purchase/contracts/${contractId}`);
+              }}
+            >
+              查看关联采购合同
+            </Button>
           </>
         )}
 

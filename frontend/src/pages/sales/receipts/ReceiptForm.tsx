@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space } from 'antd';
+import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Switch } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import type { SaleReceipt } from '@/types';
@@ -10,6 +10,7 @@ interface ContractOption {
   label: string;
   value: string;
   unit_price?: number;
+  is_price_excluding_tax?: boolean;
 }
 
 interface ReceiptFormProps {
@@ -39,6 +40,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
           unit_price: item.unit_price as number,
+          is_price_excluding_tax: item.is_price_excluding_tax as boolean,
         }));
         setContractOptions(options);
       } catch (error: unknown) {
@@ -70,7 +72,20 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
 
   const handleProductAmountChange = (value: number | null) => {
     if (value && selectedContract?.unit_price) {
-      const amount = value * selectedContract.unit_price;
+      const isTaxIncluded = form.getFieldValue('is_tax_included');
+      const amount = isTaxIncluded
+        ? value * selectedContract.unit_price * 1.13
+        : value * selectedContract.unit_price;
+      form.setFieldsValue({ amount });
+    }
+  };
+
+  const handleTaxIncludedChange = (checked: boolean) => {
+    const productAmount = form.getFieldValue('product_amount');
+    if (productAmount && selectedContract?.unit_price) {
+      const amount = checked
+        ? productAmount * selectedContract.unit_price * 1.13
+        : productAmount * selectedContract.unit_price;
       form.setFieldsValue({ amount });
     }
   };
@@ -87,6 +102,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
         amount: values.amount as number,
         product_amount: values.product_amount as number,
         receive_date: (values.receive_date as dayjs.Dayjs).format('YYYY-MM-DD'),
+        is_tax_included: values.is_tax_included as boolean | undefined,
         method: values.method as string | undefined,
         account: values.account as string | undefined,
         remark: values.remark as string | undefined,
@@ -123,6 +139,11 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               }
               options={contractOptions}
               disabled={!!initialValues?.sales_contract}
+              onChange={(value: string) => {
+                const contract = contractOptions.find(c => c.value === value);
+                setSelectedContract(contract || null);
+                form.setFieldsValue({ is_tax_included: undefined });
+              }}
             />
           </Form.Item>
         </Col>
@@ -168,12 +189,26 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             <InputNumber
               placeholder="请输入收款金额"
               style={{ width: '100%' }}
-              precision={4}
+              precision={6}
               min={0}
             />
           </Form.Item>
         </Col>
       </Row>
+
+      {selectedContract?.is_price_excluding_tax && (
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <Form.Item
+              name="is_tax_included"
+              label="按含税收款"
+              valuePropName="checked"
+            >
+              <Switch onChange={handleTaxIncludedChange} />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
 
       <Row gutter={16}>
         <Col xs={24} md={12}>

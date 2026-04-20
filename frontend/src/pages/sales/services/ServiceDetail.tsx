@@ -17,7 +17,7 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     dataIndex: 'unit_price',
     key: 'unit_price',
     width: 90,
-    render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '数量',
@@ -38,7 +38,7 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     dataIndex: 'receipt_amount',
     key: 'receipt_amount',
     width: 110,
-    render: (v: number) => v ? `$${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `$${v.toFixed(6)}` : '-',
   },
   {
     title: '收款时间',
@@ -73,14 +73,14 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     dataIndex: 'actual_receipt_amount_usd',
     key: 'actual_receipt_amount_usd',
     width: 120,
-    render: (v: number) => v != null ? `$${v.toFixed(4)}` : '-',
+    render: (v: number) => v != null ? `$${v.toFixed(6)}` : '-',
   },
   {
     title: '兑换人民币金额',
     dataIndex: 'receipt_amount_rmb',
     key: 'receipt_amount_rmb',
     width: 120,
-    render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '兑换日期',
@@ -94,7 +94,7 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     dataIndex: 'invoice_amount',
     key: 'invoice_amount',
     width: 110,
-    render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '佣金发票提供时间',
@@ -108,7 +108,7 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     dataIndex: 'tax_amount',
     key: 'tax_amount',
     width: 110,
-    render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '报税时间',
@@ -170,14 +170,14 @@ const getDomesticOrderColumns = (onEdit: (r: ServiceOrder) => void, onDelete: (i
     dataIndex: 'unit_price',
     key: 'unit_price',
     width: 90,
-    render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '总金额',
     dataIndex: 'total_amount',
     key: 'total_amount',
     width: 100,
-    render: (v: number) => v != null ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v != null ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '服务费比例',
@@ -205,7 +205,7 @@ const getDomesticOrderColumns = (onEdit: (r: ServiceOrder) => void, onDelete: (i
     dataIndex: 'payment_amount',
     key: 'payment_amount',
     width: 100,
-    render: (v: number) => v != null ? `¥${v.toFixed(4)}` : '-',
+    render: (v: number) => v != null ? `¥${v.toFixed(6)}` : '-',
   },
   {
     title: '附件',

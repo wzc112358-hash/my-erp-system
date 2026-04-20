@@ -96,7 +96,7 @@ export const BiddingDetail: React.FC = () => {
           <Descriptions.Item label="数量">{record.quantity}</Descriptions.Item>
 
           <Descriptions.Item label="标书费">
-            {record.tender_fee ? `¥${record.tender_fee.toFixed(4)}` : '-'}
+            {record.tender_fee ? `¥${record.tender_fee.toFixed(6)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付标书费时间">
             {record.tender_fee_date?.split(' ')[0] || '-'}
@@ -106,7 +106,7 @@ export const BiddingDetail: React.FC = () => {
           </Descriptions.Item>
 
           <Descriptions.Item label="投标保证金">
-            {record.bid_bond ? `¥${record.bid_bond.toFixed(4)}` : '-'}
+            {record.bid_bond ? `¥${record.bid_bond.toFixed(6)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="付保证金时间">
             {record.bid_bond_date?.split(' ')[0] || '-'}
@@ -123,11 +123,11 @@ export const BiddingDetail: React.FC = () => {
             {record.bond_return_date?.split(' ')[0] || '-'}
           </Descriptions.Item>
           <Descriptions.Item label="退还金额">
-            {record.bond_return_amount ? `¥${record.bond_return_amount.toFixed(4)}` : '-'}
+            {record.bond_return_amount ? `¥${record.bond_return_amount.toFixed(6)}` : '-'}
           </Descriptions.Item>
 
           <Descriptions.Item label="招标代理费">
-            {record.agency_fee ? `¥${record.agency_fee.toFixed(4)}` : '-'}
+            {record.agency_fee ? `¥${record.agency_fee.toFixed(6)}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="关联销售合同">
             {record.expand?.sales_contract ? (
