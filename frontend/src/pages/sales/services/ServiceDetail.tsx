@@ -117,6 +117,29 @@ const getCrossBorderOrderColumns = (): ColumnsType<ServiceOrder> => [
     render: (d: string) => d?.split(' ')[0] || '-',
   },
   {
+    title: '附件',
+    key: 'attachments',
+    width: 150,
+    render: (_: unknown, record: ServiceOrder) => {
+      if (!record.attachments || record.attachments.length === 0) return '-';
+      return (
+        <Flex vertical gap="small">
+          {record.attachments.map((file: string) => (
+            <a
+              key={file}
+              href={`${pb.baseUrl}/api/files/service_orders/${record.id}/${file}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+            >
+              <DownloadOutlined /> {file}
+            </a>
+          ))}
+        </Flex>
+      );
+    },
+  },
+  {
     title: '负责人',
     dataIndex: 'manager',
     key: 'manager',
@@ -182,6 +205,29 @@ const getDomesticOrderColumns = (onEdit: (r: ServiceOrder) => void, onDelete: (i
     key: 'payment_amount',
     width: 100,
     render: (v: number) => v != null ? `¥${v.toFixed(4)}` : '-',
+  },
+  {
+    title: '附件',
+    key: 'attachments',
+    width: 150,
+    render: (_: unknown, record: ServiceOrder) => {
+      if (!record.attachments || record.attachments.length === 0) return '-';
+      return (
+        <Flex vertical gap="small">
+          {record.attachments.map((file: string) => (
+            <a
+              key={file}
+              href={`${pb.baseUrl}/api/files/service_orders/${record.id}/${file}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+            >
+              <DownloadOutlined /> {file}
+            </a>
+          ))}
+        </Flex>
+      );
+    },
   },
   {
     title: '操作',

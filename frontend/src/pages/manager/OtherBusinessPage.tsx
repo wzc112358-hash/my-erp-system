@@ -136,6 +136,29 @@ const getCrossBorderServiceOrderColumns = (): ColumnsType<ServiceOrder> => [
   { title: '报税金额(RMB)', dataIndex: 'tax_amount', key: 'tax_amount', width: 120, render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
   { title: '报税时间', dataIndex: 'tax_date', key: 'tax_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true },
+  {
+    title: '附件',
+    key: 'attachments',
+    width: 150,
+    render: (_: unknown, record: ServiceOrder) => {
+      if (!record.attachments || record.attachments.length === 0) return '-';
+      return (
+        <Flex vertical gap="small">
+          {record.attachments.map((file: string) => (
+            <a
+              key={file}
+              href={`${pb.baseUrl}/api/files/service_orders/${record.id}/${file}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+            >
+              <DownloadOutlined /> {file}
+            </a>
+          ))}
+        </Flex>
+      );
+    },
+  },
   { title: '负责人', dataIndex: 'manager', key: 'manager', width: 80 },
 ];
 
@@ -150,6 +173,29 @@ const getDomesticServiceOrderColumns = (): ColumnsType<ServiceOrder> => [
   { title: '收款时间', dataIndex: 'payment_date', key: 'payment_date', width: 100, render: (v: string) => v?.split(' ')[0] || '-' },
   { title: '收款金额', dataIndex: 'payment_amount', key: 'payment_amount', width: 100, render: (v: number) => v != null ? `¥${v.toFixed(4)}` : '-' },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true },
+  {
+    title: '附件',
+    key: 'attachments',
+    width: 150,
+    render: (_: unknown, record: ServiceOrder) => {
+      if (!record.attachments || record.attachments.length === 0) return '-';
+      return (
+        <Flex vertical gap="small">
+          {record.attachments.map((file: string) => (
+            <a
+              key={file}
+              href={`${pb.baseUrl}/api/files/service_orders/${record.id}/${file}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+            >
+              <DownloadOutlined /> {file}
+            </a>
+          ))}
+        </Flex>
+      );
+    },
+  },
 ];
 
 const OtherBusinessPage: React.FC = () => {
