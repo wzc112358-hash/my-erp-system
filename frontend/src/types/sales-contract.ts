@@ -73,7 +73,7 @@ export interface SalesContractFormData {
   sign_date: string;
   remark?: string;
   sales_manager?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface SalesContractListParams {
@@ -154,7 +154,7 @@ export interface SaleInvoiceFormData {
   amount: number;
   issue_date: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface SaleInvoiceListParams {
@@ -206,7 +206,7 @@ export interface SaleReceiptFormData {
   method?: string;
   account?: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface SaleReceiptListParams {

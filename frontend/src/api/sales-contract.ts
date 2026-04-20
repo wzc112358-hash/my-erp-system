@@ -63,11 +63,15 @@ export const SalesContractAPI = {
     if (data.sales_manager) formData.append('sales_manager', data.sales_manager);
     if (data.is_price_excluding_tax !== undefined) formData.append('is_price_excluding_tax', String(data.is_price_excluding_tax));
     if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sales_contracts').create<SalesContract>(formData);
   },
 
@@ -90,11 +94,15 @@ export const SalesContractAPI = {
     if (data.sales_manager !== undefined) formData.append('sales_manager', data.sales_manager || '');
     if (data.is_price_excluding_tax !== undefined) formData.append('is_price_excluding_tax', String(data.is_price_excluding_tax));
     if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     
     return pb.collection('sales_contracts').update<SalesContract>(id, formData);
   },

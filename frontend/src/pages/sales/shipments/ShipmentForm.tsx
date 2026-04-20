@@ -4,6 +4,7 @@ import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { SalesContractAPI } from '@/api/sales-shipment';
 import type { SalesShipmentFormData } from '@/types/sales-shipment';
+import { extractAttachments } from '@/utils/file';
 
 interface ShipmentFormProps {
   initialValues?: Partial<SalesShipmentFormData>;
@@ -73,7 +74,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
 
   const handleFinish = (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-    const attachments = fileList?.map((f) => f.originFileObj).filter(Boolean) as File[] || [];
+    const attachments = extractAttachments(fileList);
     const data: SalesShipmentFormData = {
       product_name: String(values.product_name || ''),
       sales_contract: String(values.sales_contract || ''),

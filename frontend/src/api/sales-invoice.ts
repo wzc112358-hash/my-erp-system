@@ -39,11 +39,15 @@ export const SaleInvoiceAPI = {
     formData.append('amount', String(data.amount));
     formData.append('issue_date', data.issue_date);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sale_invoices').create<SaleInvoice>(formData);
   },
 
@@ -54,11 +58,15 @@ export const SaleInvoiceAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sale_invoices').update<SaleInvoice>(id, formData);
   },
 

@@ -53,11 +53,15 @@ export const SalesShipmentAPI = {
     formData.append('logistics_company', data.logistics_company);
     formData.append('delivery_address', data.delivery_address);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sales_shipments').create<SalesShipment>(formData);
   },
 
@@ -68,11 +72,15 @@ export const SalesShipmentAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sales_shipments').update<SalesShipment>(id, formData);
   },
 

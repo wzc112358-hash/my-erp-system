@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm } from 'antd';
-import { LeftOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
@@ -539,6 +539,35 @@ const ContractDetailPage: React.FC = () => {
     );
   };
 
+  const handleDeleteAttachment = useCallback(async (collection: string, recordId: string, fileName: string) => {
+    try {
+      const record = await pb.collection(collection).getOne(recordId);
+      const currentAttachments = (record.attachments as string[]) || [];
+      const newAttachments = currentAttachments.filter((name) => name !== fileName);
+
+      const formData = new FormData();
+      if (newAttachments.length === 0) {
+        formData.append('attachments', '');
+      } else {
+        newAttachments.forEach((name) => {
+          formData.append('attachments', name);
+        });
+      }
+
+      await pb.collection(collection).update(recordId, formData);
+      message.success('附件删除成功');
+      if (id) {
+        const data = isStandalonePurchase
+          ? await ComparisonAPI.getPurchaseContractDetail(id)
+          : await ComparisonAPI.getContractDetail(id);
+        setDetailData(data);
+      }
+    } catch (error) {
+      console.error('Delete attachment error:', error);
+      message.error('附件删除失败');
+    }
+  }, [id, message, isStandalonePurchase]);
+
   const renderRecordAttachments = (collection: string, recordId: string, attachments: string[] | undefined) => {
     const files = attachments && attachments.length > 0
       ? attachments.map((name: string) => ({
@@ -554,15 +583,30 @@ const ContractDetailPage: React.FC = () => {
         {files.length === 0 && !uploading && (
           <div style={{ color: '#999', fontSize: 12, marginBottom: 8 }}>暂无附件</div>
         )}
+        {files.map((file) => (
+          <div key={file.uid} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <a href={file.url} target="_blank" rel="noopener noreferrer" download>
+              <DownloadOutlined /> {file.name}
+            </a>
+            <Popconfirm
+              title="确定删除此附件？"
+              onConfirm={() => handleDeleteAttachment(collection, recordId, file.name)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button type="text" danger size="small">删除</Button>
+            </Popconfirm>
+          </div>
+        ))}
         <Upload
-          fileList={files}
+          showUploadList={false}
           customRequest={({ file, onSuccess }) => {
             handleAttachmentUpload(collection, recordId, file as File);
             onSuccess?.(null);
           }}
           disabled={uploading}
         >
-          <Button size="small" icon={<UploadOutlined />} loading={uploading}>上传附件</Button>
+          <Button size="small" icon={<UploadOutlined />} loading={uploading} style={{ marginTop: 8 }}>上传附件</Button>
         </Upload>
       </div>
     );

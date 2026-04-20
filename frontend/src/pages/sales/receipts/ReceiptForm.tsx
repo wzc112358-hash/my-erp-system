@@ -4,6 +4,7 @@ import { UploadOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
 import type { SaleReceipt } from '@/types';
 import dayjs from 'dayjs';
+import { extractAttachments } from '@/utils/file';
 
 interface ContractOption {
   label: string;
@@ -78,7 +79,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
     setLoading(true);
     try {
       const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-      const attachments = fileList?.map((f) => f.originFileObj).filter(Boolean) as File[] || [];
+      const attachments = extractAttachments(fileList);
 
       const data = {
         product_name: values.product_name as string,

@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { ServiceContractAPI } from '@/api/service-contract';
 import type { ServiceContract, ServiceContractFormData } from '@/types/service-contract';
 import { ServiceForm } from './ServiceForm';
+import { extractAttachments } from '@/utils/file';
 
 export const ServiceList: React.FC = () => {
   const navigate = useNavigate();
@@ -100,17 +101,10 @@ export const ServiceList: React.FC = () => {
   };
 
   const handleFormFinish = async (values: ServiceContractFormData) => {
-    let attachments: File[] | undefined;
-
+    let attachments: (File | string)[] | undefined;
+    
     if (values.attachments) {
-      const arr = Array.isArray(values.attachments) ? values.attachments : [];
-      attachments = arr
-        .map((file: unknown) => {
-          const f = file as { originFileObj?: File; url?: string; name?: string };
-          if (f.originFileObj) return f.originFileObj;
-          return null;
-        })
-        .filter((f): f is File => f !== null);
+      attachments = extractAttachments(values.attachments);
     }
 
     const submitData = {

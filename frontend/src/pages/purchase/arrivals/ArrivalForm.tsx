@@ -4,6 +4,7 @@ import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { PurchaseContractAPI, SalesContractAPI } from '@/api/purchase-arrival';
 import type { PurchaseArrivalFormData } from '@/types/purchase-arrival';
+import { extractAttachments } from '@/utils/file';
 
 interface ArrivalFormProps {
   initialValues?: Partial<PurchaseArrivalFormData>;
@@ -101,7 +102,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
 
   const handleFinish = (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-    const attachments = fileList?.map((f) => f.originFileObj).filter(Boolean) as File[] || [];
+    const attachments = extractAttachments(fileList);
     
     const data: PurchaseArrivalFormData = {
       product_name: String(values.product_name || ''),

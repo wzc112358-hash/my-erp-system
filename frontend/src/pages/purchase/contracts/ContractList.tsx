@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
 import type { PurchaseContract, PurchaseContractFormData } from '@/types/purchase-contract';
 import { ContractForm } from './ContractForm';
+import { extractAttachments } from '@/utils/file';
 
 const statusMap: Record<string, { text: string; color: string }> = {
   executing: { text: '执行中', color: '#1890ff' },
@@ -127,17 +128,10 @@ export const ContractList: React.FC = () => {
   };
 
   const handleFormFinish = async (values: PurchaseContractFormData) => {
-    let attachments: File[] | undefined;
-
+    let attachments: (File | string)[] | undefined;
+    
     if (values.attachments) {
-      const arr = Array.isArray(values.attachments) ? values.attachments : [];
-      attachments = arr
-        .map((file: unknown) => {
-          const f = file as { originFileObj?: File; url?: string; name?: string };
-          if (f.originFileObj) return f.originFileObj;
-          return null;
-        })
-        .filter((f): f is File => f !== null);
+      attachments = extractAttachments(values.attachments);
     }
 
     const data = {

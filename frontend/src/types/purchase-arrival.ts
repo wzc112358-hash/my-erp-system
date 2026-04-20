@@ -68,7 +68,7 @@ export interface PurchaseArrivalFormData {
   invoice_1_status: 'issued' | 'unissued';
   invoice_2_status?: 'issued' | 'unissued';
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface PurchaseArrivalListParams {

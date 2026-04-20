@@ -4,6 +4,7 @@ import { Card, Descriptions, Table, Spin, App, Flex, Button, Modal, Popconfirm, 
 import { DownloadOutlined, ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { pb } from '@/lib/pocketbase';
+import { extractAttachments } from '@/utils/file';
 import { ServiceContractAPI } from '@/api/service-contract';
 import type { ServiceContract, ServiceOrder, ServiceOrderFormData } from '@/types/service-contract';
 import { ServiceOrderForm } from './ServiceOrderForm';
@@ -338,17 +339,10 @@ export const ServiceDetail: React.FC = () => {
   };
 
   const handleOrderFormFinish = async (values: ServiceOrderFormData) => {
-    let attachments: File[] | undefined;
+    let attachments: (File | string)[] | undefined;
 
     if (values.attachments) {
-      const arr = Array.isArray(values.attachments) ? values.attachments : [];
-      attachments = arr
-        .map((file: unknown) => {
-          const f = file as { originFileObj?: File; url?: string; name?: string };
-          if (f.originFileObj) return f.originFileObj;
-          return null;
-        })
-        .filter((f): f is File => f !== null);
+      attachments = extractAttachments(values.attachments);
     }
 
     const submitData = {

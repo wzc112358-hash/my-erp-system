@@ -37,7 +37,7 @@ export interface SalesShipmentFormData {
   logistics_company: string;
   delivery_address: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface SalesShipmentListParams {

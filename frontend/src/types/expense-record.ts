@@ -25,7 +25,7 @@ export interface ExpenseRecordFormData {
   pay_date: string;
   method?: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
   purchasing_manager?: string;
 }
 

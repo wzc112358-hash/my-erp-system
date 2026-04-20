@@ -72,11 +72,15 @@ export const PurchaseArrivalAPI = {
     formData.append('invoice_1_status', data.invoice_1_status);
     if (data.invoice_2_status) formData.append('invoice_2_status', data.invoice_2_status);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('purchase_arrivals').create<PurchaseArrival>(formData);
   },
 
@@ -87,11 +91,15 @@ export const PurchaseArrivalAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('purchase_arrivals').update<PurchaseArrival>(id, formData);
   },
 

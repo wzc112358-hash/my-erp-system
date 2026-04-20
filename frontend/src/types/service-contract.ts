@@ -24,7 +24,7 @@ export interface ServiceContractFormData {
   sign_date: string;
   is_cross_border?: boolean;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
   sales_manager?: string;
 }
 
@@ -91,6 +91,6 @@ export interface ServiceOrderFormData {
   payment_date?: string;
   payment_amount?: number;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
   manager?: string;
 }

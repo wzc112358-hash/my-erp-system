@@ -43,7 +43,7 @@ export interface BiddingRecordFormData {
   agency_fee?: number;
   sales_contract?: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface BiddingRecordListParams {

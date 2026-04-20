@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import type { BiddingRecord, BiddingRecordFormData } from '@/types/bidding-record';
 import { BiddingForm } from './BiddingForm';
+import { extractAttachments } from '@/utils/file';
 
 const bidResultMap: Record<string, { label: string; color: string }> = {
   pending: { label: '待开标', color: 'orange' },
@@ -106,7 +107,7 @@ export const BiddingList: React.FC = () => {
       bid_bond_date: record.bid_bond_date ? record.bid_bond_date.split(' ')[0] : undefined,
       bond_return_date: record.bond_return_date ? record.bond_return_date.split(' ')[0] : undefined,
       tender_fee_invoice: tenderFeeInvoice,
-      attachments,
+      attachments: attachments as any,
     });
     setFormVisible(true);
   };
@@ -127,29 +128,15 @@ export const BiddingList: React.FC = () => {
   };
 
   const handleFormFinish = async (values: BiddingRecordFormData) => {
-    let tenderFeeInvoice: File[] | undefined;
-    let attachments: File[] | undefined;
+    let tenderFeeInvoice: (File | string)[] | undefined;
+    let attachments: (File | string)[] | undefined;
 
     if (values.tender_fee_invoice) {
-      const arr = Array.isArray(values.tender_fee_invoice) ? values.tender_fee_invoice : [];
-      tenderFeeInvoice = arr
-        .map((file: unknown) => {
-          const f = file as { originFileObj?: File; url?: string; name?: string };
-          if (f.originFileObj) return f.originFileObj;
-          return null;
-        })
-        .filter((f): f is File => f !== null);
+      tenderFeeInvoice = extractAttachments(values.tender_fee_invoice);
     }
 
     if (values.attachments) {
-      const arr = Array.isArray(values.attachments) ? values.attachments : [];
-      attachments = arr
-        .map((file: unknown) => {
-          const f = file as { originFileObj?: File; url?: string; name?: string };
-          if (f.originFileObj) return f.originFileObj;
-          return null;
-        })
-        .filter((f): f is File => f !== null);
+      attachments = extractAttachments(values.attachments);
     }
 
     const submitData = {

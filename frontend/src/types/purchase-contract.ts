@@ -64,7 +64,7 @@ export interface PurchaseContractFormData {
   sign_date: string;
   remark?: string;
   purchasing_manager?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface PurchaseContractListParams {
@@ -149,7 +149,7 @@ export interface PurchaseInvoiceFormData {
   tax_amount?: number;
   receive_date: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
   is_verified?: string;
 }
 
@@ -198,7 +198,7 @@ export interface PurchasePaymentFormData {
   pay_date: string;
   method?: string;
   remark?: string;
-  attachments?: File[];
+  attachments?: (File | string)[];
 }
 
 export interface PurchasePaymentListParams {

@@ -43,11 +43,15 @@ export const PurchaseInvoiceAPI = {
     if (data.tax_rate) formData.append('tax_rate', String(data.tax_rate));
     if (data.tax_amount) formData.append('tax_amount', String(data.tax_amount));
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('purchase_invoices').create<PurchaseInvoice>(formData);
   },
 
@@ -58,11 +62,15 @@ export const PurchaseInvoiceAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('purchase_invoices').update<PurchaseInvoice>(id, formData);
   },
 

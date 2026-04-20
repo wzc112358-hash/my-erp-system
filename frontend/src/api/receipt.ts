@@ -39,11 +39,15 @@ export const ReceiptAPI = {
     if (data.method) formData.append('method', data.method);
     if (data.account) formData.append('account', data.account);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sale_receipts').create<SaleReceipt>(formData);
   },
 
@@ -54,11 +58,15 @@ export const ReceiptAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments && data.attachments.length > 0) {
-      data.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-    }
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+            formData.append('attachments', '');
+      } else {
+            data.attachments.forEach((file) => {
+                  formData.append('attachments', file);
+            });
+      }
+      }
     return pb.collection('sale_receipts').update<SaleReceipt>(id, formData);
   },
 

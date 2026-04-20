@@ -4,6 +4,7 @@ import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { pb } from '@/lib/pocketbase';
 import type { PurchaseInvoiceFormData } from '@/types/purchase-contract';
+import { extractAttachments } from '@/utils/file';
 
 interface ContractOption {
   label: string;
@@ -102,7 +103,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
 
   const handleFinish = (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-    const attachments = fileList?.map((f) => f.originFileObj).filter(Boolean) as File[] || [];
+    const attachments = extractAttachments(fileList);
     const data: PurchaseInvoiceFormData = {
       no: String(values.no || ''),
       product_name: String(values.product_name || ''),
