@@ -334,3 +334,103 @@ ContractDetailPage.tsx 中：
 - 前端：npm run build → 上传 dist → docker cp 到 erp-frontend 容器
 
 访问地址：`https://erp.henghuacheng.cn`
+
+---
+
+# 五、新增修复 — 跨境合同金额显示、采购运输币种、付款数量显示
+
+> 创建日期：2026-04-20
+> 来源：员工问题反馈图片
+> 状态：待实施
+
+## 5.1 问题总览
+
+| # | 问题 | 涉及页面/文件 | 角色 |
+|---|------|--------------|------|
+| 1 | 跨境合同在首页列表金额显示为人民币，应为美元 | `sales/contracts/ContractList` + `purchase/contracts/ContractList` | 销售+采购 |
+| 2 | 采购运输运费/杂费需要支持币种选择（USD/CNY），详情页显示双币种 | `purchase/arrivals/ArrivalForm` + `ArrivalDetail` + 后端 | 采购 |
+| 3 | 付款详情页"已执行数量"显示为付款金额而非实际执行数量 | `purchase/payments/PaymentDetail` | 采购 |
+
+## 5.2 问题详情
+
+### 问题1 — 跨境合同首页金额显示错误
+
+**现象**：合同列表页中，跨境合同的"合同金额"列显示 `¥54768.0000`，但应为 `$54768.0000 (USD)`。
+
+**根因**：列表页的 `total_amount` 列渲染固定为 `¥${amount.toFixed(4)}`，未判断 `is_cross_border` 字段。
+
+**修复**：列渲染需接收完整 record，判断 `is_cross_border`：
+- 跨境：显示 `$amount（≈ ¥amount×rate）`
+- 非跨境：显示 `¥amount`
+
+**涉及文件**：
+- `frontend/src/pages/sales/contracts/ContractList.tsx`
+- `frontend/src/pages/purchase/contracts/ContractList.tsx`
+
+### 问题2 — 采购运输运费币种选择
+
+**现象**：跨境采购合同的运输记录中，运费和杂费无法选择币种，详情页只能显示单一币种。
+
+**需求**：
+1. 新建/编辑到货记录时，运费1、运费2、杂费 各增加币种选择（USD/CNY，默认CNY）
+2. 详情页根据选择的币种显示对应金额，并自动换算显示另一种币种
+
+**新增字段**（purchase_arrivals 集合）：
+- `freight_1_currency`：select，选项 USD/CNY，默认 CNY
+- `freight_2_currency`：select，选项 USD/CNY，默认 CNY  
+- `miscellaneous_expenses_currency`：select，选项 USD/CNY，默认 CNY
+
+**涉及文件**：
+- 后端：`purchase_arrivals` schema（PocketBase 后台手动添加）
+- 类型：`frontend/src/types/purchase-arrival.ts`
+- API：`frontend/src/api/purchase-arrival.ts`
+- 表单：`frontend/src/pages/purchase/arrivals/ArrivalForm.tsx`
+- 详情：`frontend/src/pages/purchase/arrivals/ArrivalDetail.tsx`
+
+### 问题3 — 付款详情页已执行数量显示错误
+
+**现象**：付款详情页中，关联采购合同的"已执行数量"显示为 `54768吨`（这是合同总金额），实际应为 `16吨`（实际执行数量）。
+
+**根因**：`PaymentDetail.tsx` 第118行代码：
+```tsx
+{contract.paid_amount as number} 吨  // 错误：显示的是已付金额
+```
+应改为：
+```tsx
+{contract.executed_quantity as number} 吨  // 正确：显示执行数量
+```
+
+**涉及文件**：
+- `frontend/src/pages/purchase/payments/PaymentDetail.tsx`
+
+## 5.3 修改文件清单
+
+| # | 文件 | 操作 |
+|---|------|------|
+| 1 | `frontend/src/pages/sales/contracts/ContractList.tsx` | 修改合同金额列渲染，支持跨境显示 |
+| 2 | `frontend/src/pages/purchase/contracts/ContractList.tsx` | 修改合同金额列渲染，支持跨境显示 |
+| 3 | `frontend/src/types/purchase-arrival.ts` | 新增三个 currency 字段 |
+| 4 | `frontend/src/api/purchase-arrival.ts` | 新增字段提交 |
+| 5 | `frontend/src/pages/purchase/arrivals/ArrivalForm.tsx` | 新增币种选择控件 |
+| 6 | `frontend/src/pages/purchase/arrivals/ArrivalDetail.tsx` | 详情页双币种显示 |
+| 7 | `frontend/src/pages/purchase/payments/PaymentDetail.tsx` | 修复已执行数量显示 |
+| 8 | PocketBase `purchase_arrivals` | 后台新增三个 select 字段（北京+兰州）|
+
+## 5.4 实施顺序
+
+```
+1. PocketBase 后台添加三个币种字段（北京+兰州）
+2. 修改类型定义 purchase-arrival.ts
+3. 修改 API purchase-arrival.ts
+4. 修改 ArrivalForm.tsx 添加币种选择
+5. 修改 ArrivalDetail.tsx 双币种显示
+6. 修改 ContractList.tsx（销售+采购）金额显示
+7. 修改 PaymentDetail.tsx 已执行数量
+8. 构建 + 部署
+```
+
+## 5.5 验证方法
+
+1. **跨境合同金额**：销售/采购首页 → 跨境合同显示 `$amount（≈ ¥amount）`，非跨境显示 `¥amount`
+2. **采购运输币种**：新建到货记录 → 运费/杂费可选择 USD/CNY → 详情页根据选择显示对应币种并自动换算
+3. **付款数量**：付款详情页 → 已执行数量显示为实际到货数量（如16吨），而非合同总金额

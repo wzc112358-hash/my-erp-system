@@ -12,8 +12,11 @@ export interface PurchaseArrival {
   transit_warehouse?: string;
   delivery_address: string;
   freight_1: number;
+  freight_1_currency: 'USD' | 'CNY';
   freight_2?: number;
+  freight_2_currency?: 'USD' | 'CNY';
   miscellaneous_expenses: number;
+  miscellaneous_expenses_currency: 'USD' | 'CNY';
   freight_1_status: 'paid' | 'unpaid';
   freight_2_status?: 'paid' | 'unpaid';
   freight_1_date?: string;
@@ -59,8 +62,11 @@ export interface PurchaseArrivalFormData {
   transit_warehouse?: string;
   delivery_address: string;
   freight_1: number;
+  freight_1_currency: 'USD' | 'CNY';
   freight_2?: number;
+  freight_2_currency?: 'USD' | 'CNY';
   miscellaneous_expenses: number;
+  miscellaneous_expenses_currency: 'USD' | 'CNY';
   freight_1_status: 'paid' | 'unpaid';
   freight_2_status?: 'paid' | 'unpaid';
   freight_1_date?: string;

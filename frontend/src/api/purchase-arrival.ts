@@ -63,8 +63,11 @@ export const PurchaseArrivalAPI = {
     if (data.transit_warehouse) formData.append('transit_warehouse', data.transit_warehouse);
     formData.append('delivery_address', data.delivery_address);
     formData.append('freight_1', String(data.freight_1));
+    formData.append('freight_1_currency', data.freight_1_currency);
     if (data.freight_2 !== undefined) formData.append('freight_2', String(data.freight_2));
+    if (data.freight_2_currency) formData.append('freight_2_currency', data.freight_2_currency);
     formData.append('miscellaneous_expenses', String(data.miscellaneous_expenses));
+    formData.append('miscellaneous_expenses_currency', data.miscellaneous_expenses_currency);
     formData.append('freight_1_status', data.freight_1_status);
     if (data.freight_2_status) formData.append('freight_2_status', data.freight_2_status);
     if (data.freight_1_date) formData.append('freight_1_date', data.freight_1_date);

@@ -67,6 +67,15 @@ export const ArrivalDetail: React.FC = () => {
     ? `$${v.toFixed(4)}（≈ ¥${(v * exchangeRate).toFixed(4)}）`
     : `¥${v.toFixed(4)}`;
 
+  // Helper to display freight/misc with currency conversion
+  const fmtFreight = (amount: number, currency: 'USD' | 'CNY' | undefined) => {
+    const c = currency || 'CNY';
+    if (c === 'USD') {
+      return `$${amount.toFixed(4)}（≈ ¥${(amount * exchangeRate).toFixed(4)}）`;
+    }
+    return `¥${amount.toFixed(4)}（≈ $${(amount / exchangeRate).toFixed(4)}）`;
+  };
+
   return (
     <div style={{ padding: 24 }}>
       <Button
@@ -116,8 +125,8 @@ export const ArrivalDetail: React.FC = () => {
           <Descriptions.Item label="收货地址" span={2}>
             {arrival.delivery_address}
           </Descriptions.Item>
-          <Descriptions.Item label={isCB ? '运费金额1（USD）' : '运费金额1'} span={1}>
-            {fmtAmt(arrival.freight_1 || 0)}
+          <Descriptions.Item label="运费金额1" span={1}>
+            {fmtFreight(arrival.freight_1 || 0, arrival.freight_1_currency)}
           </Descriptions.Item>
           <Descriptions.Item label="运费1状态" span={1}>
             {arrival.freight_1_status === 'paid' ? '已付' : '未付'}
@@ -125,13 +134,13 @@ export const ArrivalDetail: React.FC = () => {
           <Descriptions.Item label="运费1付款日期" span={1}>
             {arrival.freight_1_date || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label={isCB ? '杂费（USD）' : '杂费'} span={1}>
-            {fmtAmt(arrival.miscellaneous_expenses || 0)}
+          <Descriptions.Item label="杂费" span={1}>
+            {fmtFreight(arrival.miscellaneous_expenses || 0, arrival.miscellaneous_expenses_currency)}
           </Descriptions.Item>
           {arrival.wether_transit === 'yes' && (
             <>
-              <Descriptions.Item label={isCB ? '运费金额2（USD）' : '运费金额2'} span={1}>
-                {fmtAmt(arrival.freight_2 || 0)}
+              <Descriptions.Item label="运费金额2" span={1}>
+                {fmtFreight(arrival.freight_2 || 0, arrival.freight_2_currency)}
               </Descriptions.Item>
               <Descriptions.Item label="运费2状态" span={1}>
                 {arrival.freight_2_status === 'paid' ? '已付' : '未付'}

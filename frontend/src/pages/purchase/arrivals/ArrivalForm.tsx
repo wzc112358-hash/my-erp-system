@@ -93,6 +93,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       form.setFieldsValue({
         transit_warehouse: undefined,
         freight_2: undefined,
+        freight_2_currency: undefined,
         freight_2_status: undefined,
         freight_2_date: undefined,
         invoice_2_status: undefined,
@@ -117,8 +118,11 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       transit_warehouse: values.transit_warehouse ? String(values.transit_warehouse) : undefined,
       delivery_address: String(values.delivery_address || ''),
       freight_1: Number(values.freight_1) || 0,
+      freight_1_currency: (values.freight_1_currency as 'USD' | 'CNY') || 'CNY',
       freight_2: values.freight_2 !== undefined ? Number(values.freight_2) : undefined,
+      freight_2_currency: (values.freight_2_currency as 'USD' | 'CNY') || undefined,
       miscellaneous_expenses: Number(values.miscellaneous_expenses) || 0,
+      miscellaneous_expenses_currency: (values.miscellaneous_expenses_currency as 'USD' | 'CNY') || 'CNY',
       freight_1_status: (values.freight_1_status as 'paid' | 'unpaid') || 'unpaid',
       freight_2_status: values.freight_2_status as 'paid' | 'unpaid' | undefined,
       freight_1_date: values.freight_1_date ? (values.freight_1_date as dayjs.Dayjs).format('YYYY-MM-DD') : undefined,
@@ -140,7 +144,9 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
         freight_1_status: 'unpaid',
         invoice_1_status: 'unissued',
         freight_1: 0,
+        freight_1_currency: 'CNY',
         miscellaneous_expenses: 0,
+        miscellaneous_expenses_currency: 'CNY',
       }}
       onFinish={handleFinish}
     >
@@ -286,7 +292,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       )}
 
       <Row gutter={16}>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} md={6}>
           <Form.Item
             name="freight_1"
             label="运费金额1"
@@ -295,7 +301,21 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入运费金额1" />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} md={6}>
+          <Form.Item
+            name="freight_1_currency"
+            label="运费1币种"
+            initialValue="CNY"
+          >
+            <Select
+              options={[
+                { label: '人民币(CNY)', value: 'CNY' },
+                { label: '美元(USD)', value: 'USD' },
+              ]}
+            />
+          </Form.Item>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
           <Form.Item
             name="freight_1_status"
             label="运费1状态"
@@ -308,7 +328,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} md={6}>
           <Form.Item name="freight_1_date" label="运费1付款日期">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
@@ -317,7 +337,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
 
       {wetherTransit === 'yes' && (
         <Row gutter={16}>
-          <Col xs={24} sm={12} md={8}>
+          <Col xs={24} sm={12} md={6}>
             <Form.Item
               name="freight_2"
               label="运费金额2"
@@ -326,7 +346,21 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
               <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入运费金额2" />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={12} md={8}>
+          <Col xs={24} sm={12} md={6}>
+            <Form.Item
+              name="freight_2_currency"
+              label="运费2币种"
+              initialValue="CNY"
+            >
+              <Select
+                options={[
+                  { label: '人民币(CNY)', value: 'CNY' },
+                  { label: '美元(USD)', value: 'USD' },
+                ]}
+              />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
             <Form.Item
               name="freight_2_status"
               label="运费2状态"
@@ -340,7 +374,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
               />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={12} md={8}>
+          <Col xs={24} sm={12} md={6}>
             <Form.Item name="freight_2_date" label="运费2付款日期">
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
@@ -349,7 +383,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       )}
 
       <Row gutter={16}>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} md={6}>
           <Form.Item
             name="miscellaneous_expenses"
             label="杂费"
@@ -358,7 +392,21 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入杂费" />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} md={6}>
+          <Form.Item
+            name="miscellaneous_expenses_currency"
+            label="杂费币种"
+            initialValue="CNY"
+          >
+            <Select
+              options={[
+                { label: '人民币(CNY)', value: 'CNY' },
+                { label: '美元(USD)', value: 'USD' },
+              ]}
+            />
+          </Form.Item>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
           <Form.Item
             name="invoice_1_status"
             label="发票1状态"

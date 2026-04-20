@@ -115,7 +115,7 @@ export const PaymentDetail: React.FC = () => {
                 {contract.total_quantity as number} 吨
               </Descriptions.Item>
               <Descriptions.Item label="已执行数量" span={1}>
-                {contract.paid_amount as number} 吨
+                {contract.executed_quantity as number} 吨
               </Descriptions.Item>
               <Descriptions.Item label="执行进度" span={1}>
                 {((contract.payment_percent as number) || 0).toFixed(1)}%

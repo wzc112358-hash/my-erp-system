@@ -181,8 +181,14 @@ export const ContractList: React.FC = () => {
       title: '合同金额',
       dataIndex: 'total_amount',
       key: 'total_amount',
-      width: 120,
-      render: (amount: number) => (amount ? `¥${amount.toFixed(4)}` : '-'),
+      width: 150,
+      render: (amount: number, record: PurchaseContract) => {
+        if (!amount) return '-';
+        if (record.is_cross_border) {
+          return `$${amount.toFixed(4)}`;
+        }
+        return `¥${amount.toFixed(4)}`;
+      },
     },
     {
       title: '发货进度',
