@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space } from 'antd';
+import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { PurchasePayment } from '@/types/purchase-contract';
 import dayjs from 'dayjs';
 import { extractAttachments } from '@/utils/file';
@@ -10,6 +11,8 @@ interface ContractOption {
   label: string;
   value: string;
   unit_price?: number;
+  is_cross_border?: boolean;
+  unpaid_amount?: number;
 }
 
 interface PaymentFormProps {
@@ -28,6 +31,11 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -39,6 +47,8 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
           unit_price: item.unit_price as number,
+          is_cross_border: item.is_cross_border as boolean,
+          unpaid_amount: item.unpaid_amount as number,
         }));
         setContractOptions(options);
       } catch (error: unknown) {
@@ -137,6 +147,19 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
           </Form.Item>
         </Col>
       </Row>
+
+      {selectedContract && selectedContract.unpaid_amount !== undefined && (
+        <Row gutter={16}>
+          <Col span={24}>
+            <Alert
+              message={`合同剩余未付款金额: ${formatRemainingAmount(selectedContract.unpaid_amount, selectedContract.is_cross_border, exchangeRate)}`}
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          </Col>
+        </Row>
+      )}
 
       <Row gutter={16}>
         <Col xs={24} md={12}>

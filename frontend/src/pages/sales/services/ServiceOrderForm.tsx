@@ -99,7 +99,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="unit_price" label="单价">
-            <InputNumber placeholder="单价" min={0} precision={4} style={{ width: '100%' }} />
+            <InputNumber placeholder="单价" min={0} precision={6} style={{ width: '100%' }} />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>

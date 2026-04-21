@@ -5,8 +5,8 @@ import { LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '
 import { ComparisonAPI } from '@/api/comparison';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
-import { getUsdToCnyRate } from '@/lib/exchange-rate';
-import type { ContractDetailData } from '@/types/comparison';
+import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
+import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import dayjs from 'dayjs';
 
@@ -70,7 +70,7 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   };
 };
 
-const calcProfitUSD = (data: ContractDetailData): ProfitCalc => {
+const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
   if (!sc) {
     const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
@@ -78,14 +78,15 @@ const calcProfitUSD = (data: ContractDetailData): ProfitCalc => {
       operatingProfit: 0, taxAmount: 0, netProfit: 0,
       salesAmountIncTax: 0, purchaseAmountIncTax: purchaseTotalAmount,
       salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmount / 1.13,
-      totalFreight: data.profit.total_freight, totalMiscellaneous: data.profit.total_miscellaneous,
+      totalFreight: data.profit.total_freight / rate,
+      totalMiscellaneous: data.profit.total_miscellaneous / rate,
       quantityMatched: true,
     };
   }
   const salesAmount = sc.total_amount;
   const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
-  const freight = data.profit.total_freight;
-  const misc = data.profit.total_miscellaneous;
+  const freight = data.profit.total_freight / rate;
+  const misc = data.profit.total_miscellaneous / rate;
   const isExTax = sc.is_price_excluding_tax;
   const salesIncTax = isExTax ? salesAmount * 1.13 : salesAmount;
   const salesExTax = isExTax ? salesAmount : salesAmount / 1.13;
@@ -231,8 +232,16 @@ const ContractDetailPage: React.FC = () => {
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '单价', key: 'unit_price', render: () => formatCurrency(detailData?.sales_contract?.unit_price || 0) },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
+    { title: '单价', key: 'unit_price', render: () => {
+      const sc = detailData?.sales_contract;
+      if (!sc) return formatCurrency(0);
+      return formatCrossBorderAmount(sc.unit_price, sc.is_cross_border, exchangeRate);
+    } },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => {
+      const sc = detailData?.sales_contract;
+      if (!sc) return formatCurrency(v);
+      return formatCrossBorderAmount(v, sc.is_cross_border, exchangeRate);
+    } },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
     { title: '备注', dataIndex: 'remark', key: 'remark' },
@@ -241,9 +250,17 @@ const ContractDetailPage: React.FC = () => {
 
   const saleReceiptColumns = [
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
-    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
+    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => {
+      const sc = detailData?.sales_contract;
+      if (!sc) return formatCurrency(v);
+      return formatCrossBorderAmount(v, sc.is_cross_border, exchangeRate);
+    } },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '单价', key: 'unit_price', render: () => formatCurrency(detailData?.sales_contract?.unit_price || 0) },
+    { title: '单价', key: 'unit_price', render: () => {
+      const sc = detailData?.sales_contract;
+      if (!sc) return formatCurrency(0);
+      return formatCrossBorderAmount(sc.unit_price, sc.is_cross_border, exchangeRate);
+    } },
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '收款方式', dataIndex: 'method', key: 'method' },
     { title: '收款账号', dataIndex: 'account', key: 'account' },
@@ -262,9 +279,21 @@ const ContractDetailPage: React.FC = () => {
     { title: '是否中转', dataIndex: 'wether_transit', key: 'wether_transit' },
     { title: '中转仓库', dataIndex: 'transit_warehouse', key: 'transit_warehouse' },
     { title: '送货地址', dataIndex: 'delivery_address', key: 'delivery_address' },
-    { title: '运费1', dataIndex: 'freight_1', key: 'freight_1', render: (v: number) => formatCurrency(v) },
-    { title: '运费2', dataIndex: 'freight_2', key: 'freight_2', render: (v: number) => formatCurrency(v) },
-    { title: '杂费', dataIndex: 'miscellaneous_expenses', key: 'miscellaneous_expenses', render: (v: number) => formatCurrency(v) },
+    { title: '运费1', dataIndex: 'freight_1', key: 'freight_1', render: (v: number, record: PurchaseArrivalRecord) => {
+      if (!v) return '-';
+      const currency = ((record as unknown) as Record<string, unknown>).freight_1_currency as 'USD' | 'CNY' || 'CNY';
+      return formatFreightAmount(v, currency, exchangeRate);
+    } },
+    { title: '运费2', dataIndex: 'freight_2', key: 'freight_2', render: (v: number, record: PurchaseArrivalRecord) => {
+      if (!v) return '-';
+      const currency = ((record as unknown) as Record<string, unknown>).freight_2_currency as 'USD' | 'CNY' || 'CNY';
+      return formatFreightAmount(v, currency, exchangeRate);
+    } },
+    { title: '杂费', dataIndex: 'miscellaneous_expenses', key: 'miscellaneous_expenses', render: (v: number, record: PurchaseArrivalRecord) => {
+      if (!v) return '-';
+      const currency = ((record as unknown) as Record<string, unknown>).miscellaneous_expenses_currency as 'USD' | 'CNY' || 'CNY';
+      return formatFreightAmount(v, currency, exchangeRate);
+    } },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
@@ -279,7 +308,11 @@ const ContractDetailPage: React.FC = () => {
       const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
       return formatCurrency(pc?.unit_price || 0);
     } },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number, record: PurchaseInvoiceRecord) => {
+      const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
+      if (!pc) return formatCurrency(v);
+      return formatCrossBorderAmount(v, pc.is_cross_border, exchangeRate);
+    } },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
     { title: '是否验票', dataIndex: 'is_verified', key: 'is_verified', render: (v: string) => v === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag> },
@@ -295,7 +328,11 @@ const ContractDetailPage: React.FC = () => {
       const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
       return formatCurrency(pc?.unit_price || 0);
     } },
-    { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => formatCurrency(v) },
+    { title: '付款金额', dataIndex: 'amount', key: 'amount', render: (v: number, record: PurchasePaymentRecord) => {
+      const pc = detailData?.purchase_contracts.find(p => p.id === record.purchase_contract);
+      if (!pc) return formatCurrency(v);
+      return formatCrossBorderAmount(v, pc.is_cross_border, exchangeRate);
+    } },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (v: string) => formatDate(v) },
     { title: '付款方式', dataIndex: 'method', key: 'method' },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
@@ -416,12 +453,11 @@ const ContractDetailPage: React.FC = () => {
   const renderProfitAnalysis = () => {
     if (!detailData || !detailData.sales_contract) return null;
     const sc = detailData.sales_contract;
-    const allPurchaseCrossBorder = detailData.purchase_contracts.length > 0 && detailData.purchase_contracts.every(pc => pc.is_cross_border);
-    const isDualCurrency = sc.is_cross_border && allPurchaseCrossBorder;
-    const bothCrossBorder = isDualCurrency;
+    const hasCrossBorder = sc.is_cross_border || detailData.purchase_contracts.some(pc => pc.is_cross_border);
+    const bothCrossBorder = hasCrossBorder;
 
     const cnyCalc = calcProfitCNY(detailData, exchangeRate);
-    const usdCalc = bothCrossBorder ? calcProfitUSD(detailData) : null;
+    const usdCalc = bothCrossBorder ? calcProfitUSD(detailData, exchangeRate) : null;
 
     return (
       <Card title="利润分析" style={cardStyle} styles={{ body: { padding: 24 } }}>
@@ -434,7 +470,7 @@ const ContractDetailPage: React.FC = () => {
             style={{ marginBottom: 16 }}
           />
         )}
-        {sc.is_cross_border && (
+        {hasCrossBorder && (
           <Alert
             message="跨境交易"
             description={`汇率: 1 USD = ${exchangeRate} CNY。USD 金额已按此汇率换算为 CNY 后进行利润计算。`}
@@ -531,7 +567,7 @@ const ContractDetailPage: React.FC = () => {
               <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
               <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
               <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
-              {sc.is_cross_border && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
+              {hasCrossBorder && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
             </div>
           </>
         )}

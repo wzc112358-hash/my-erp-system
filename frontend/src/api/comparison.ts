@@ -255,8 +255,11 @@ export const ComparisonAPI = {
       quantity: number;
       purchase_contract: string;
       freight_1: number;
+      freight_1_currency: 'USD' | 'CNY';
       freight_2?: number;
+      freight_2_currency?: 'USD' | 'CNY';
       miscellaneous_expenses: number;
+      miscellaneous_expenses_currency: 'USD' | 'CNY';
     }[];
     const saleReceiptsList = saleReceipts.items as unknown as { amount: number }[];
     const purchasePaymentsList = purchasePayments.items as unknown as { amount: number; purchase_contract: string }[];
@@ -273,9 +276,19 @@ export const ComparisonAPI = {
     const shipmentPerContract: ProgressShipmentPerContract[] = purchaseContracts.map((pc) => {
       const arrivals = purchaseArrivalsList.filter((a) => a.purchase_contract === pc.id);
       const quantity = arrivals.reduce((sum, a) => sum + a.quantity, 0);
-      const freight1 = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0), 0);
-      const freight2 = arrivals.reduce((sum, a) => sum + (a.freight_2 || 0), 0);
-      const misc = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
+      
+      // 计算运费和杂费，考虑币种
+      let freight1 = 0;
+      let freight2 = 0;
+      let misc = 0;
+      arrivals.forEach(a => {
+        const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
+        const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
+        const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+        freight1 += (a.freight_1 || 0) * f1Rate;
+        freight2 += (a.freight_2 || 0) * f2Rate;
+        misc += (a.miscellaneous_expenses || 0) * mRate;
+      });
       
       if (pc.id === purchaseContracts[0]?.id) {
         totalFreight = freight1 + freight2;
@@ -511,15 +524,19 @@ export const ComparisonAPI = {
     let totalMiscellaneous = 0;
     const arrivalsRaw = purchaseArrivalsResult.items as unknown as {
       freight_1: number;
+      freight_1_currency: 'USD' | 'CNY';
       freight_2?: number;
+      freight_2_currency?: 'USD' | 'CNY';
       miscellaneous_expenses: number;
+      miscellaneous_expenses_currency: 'USD' | 'CNY';
       purchase_contract: string;
     }[];
     arrivalsRaw.forEach((a) => {
-      const pc = purchaseContracts.find(p => p.id === a.purchase_contract);
-      const crossRate = pc?.is_cross_border ? rate : 1;
-      totalFreight += ((a.freight_1 || 0) + (a.freight_2 || 0)) * crossRate;
-      totalMiscellaneous += (a.miscellaneous_expenses || 0) * crossRate;
+      const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
+      const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
+      const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+      totalFreight += ((a.freight_1 || 0) * f1Rate) + ((a.freight_2 || 0) * f2Rate);
+      totalMiscellaneous += (a.miscellaneous_expenses || 0) * mRate;
     });
 
     const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
@@ -586,13 +603,18 @@ export const ComparisonAPI = {
     let totalMiscellaneous = 0;
     const arrivalsRaw = purchaseArrivalsResult.items as unknown as {
       freight_1: number;
+      freight_1_currency: 'USD' | 'CNY';
       freight_2?: number;
+      freight_2_currency?: 'USD' | 'CNY';
       miscellaneous_expenses: number;
+      miscellaneous_expenses_currency: 'USD' | 'CNY';
     }[];
     arrivalsRaw.forEach((a) => {
-      const crossRate = purchaseContract.is_cross_border ? rate : 1;
-      totalFreight += ((a.freight_1 || 0) + (a.freight_2 || 0)) * crossRate;
-      totalMiscellaneous += (a.miscellaneous_expenses || 0) * crossRate;
+      const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
+      const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
+      const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+      totalFreight += ((a.freight_1 || 0) * f1Rate) + ((a.freight_2 || 0) * f2Rate);
+      totalMiscellaneous += (a.miscellaneous_expenses || 0) * mRate;
     });
 
     const profit: ProfitAnalysis = {
@@ -726,7 +748,7 @@ export const ComparisonAPI = {
       }));
 
     const standalonePurchases = await pb.collection('purchase_contracts').getList(1, 500, {
-      filter: 'sales_contract = "" || sales_contract = null',
+      filter: "sales_contract = ''",
       sort: '-created_at',
     });
 

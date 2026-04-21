@@ -273,8 +273,11 @@ export interface PurchaseArrivalRecord {
   transit_warehouse: string;
   delivery_address: string;
   freight_1: number;
+  freight_1_currency: 'USD' | 'CNY';
   freight_2: number;
+  freight_2_currency: 'USD' | 'CNY';
   miscellaneous_expenses: number;
+  miscellaneous_expenses_currency: 'USD' | 'CNY';
   freight_1_status: string;
   freight_2_status: string;
   freight_1_date: string;

@@ -555,17 +555,13 @@ export const OverviewPage: React.FC = () => {
            (!supplierFilter || p.supplierName === supplierFilter)
     );
     
-    if (unassociatedPurchases.length > 0) {
+    unassociatedPurchases.forEach(purchase => {
       rows.push({
-        purchases: unassociatedPurchases,
-        purchaseSummary: {
-          purchaseIds: unassociatedPurchases.map(p => p.id),
-          purchaseNos: unassociatedPurchases.map(p => p.no),
-          shipmentDates: unassociatedPurchases.flatMap(p => p.shipmentDate ? [p.shipmentDate] : []),
-          paymentDates: unassociatedPurchases.flatMap(p => p.paymentDate ? [p.paymentDate] : []),
-        },
+        sales: undefined,
+        purchases: [purchase],
+        purchaseSummary: undefined,
       });
-    }
+    });
     
     return rows;
   }, [sortedSales, purchaseContracts, supplierFilter]);
@@ -897,6 +893,14 @@ export const OverviewPage: React.FC = () => {
                       selected={isAllSelectedForRow(row)}
                       onSelect={handleMultiPurchaseSelect}
                       onClick={() => handleOpenModal(row.purchases)}
+                    />
+                  </div>
+                ) : row.purchases.length === 1 && !row.sales ? (
+                  <div style={{ minHeight: rowHeights.get(idx) || 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <PurchaseContractCard
+                      contract={row.purchases[0]}
+                      selected={selectedPurchases.has(row.purchases[0].id)}
+                      onSelect={handlePurchaseSelect}
                     />
                   </div>
                 ) : (

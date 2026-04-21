@@ -3,6 +3,7 @@ import { Form, Input, Select, DatePicker, InputNumber, Upload, Button, Row, Col,
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { SaleInvoiceFormData } from '@/types/sales-contract';
 import { extractAttachments } from '@/utils/file';
 
@@ -11,6 +12,7 @@ interface ContractOption {
   value: string;
   uninvoiced_amount?: number;
   unit_price?: number;
+  is_cross_border?: boolean;
 }
 
 interface InvoiceFormProps {
@@ -29,6 +31,11 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -42,6 +49,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
           value: item.id as string,
           uninvoiced_amount: item.uninvoiced_amount as number,
           unit_price: item.unit_price as number,
+          is_cross_border: item.is_cross_border as boolean,
         }));
         setContractOptions(options);
       } catch (error) {
@@ -162,7 +170,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
         <Row gutter={16}>
           <Col span={24}>
             <Alert
-              message={`合同剩余未开票金额: ¥${selectedContract.uninvoiced_amount.toFixed(6)}`}
+              message={`合同剩余未开票金额: ${formatRemainingAmount(selectedContract.uninvoiced_amount, selectedContract.is_cross_border, exchangeRate)}`}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}

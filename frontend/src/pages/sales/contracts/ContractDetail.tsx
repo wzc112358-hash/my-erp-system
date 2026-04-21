@@ -6,7 +6,7 @@ import { pb } from '@/lib/pocketbase';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { BiddingRecordAPI } from '@/api/bidding-record';
-import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { getUsdToCnyRate, formatCrossBorderAmount } from '@/lib/exchange-rate';
 import type { SalesContract, SalesShipment, SaleInvoice, SaleReceipt } from '@/types/sales-contract';
 import type { PurchaseContract } from '@/types/purchase-contract';
 import type { BiddingRecord } from '@/types/bidding-record';
@@ -139,7 +139,10 @@ export const ContractDetail: React.FC = () => {
     { title: '发票号码', dataIndex: 'no', key: 'no' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount' },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (a: number) => {
+      if (!a) return '-';
+      return formatCrossBorderAmount(a, contract?.is_cross_border || false, exchangeRate);
+    } },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (d: string) => d?.split(' ')[0] },
     { title: '操作', key: 'action', render: (_: unknown, record: SaleInvoice) => (
       <Button size="small" onClick={() => navigate(`/sales/invoices/${record.id}`)}>查看</Button>
@@ -148,7 +151,10 @@ export const ContractDetail: React.FC = () => {
 
   const receiptColumns = [
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (d: string) => d?.split(' ')[0] || '-' },
-    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => a ? `¥${a.toFixed(6)}` : '-' },
+    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (a: number) => {
+      if (!a) return '-';
+      return formatCrossBorderAmount(a, contract?.is_cross_border || false, exchangeRate);
+    } },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount', render: (v: number) => v || '-' },
     { title: '收款方式', dataIndex: 'method', key: 'method', render: (m: string) => m || '-' },
     { title: '收款账号', dataIndex: 'account', key: 'account', render: (a: string) => a || '-' },

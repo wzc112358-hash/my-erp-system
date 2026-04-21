@@ -551,7 +551,7 @@ export const ProgressFlowPage: React.FC = () => {
   }, [selectedContract, selectedType, message]);
 
   const handleConfirm = useCallback(async () => {
-    if (!modalData || modalData.manager_confirmed !== 'pending') return;
+    if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming(true);
     try {
       await pb.collection(modalData.collectionName).update(modalData.recordId, {

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Switch } from 'antd';
+import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Switch, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { pb } from '@/lib/pocketbase';
+import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { SaleReceipt } from '@/types';
 import dayjs from 'dayjs';
 import { extractAttachments } from '@/utils/file';
@@ -11,6 +12,8 @@ interface ContractOption {
   value: string;
   unit_price?: number;
   is_price_excluding_tax?: boolean;
+  is_cross_border?: boolean;
+  unreceipted_amount?: number;
 }
 
 interface ReceiptFormProps {
@@ -29,6 +32,11 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
+  const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+
+  useEffect(() => {
+    getUsdToCnyRate().then(setExchangeRate);
+  }, []);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -41,6 +49,8 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
           value: item.id as string,
           unit_price: item.unit_price as number,
           is_price_excluding_tax: item.is_price_excluding_tax as boolean,
+          is_cross_border: item.is_cross_border as boolean,
+          unreceipted_amount: item.unreceipted_amount as number,
         }));
         setContractOptions(options);
       } catch (error: unknown) {
@@ -206,6 +216,19 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             >
               <Switch onChange={handleTaxIncludedChange} />
             </Form.Item>
+          </Col>
+        </Row>
+      )}
+
+      {selectedContract && selectedContract.unreceipted_amount !== undefined && (
+        <Row gutter={16}>
+          <Col span={24}>
+            <Alert
+              message={`合同剩余未收款金额: ${formatRemainingAmount(selectedContract.unreceipted_amount, selectedContract.is_cross_border, exchangeRate)}`}
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
           </Col>
         </Row>
       )}
