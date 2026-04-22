@@ -213,12 +213,6 @@ export const ReportAPI = {
     });
 
     purchaseContracts.forEach((pc) => {
-      const month = getMonthFromDate(pc.sign_date);
-      const contractYear = getYearFromDate(pc.sign_date);
-      if (contractYear !== year || month < startMonth || month > endMonth) {
-        return;
-      }
-
       const arrivals = purchaseArrivalsMap.get(pc.id) || [];
       const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
       const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);

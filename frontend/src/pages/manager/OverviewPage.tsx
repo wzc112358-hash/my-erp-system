@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip } from 'antd';
-import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip, Badge } from 'antd';
+import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
 import { SalesContractAPI } from '@/api/sales-contract';
@@ -39,7 +39,8 @@ const SalesContractCard: React.FC<{
   onSelect: (id: string, checked: boolean) => void;
   onClick: () => void;
   onDelete: (type: 'sales' | 'purchase', id: string) => void;
-}> = ({ contract, selected, onSelect, onClick, onDelete }) => {
+  onViewFlow?: () => void;
+}> = ({ contract, selected, onSelect, onClick, onDelete, onViewFlow }) => {
   return (
     <Card
       size="small"
@@ -65,13 +66,30 @@ const SalesContractCard: React.FC<{
         />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontWeight: 'bold', fontSize: 14 }}>
+            <span style={{ fontWeight: 'bold', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
               销售合同: {contract.no}
+              {(contract.pendingCount ?? 0) > 0 && (
+                <Badge
+                  count={contract.pendingCount}
+                  style={{ backgroundColor: '#ff4d4f' }}
+                />
+              )}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ color: '#666', fontSize: 12 }}>
                 {contract.customerName}
               </span>
+              {onViewFlow && (
+                <Tooltip title="查看流程图">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EyeOutlined />}
+                    onClick={(e) => { e.stopPropagation(); onViewFlow(); }}
+                    style={{ color: '#1890ff' }}
+                  />
+                </Tooltip>
+              )}
               <Tooltip title="删除合同">
                 <Popconfirm
                   title="确定删除此合同？删除后将无法恢复。"
@@ -867,12 +885,13 @@ export const OverviewPage: React.FC = () => {
               <div key={`sales-${row.sales?.id || 'empty-' + idx}`} data-row-idx={idx}>
                 {row.sales ? (
                   <SalesContractCard
-                    contract={row.sales}
-                    selected={selectedSales.has(row.sales.id)}
-                    onSelect={handleSalesSelect}
-                    onClick={() => navigate(`/manager/overview/contract/${row.sales!.id}`)}
-                    onDelete={handleDeleteContract}
-                  />
+                      contract={row.sales}
+                      selected={selectedSales.has(row.sales.id)}
+                      onSelect={handleSalesSelect}
+                      onClick={() => navigate(`/manager/overview/contract/${row.sales!.id}`)}
+                      onDelete={handleDeleteContract}
+                      onViewFlow={() => navigate(`/manager/progress-flow?contractId=${row.sales!.id}&type=sales`)}
+                    />
                 ) : (
                   <div style={{ height: rowHeights.get(idx) || 0, marginBottom: 8 }} />
                 )}

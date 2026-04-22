@@ -4,6 +4,8 @@ import dagre from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
 import dayjs from 'dayjs';
 import { App, Button, Card, Select, Spin, Empty, Modal, Descriptions, Tag, Upload, Badge } from 'antd';
+import { LeftOutlined } from '@ant-design/icons';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
@@ -471,9 +473,13 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
 
 export const ProgressFlowPage: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlContractId = searchParams.get('contractId');
+  const urlType = searchParams.get('type') as 'sales' | 'purchase' | null;
   const { setPendingCount } = useManagerPendingStore();
-  const [selectedContract, setSelectedContract] = useState<string | undefined>(undefined);
-  const [selectedType, setSelectedType] = useState<'sales' | 'purchase' | undefined>(undefined);
+  const [selectedContract, setSelectedContract] = useState<string | undefined>(urlContractId || undefined);
+  const [selectedType, setSelectedType] = useState<'sales' | 'purchase' | undefined>(urlType || undefined);
   const [contractOptions, setContractOptions] = useState<FlowContractOption[]>([]);
   const [flowNodes, setFlowNodes] = useState<Node[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
@@ -632,6 +638,15 @@ export const ProgressFlowPage: React.FC = () => {
 
   return (
     <div style={{ padding: window.innerWidth <= 767 ? 8 : 24 }}>
+      {urlContractId && (
+        <Button
+          icon={<LeftOutlined />}
+          onClick={() => navigate('/manager/overview')}
+          style={{ marginBottom: 16 }}
+        >
+          返回关联对比总览
+        </Button>
+      )}
       <Card style={{ marginBottom: 16, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select

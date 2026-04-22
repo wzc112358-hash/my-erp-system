@@ -56,6 +56,7 @@ export interface OverviewContract {
   associatedPurchaseIds?: string[];
   associatedSalesIds?: string[];
   purchaseSummary?: PurchaseSummary;
+  pendingCount?: number;
 }
 
 export interface ComparisonPurchaseContract {

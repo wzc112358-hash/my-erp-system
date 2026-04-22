@@ -132,6 +132,54 @@ export const ComparisonAPI = {
       }
     });
 
+    // 计算每个销售合同的待确认节点数量
+    const pendingCountMap = new Map<string, number>();
+    
+    // 销售子信息中的待确认
+    (saleInvoicesResult.items as unknown as { sales_contract: string; manager_confirmed: string }[]).forEach(inv => {
+      if (inv.manager_confirmed === 'pending') {
+        pendingCountMap.set(inv.sales_contract, (pendingCountMap.get(inv.sales_contract) || 0) + 1);
+      }
+    });
+    (saleReceiptsResult.items as unknown as { sales_contract: string; manager_confirmed: string }[]).forEach(receipt => {
+      if (receipt.manager_confirmed === 'pending') {
+        pendingCountMap.set(receipt.sales_contract, (pendingCountMap.get(receipt.sales_contract) || 0) + 1);
+      }
+    });
+    
+    // 采购子信息中的待确认（需要关联到销售合同）
+    const purchaseToSalesMap = new Map<string, string>();
+    purchaseContracts.forEach(pc => {
+      if (pc.sales_contract) {
+        purchaseToSalesMap.set(pc.id, pc.sales_contract);
+      }
+    });
+    
+    (purchaseArrivalsResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(arrival => {
+      if (arrival.manager_confirmed === 'pending') {
+        const salesId = purchaseToSalesMap.get(arrival.purchase_contract);
+        if (salesId) {
+          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
+        }
+      }
+    });
+    (purchaseInvoicesResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(inv => {
+      if (inv.manager_confirmed === 'pending') {
+        const salesId = purchaseToSalesMap.get(inv.purchase_contract);
+        if (salesId) {
+          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
+        }
+      }
+    });
+    (purchasePaymentsResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(payment => {
+      if (payment.manager_confirmed === 'pending') {
+        const salesId = purchaseToSalesMap.get(payment.purchase_contract);
+        if (salesId) {
+          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
+        }
+      }
+    });
+
     const overviewSalesContracts: OverviewContract[] = salesContracts.map(sc => {
       const associatedPurchases = purchaseContracts.filter(pc => pc.sales_contract === sc.id);
       const purchaseIds = associatedPurchases.map(pc => pc.id);
@@ -165,6 +213,7 @@ export const ComparisonAPI = {
           shipmentDates: allShipmentDates,
           paymentDates: allPaymentDates,
         } : undefined,
+        pendingCount: pendingCountMap.get(sc.id) || 0,
       };
     });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Drawer, Badge } from 'antd';
+import { Layout, Menu, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -13,7 +13,6 @@ import {
   BarChartOutlined,
   BellOutlined,
   LinkOutlined,
-  ShareAltOutlined,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
 import type { UserRole } from '@/types/layout';
@@ -55,7 +54,6 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
   ],
   manager: [
     { key: 'overview', label: '关联合同总览', icon: <LinkOutlined />, path: '/manager/overview' },
-    { key: 'progress-flow', label: '流程进度', icon: <ShareAltOutlined />, path: '/manager/progress-flow' },
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
@@ -73,8 +71,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
   const location = useLocation();
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
-  const { unreadCount, fetchUnreadCount } = useNotificationStore();
-  const { pendingCount, fetchPendingCount } = useManagerPendingStore();
+  const { fetchUnreadCount } = useNotificationStore();
+  const { fetchPendingCount } = useManagerPendingStore();
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
 
   useEffect(() => {
@@ -132,15 +130,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
       }}
       items={menuItems.map((item) => ({
         key: item.key,
-        label: item.key === 'notifications' && unreadCount > 0 ? (
-          <Badge count={unreadCount} offset={[10, 0]}>
-            {item.label}
-          </Badge>
-        ) : item.key === 'progress-flow' && pendingCount > 0 ? (
-          <Badge count={pendingCount} offset={[10, 0]} style={{ backgroundColor: '#ff4d4f' }}>
-            {item.label}
-          </Badge>
-        ) : item.label,
+        label: item.label,
         icon: item.icon,
       }))}
       onClick={handleMenuClick}
