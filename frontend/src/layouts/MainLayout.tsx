@@ -13,6 +13,7 @@ import {
   BarChartOutlined,
   BellOutlined,
   LinkOutlined,
+  InboxOutlined as InventoryIcon,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
 import type { UserRole } from '@/types/layout';
@@ -57,6 +58,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
+    { key: 'inventory', label: '库存管理', icon: <InventoryIcon />, path: '/manager/inventory' },
     { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/manager/exchange-rate' },
   ],
 };
