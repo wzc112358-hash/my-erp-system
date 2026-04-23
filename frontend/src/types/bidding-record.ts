@@ -32,13 +32,13 @@ export interface BiddingRecordFormData {
   product_name: string;
   quantity?: number;
   tender_fee?: number;
-  tender_fee_date?: string;
+  tender_fee_date?: string | any;
   tender_fee_invoice?: File[];
   bid_bond?: number;
-  bid_bond_date?: string;
-  open_date?: string;
+  bid_bond_date?: string | any;
+  open_date?: string | any;
   bid_result?: string;
-  bond_return_date?: string;
+  bond_return_date?: string | any;
   bond_return_amount?: number;
   agency_fee?: number;
   sales_contract?: string;

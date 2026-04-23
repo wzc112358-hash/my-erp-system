@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Select, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import type { BiddingRecord, BiddingRecordFormData } from '@/types/bidding-record';
 import { BiddingForm } from './BiddingForm';
@@ -97,15 +98,15 @@ export const BiddingList: React.FC = () => {
       quantity: record.quantity,
       tender_fee: record.tender_fee || undefined,
       bid_bond: record.bid_bond || undefined,
-      open_date: record.open_date ? record.open_date.split(' ')[0] : undefined,
+      open_date: record.open_date ? dayjs(record.open_date.split(' ')[0]) : undefined,
       bid_result: record.bid_result,
       bond_return_amount: record.bond_return_amount || undefined,
       agency_fee: record.agency_fee || undefined,
       sales_contract: record.sales_contract || undefined,
       remark: record.remark || undefined,
-      tender_fee_date: record.tender_fee_date ? record.tender_fee_date.split(' ')[0] : undefined,
-      bid_bond_date: record.bid_bond_date ? record.bid_bond_date.split(' ')[0] : undefined,
-      bond_return_date: record.bond_return_date ? record.bond_return_date.split(' ')[0] : undefined,
+      tender_fee_date: record.tender_fee_date ? dayjs(record.tender_fee_date.split(' ')[0]) : undefined,
+      bid_bond_date: record.bid_bond_date ? dayjs(record.bid_bond_date.split(' ')[0]) : undefined,
+      bond_return_date: record.bond_return_date ? dayjs(record.bond_return_date.split(' ')[0]) : undefined,
       tender_fee_invoice: tenderFeeInvoice,
       attachments: attachments as any,
     });

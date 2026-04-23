@@ -100,7 +100,7 @@ const exportBiddings = (records: BiddingRecord[]) => {
 };
 
 const renderFileLinks = (collectionName: string, recordId: string, files: string[] | undefined) => {
-  if (!files || files.length === 0) return '-';
+  if (!Array.isArray(files) || files.length === 0) return '-';
   return (
     <Flex vertical gap="small">
       {files.map((file: string) => (
@@ -141,7 +141,7 @@ const getCrossBorderServiceOrderColumns = (): ColumnsType<ServiceOrder> => [
     key: 'attachments',
     width: 150,
     render: (_: unknown, record: ServiceOrder) => {
-      if (!record.attachments || record.attachments.length === 0) return '-';
+      if (!Array.isArray(record.attachments) || record.attachments.length === 0) return '-';
       return (
         <Flex vertical gap="small">
           {record.attachments.map((file: string) => (
@@ -178,7 +178,7 @@ const getDomesticServiceOrderColumns = (): ColumnsType<ServiceOrder> => [
     key: 'attachments',
     width: 150,
     render: (_: unknown, record: ServiceOrder) => {
-      if (!record.attachments || record.attachments.length === 0) return '-';
+      if (!Array.isArray(record.attachments) || record.attachments.length === 0) return '-';
       return (
         <Flex vertical gap="small">
           {record.attachments.map((file: string) => (
