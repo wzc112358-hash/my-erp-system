@@ -58,7 +58,7 @@ export const BiddingDetail: React.FC = () => {
   }
 
   const renderFileLinks = (files: string[] | undefined) => {
-    if (!files || files.length === 0) return '-';
+    if (!Array.isArray(files) || files.length === 0) return '-';
     return (
       <Flex vertical gap="small">
         {files.map((file: string) => (

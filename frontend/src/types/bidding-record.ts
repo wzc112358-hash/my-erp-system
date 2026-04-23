@@ -3,7 +3,7 @@ export interface BiddingRecord {
   bidding_company: string;
   bidding_no: string;
   product_name: string;
-  quantity: number;
+  quantity?: number;
   tender_fee: number;
   tender_fee_date: string;
   tender_fee_invoice?: string[];
@@ -30,7 +30,7 @@ export interface BiddingRecordFormData {
   bidding_company: string;
   bidding_no: string;
   product_name: string;
-  quantity: number;
+  quantity?: number;
   tender_fee?: number;
   tender_fee_date?: string;
   tender_fee_invoice?: File[];

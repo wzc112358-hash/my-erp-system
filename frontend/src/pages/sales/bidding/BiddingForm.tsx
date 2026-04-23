@@ -111,7 +111,6 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
           <Form.Item
             name="quantity"
             label="数量"
-            rules={[{ required: true, message: '请输入数量' }]}
           >
             <InputNumber placeholder="请输入数量" min={0} precision={0} style={{ width: '100%' }} />
           </Form.Item>

@@ -51,7 +51,7 @@ export const BiddingRecordAPI = {
     formData.append('bidding_company', data.bidding_company);
     formData.append('bidding_no', data.bidding_no);
     formData.append('product_name', data.product_name);
-    formData.append('quantity', String(data.quantity));
+    if (data.quantity !== undefined) formData.append('quantity', String(data.quantity));
     formData.append('creator_user', pb.authStore.record?.id || '');
     if (data.tender_fee !== undefined) formData.append('tender_fee', String(data.tender_fee));
     if (data.tender_fee_date) formData.append('tender_fee_date', data.tender_fee_date);
