@@ -61,4 +61,22 @@ export const StockMovementAPI = {
   delete: async (id: string) => {
     return pb.collection('stock_movements').delete(id);
   },
+
+  update: async (id: string, data: StockMovementFormData) => {
+    const formData = new FormData();
+    formData.append('inventory', data.inventory);
+    formData.append('movement_type', data.movement_type);
+    formData.append('quantity', String(data.quantity));
+    if (data.remark) formData.append('remark', data.remark);
+    if (data.attachments !== undefined) {
+      if (data.attachments.length === 0) {
+        formData.append('attachments', '');
+      } else {
+        data.attachments.forEach((file) => {
+          formData.append('attachments', file);
+        });
+      }
+    }
+    return pb.collection('stock_movements').update<StockMovement>(id, formData);
+  },
 };

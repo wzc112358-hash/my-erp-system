@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Select, Space, Tag, App, Spin, Empty } from 'antd';
 import { DownloadOutlined, CloseOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
+import dayjs from 'dayjs';
 import { ReportAPI } from '@/api/report';
 import type { ReportData, ReportSummary } from '@/types/report';
 
@@ -22,6 +23,8 @@ export const ReportPage: React.FC = () => {
 
   const urlSelectedSales = searchParams.get('selectedSales')?.split(',').filter(Boolean) || [];
   const urlSelectedPurchase = searchParams.get('selectedPurchase')?.split(',').filter(Boolean) || [];
+  const urlSortField = searchParams.get('sortField') || undefined;
+  const urlSortOrder = searchParams.get('sortOrder') as 'asc' | 'desc' | null;
   const hasContractFilter = urlSelectedSales.length > 0 || urlSelectedPurchase.length > 0;
 
   const [startMonth, setStartMonth] = useState<number>(1);
@@ -79,6 +82,35 @@ export const ReportPage: React.FC = () => {
     fetchReportData();
   }, [fetchReportData]);
 
+  const sortedReportData = useMemo(() => {
+    if (!urlSortField || !reportData.length) return reportData;
+    const sorted = [...reportData];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (urlSortField) {
+        case 'no':
+          cmp = (a.salesContractNo || '').localeCompare(b.salesContractNo || '');
+          break;
+        case 'shipmentDate':
+          cmp = (a.arrivalDate ? dayjs(a.arrivalDate).unix() : 0) - (b.arrivalDate ? dayjs(b.arrivalDate).unix() : 0);
+          break;
+        case 'payDate':
+          cmp = (a.purchasePaymentDate ? dayjs(a.purchasePaymentDate).unix() : 0) - (b.purchasePaymentDate ? dayjs(b.purchasePaymentDate).unix() : 0);
+          break;
+        case 'salesReceiveDate':
+          cmp = (a.salesReceiptDate ? dayjs(a.salesReceiptDate).unix() : 0) - (b.salesReceiptDate ? dayjs(b.salesReceiptDate).unix() : 0);
+          break;
+        case 'salesInvoiceDate':
+          cmp = (a.salesInvoiceDate ? dayjs(a.salesInvoiceDate).unix() : 0) - (b.salesInvoiceDate ? dayjs(b.salesInvoiceDate).unix() : 0);
+          break;
+      }
+      return urlSortOrder === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [reportData, urlSortField, urlSortOrder]);
+
+  const displayData = urlSortField ? sortedReportData : reportData;
+
   const handleClearFilter = () => {
     navigate('/manager/reports', { replace: true });
   };
@@ -88,12 +120,12 @@ export const ReportPage: React.FC = () => {
   };
 
   const handleExport = () => {
-    if (reportData.length === 0) {
+    if (displayData.length === 0) {
       message.warning('没有数据可导出');
       return;
     }
 
-    console.log('reportData:', reportData);
+    console.log('displayData:', displayData);
 
     const exportData: Record<string, unknown>[] = [];
     const mergeInfo: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
@@ -101,7 +133,7 @@ export const ReportPage: React.FC = () => {
     const salesGroupMap = new Map<string, { rows: ReportData[]; firstIndex: number }>();
     let rowIndex = 0;
 
-    reportData.forEach((row) => {
+    displayData.forEach((row) => {
       console.log('Processing row:', row.salesContractNo, row.salesRowSpan);
       
       if (!row.salesContractNo || row.salesRowSpan === 0) {
@@ -285,7 +317,7 @@ export const ReportPage: React.FC = () => {
     ];
     ws['!cols'] = colWidths;
 
-    XLSX.writeFile(wb, hasContractFilter ? `数据报表_筛选${reportData.length}条.xlsx` : `数据报表_${year}年${startMonth}-${endMonth}月.xlsx`);
+    XLSX.writeFile(wb, hasContractFilter ? `数据报表_筛选${displayData.length}条.xlsx` : `数据报表_${year}年${startMonth}-${endMonth}月.xlsx`);
     message.success('导出成功');
   };
 
@@ -586,7 +618,7 @@ export const ReportPage: React.FC = () => {
           <Button
             icon={<DownloadOutlined />}
             onClick={handleExport}
-            disabled={reportData.length === 0}
+            disabled={displayData.length === 0}
           >
             导出Excel
           </Button>
@@ -613,11 +645,11 @@ export const ReportPage: React.FC = () => {
           <div style={{ textAlign: 'center', padding: 50 }}>
             <Spin size="large" />
           </div>
-        ) : reportData.length === 0 ? (
+        ) : displayData.length === 0 ? (
           <Empty description="暂无数据，请选择月份范围后查询" />
         ) : (
           <Table
-            dataSource={reportData}
+            dataSource={displayData}
             columns={summaryColumns}
             rowKey={(_, index) => String(index)}
             scroll={{ x: 2600 }}

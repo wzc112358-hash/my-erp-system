@@ -659,13 +659,48 @@ export const OverviewPage: React.FC = () => {
   const handleExport = () => {
     const salesIds = Array.from(selectedSales).join(',');
     const purchaseIds = Array.from(selectedPurchases).join(',');
-    navigate(`/manager/reports?selectedSales=${salesIds}&selectedPurchase=${purchaseIds}`);
+    const params = new URLSearchParams();
+    if (salesIds) params.set('selectedSales', salesIds);
+    if (purchaseIds) params.set('selectedPurchase', purchaseIds);
+    if (sortField) params.set('sortField', sortField);
+    if (sortOrder) params.set('sortOrder', sortOrder);
+    navigate(`/manager/reports?${params.toString()}`);
   };
 
   const handleClearSelection = () => {
     setSelectedSales(new Set());
     setSelectedPurchases(new Set());
   };
+
+  const handleSelectAll = useCallback(() => {
+    const allSalesIds = new Set(selectedSales);
+    const allPurchaseIds = new Set(selectedPurchases);
+
+    contractRows.forEach((row) => {
+      if (row.sales) allSalesIds.add(row.sales.id);
+      if (row.purchaseSummary) {
+        row.purchaseSummary.purchaseIds.forEach((pid) => allPurchaseIds.add(pid));
+      }
+      row.purchases.forEach((p) => allPurchaseIds.add(p.id));
+    });
+
+    setSelectedSales(allSalesIds);
+    setSelectedPurchases(allPurchaseIds);
+  }, [contractRows, selectedSales, selectedPurchases]);
+
+  const isAllSelected = useMemo(() => {
+    if (contractRows.length === 0) return false;
+    return contractRows.every((row) => {
+      if (row.sales && !selectedSales.has(row.sales.id)) return false;
+      if (row.purchaseSummary) {
+        return row.purchaseSummary.purchaseIds.every((pid) => selectedPurchases.has(pid));
+      }
+      if (row.purchases.length > 0) {
+        return row.purchases.every((p) => selectedPurchases.has(p.id));
+      }
+      return true;
+    });
+  }, [contractRows, selectedSales, selectedPurchases]);
 
   const handleDeleteContract = useCallback(async (type: 'sales' | 'purchase', id: string) => {
     try {
@@ -839,6 +874,22 @@ export const OverviewPage: React.FC = () => {
           </Space>
           
           <Space>
+            <Checkbox
+              checked={isAllSelected}
+              indeterminate={
+                (selectedSales.size + selectedPurchases.size > 0) && !isAllSelected
+              }
+              onChange={() => {
+                if (isAllSelected) {
+                  handleClearSelection();
+                } else {
+                  handleSelectAll();
+                }
+              }}
+              style={{ marginRight: 8 }}
+            >
+              全选
+            </Checkbox>
             <Button
               type="primary"
               icon={<ExportOutlined />}

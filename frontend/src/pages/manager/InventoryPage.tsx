@@ -40,6 +40,8 @@ const InventoryPage: React.FC = () => {
   const [inventoryList, setInventoryList] = useState<Inventory[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [editingQtyValue, setEditingQtyValue] = useState<number>(0);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'edit' | 'movement'>('create');
@@ -141,6 +143,20 @@ const InventoryPage: React.FC = () => {
     });
     setMovementFileList([]);
     setMovementModalVisible(true);
+  };
+
+  const handleQuantitySave = async (record: Inventory) => {
+    try {
+      const fd = new FormData();
+      fd.append('remaining_quantity', String(editingQtyValue));
+      await pb.collection('inventory').update(record.id, fd);
+      setEditingQtyId(null);
+      message.success('库存已更新');
+      fetchInventory();
+    } catch (error) {
+      console.error('Update quantity error:', error);
+      message.error('更新库存失败');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -251,8 +267,35 @@ const InventoryPage: React.FC = () => {
       title: '剩余库存',
       dataIndex: 'remaining_quantity',
       key: 'remaining_quantity',
-      width: 100,
-      render: (v: number) => <Tag color={v > 0 ? 'green' : 'red'}>{v}</Tag>,
+      width: 120,
+      render: (v: number, record: Inventory) => {
+        if (editingQtyId === record.id) {
+          return (
+            <InputNumber
+              size="small"
+              min={0}
+              value={editingQtyValue}
+              onChange={(val) => setEditingQtyValue(val ?? 0)}
+              onPressEnter={() => handleQuantitySave(record)}
+              onBlur={() => handleQuantitySave(record)}
+              autoFocus
+              style={{ width: 80 }}
+            />
+          );
+        }
+        return (
+          <Tag
+            color={v > 0 ? 'green' : 'red'}
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              setEditingQtyId(record.id);
+              setEditingQtyValue(v);
+            }}
+          >
+            {v}
+          </Tag>
+        );
+      },
     },
     { title: '累计入库', dataIndex: 'total_in_quantity', key: 'total_in_quantity', width: 100 },
     { title: '累计出库', dataIndex: 'total_out_quantity', key: 'total_out_quantity', width: 100 },
