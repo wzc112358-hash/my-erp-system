@@ -90,12 +90,16 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
     if (user.type === 'purchasing' || user.type === 'sales') {
       fetchUnreadCount();
       getUsdToCnyRate().then(setExchangeRate);
-      const interval = setInterval(fetchUnreadCount, 60000);
+      const interval = setInterval(() => {
+        if (!document.hidden) fetchUnreadCount();
+      }, 300000);
       return () => clearInterval(interval);
     }
     if (user.type === 'manager') {
       fetchPendingCount();
-      const interval = setInterval(fetchPendingCount, 60000);
+      const interval = setInterval(() => {
+        if (!document.hidden) fetchPendingCount();
+      }, 300000);
       return () => clearInterval(interval);
     }
   }, [user.type, fetchUnreadCount, fetchPendingCount]);

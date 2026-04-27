@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ComparisonAPI } from '@/api/comparison';
+import { pb } from '@/lib/pocketbase';
 
 interface ManagerPendingState {
   pendingCount: number;
@@ -12,8 +12,14 @@ export const useManagerPendingStore = create<ManagerPendingState>((set) => ({
 
   fetchPendingCount: async () => {
     try {
-      const options = await ComparisonAPI.getUncompletedContracts();
-      const total = options.reduce((sum, opt) => sum + (opt.pendingCount ?? 0), 0);
+      const [salesInvoices, saleReceipts, purchaseArrivals, purchaseInvoices, purchasePayments] = await Promise.all([
+        pb.collection('sale_invoices').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('sale_receipts').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('purchase_arrivals').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('purchase_invoices').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('purchase_payments').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+      ]);
+      const total = salesInvoices.totalItems + saleReceipts.totalItems + purchaseArrivals.totalItems + purchaseInvoices.totalItems + purchasePayments.totalItems;
       set({ pendingCount: total });
     } catch {
       // silent
