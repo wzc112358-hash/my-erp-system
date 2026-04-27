@@ -9,8 +9,8 @@ import type {
 export const InventoryAPI = {
   list: async (params: InventoryListParams = {}) => {
     const result = await pb.collection('inventory').getList<Inventory>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
     );
 
     let filtered = result.items;
@@ -23,13 +23,9 @@ export const InventoryAPI = {
       );
     }
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: filtered.slice(start, start + perPage),
+      items: filtered,
       totalItems: filtered.length,
     };
   },
