@@ -12,15 +12,16 @@ export const PurchaseInvoiceAPI = {
       filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
     }
 
-    return pb.collection('purchase_invoices').getList<PurchaseInvoice>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('purchase_invoices').getList<PurchaseInvoice>(
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'purchase_contract',
       }
     );
+    return result;
   },
 
   getById: async (id: string) => {

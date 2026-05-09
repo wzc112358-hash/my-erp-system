@@ -242,7 +242,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
             label="到货数量"
             rules={[{ required: true, message: '请输入到货数量' }]}
           >
-            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入到货数量" />
+            <InputNumber min={0.000001} precision={6} style={{ width: '100%' }} placeholder="请输入到货数量" />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>

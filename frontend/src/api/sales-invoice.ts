@@ -12,15 +12,16 @@ export const SaleInvoiceAPI = {
       filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
     }
 
-    return pb.collection('sale_invoices').getList<SaleInvoice>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('sale_invoices').getList<SaleInvoice>(
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'sales_contract',
       }
     );
+    return result;
   },
 
   getById: async (id: string) => {

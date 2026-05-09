@@ -235,8 +235,8 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
           >
             <InputNumber
               placeholder="请输入产品数量"
-              min={0.01}
-              precision={4}
+              min={0.000001}
+              precision={6}
               style={{ width: '100%' }}
             />
           </Form.Item>

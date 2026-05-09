@@ -12,8 +12,8 @@ export const SalesShipmentAPI = {
     }
 
     const result = await pb.collection('sales_shipments').getList<SalesShipment>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
@@ -25,11 +25,9 @@ export const SalesShipmentAPI = {
       const filtered = result.items.filter(
         (item) => item.expand?.sales_contract?.no?.includes(params.contractNo || '')
       );
-      const start = ((params.page || 1) - 1) * (params.per_page || 10);
-      const paginated = filtered.slice(start, start + (params.per_page || 10));
       return {
         ...result,
-        items: paginated,
+        items: filtered,
         totalItems: filtered.length,
       };
     }

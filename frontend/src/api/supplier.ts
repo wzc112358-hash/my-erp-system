@@ -13,13 +13,14 @@ export const SupplierAPI = {
       filters.push(`region = "${params.region}"`);
     }
     
-    return pb.collection('suppliers').getList<Supplier>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('suppliers').getList<Supplier>(
+      1,
+      500,
       {
         filter: filters.join(' && '),
       }
     );
+    return result;
   },
 
   create: async (data: SupplierFormData) => {

@@ -15,8 +15,8 @@ export const NotificationAPI = {
     }
 
     const result = await pb.collection('notifications').getList<Notification>(
-      params.page || 1,
-      params.per_page || 10,
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',

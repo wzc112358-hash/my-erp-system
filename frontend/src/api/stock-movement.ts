@@ -18,18 +18,14 @@ export const StockMovementAPI = {
     }
     
     const result = await pb.collection('stock_movements').getList<StockMovement>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       options
     );
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: result.items.slice(start, start + perPage),
+      items: result.items,
       totalItems: result.items.length,
     };
   },

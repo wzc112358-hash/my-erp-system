@@ -12,15 +12,16 @@ export const ReceiptAPI = {
       filters.push(`product_name ~ "${params.search}"`);
     }
 
-    return pb.collection('sale_receipts').getList<SaleReceipt>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('sale_receipts').getList<SaleReceipt>(
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'sales_contract',
       }
     );
+    return result;
   },
 
   getById: async (id: string) => {

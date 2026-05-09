@@ -14,8 +14,8 @@ import type {
 export const PurchaseContractAPI = {
   list: async (params: PurchaseContractListParams = {}) => {
     const result = await pb.collection('purchase_contracts').getList<PurchaseContract>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       {}
     );
 
@@ -33,13 +33,9 @@ export const PurchaseContractAPI = {
       filtered = filtered.filter((i) => i.status === params.status);
     }
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: filtered.slice(start, start + perPage),
+      items: filtered,
       totalItems: filtered.length,
     };
   },
@@ -151,15 +147,16 @@ export const PaymentAPI = {
       filters.push(`product_name ~ "${params.search}"`);
     }
 
-    return pb.collection('purchase_payments').getList<PurchasePayment>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('purchase_payments').getList<PurchasePayment>(
+      1,
+      500,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'purchase_contract',
       }
     );
+    return result;
   },
 
   getById: async (id: string) => {

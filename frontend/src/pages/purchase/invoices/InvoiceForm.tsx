@@ -219,7 +219,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
             label="产品数量"
             rules={[{ required: true, message: '请输入产品数量' }]}
           >
-            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入产品数量" onChange={handleProductAmountChange} />
+            <InputNumber min={0.000001} precision={6} style={{ width: '100%' }} placeholder="请输入产品数量" onChange={handleProductAmountChange} />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>

@@ -12,8 +12,8 @@ import type {
 export const SalesContractAPI = {
   list: async (params: SalesContractListParams = {}) => {
     const result = await pb.collection('sales_contracts').getList<SalesContract>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       {}
     );
 
@@ -21,7 +21,7 @@ export const SalesContractAPI = {
 
     if (params.search) {
       const s = params.search.toLowerCase();
-      filtered = filtered.filter((i) => 
+      filtered = filtered.filter((i) =>
         i.no?.toLowerCase().includes(s) || i.product_name?.toLowerCase().includes(s)
       );
     }
@@ -30,13 +30,9 @@ export const SalesContractAPI = {
       filtered = filtered.filter((i) => i.status === params.status);
     }
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: filtered.slice(start, start + perPage),
+      items: filtered,
       totalItems: filtered.length,
     };
   },

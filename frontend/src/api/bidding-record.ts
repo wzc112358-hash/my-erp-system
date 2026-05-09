@@ -9,8 +9,8 @@ import type {
 export const BiddingRecordAPI = {
   list: async (params: BiddingRecordListParams = {}) => {
     const result = await pb.collection('bidding_records').getList<BiddingRecord>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       { expand: 'sales_contract,creator_user' }
     );
 
@@ -29,13 +29,9 @@ export const BiddingRecordAPI = {
       filtered = filtered.filter((i) => i.bid_result === params.bid_result);
     }
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: filtered.slice(start, start + perPage),
+      items: filtered,
       totalItems: filtered.length,
     };
   },

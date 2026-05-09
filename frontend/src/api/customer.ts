@@ -13,13 +13,14 @@ export const CustomerAPI = {
       filters.push(`region = "${params.region}"`);
     }
     
-    return pb.collection('customers').getList<Customer>(
-      params.page || 1,
-      params.per_page || 10,
+    const result = await pb.collection('customers').getList<Customer>(
+      1,
+      500,
       {
         filter: filters.join(' && '),
       }
     );
+    return result;
   },
 
   create: async (data: CustomerFormData) => {

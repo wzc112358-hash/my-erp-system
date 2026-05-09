@@ -9,8 +9,8 @@ import type {
 export const ExpenseRecordAPI = {
   list: async (params: ExpenseRecordListParams = {}) => {
     const result = await pb.collection('expense_records').getList<ExpenseRecord>(
-      params.page || 1,
-      params.per_page || 500,
+      1,
+      500,
       { expand: 'creator_user' }
     );
 
@@ -25,13 +25,9 @@ export const ExpenseRecordAPI = {
       );
     }
 
-    const page = params.page || 1;
-    const perPage = params.per_page || 10;
-    const start = (page - 1) * perPage;
-
     return {
       ...result,
-      items: filtered.slice(start, start + perPage),
+      items: filtered,
       totalItems: filtered.length,
     };
   },

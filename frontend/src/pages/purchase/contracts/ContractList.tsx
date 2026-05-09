@@ -134,10 +134,17 @@ export const ContractList: React.FC = () => {
       attachments = extractAttachments(values.attachments);
     }
 
+    const rawEntries = Object.entries(values).filter(([, v]) => v !== undefined && v !== '' && v !== null);
+    if (values.sign_date) {
+      const idx = rawEntries.findIndex(([k]) => k === 'sign_date');
+      if (idx >= 0) {
+        const d = values.sign_date as unknown as { format?: (fmt: string) => string };
+        rawEntries[idx] = ['sign_date', d.format ? d.format('YYYY-MM-DD') : String(values.sign_date)];
+      }
+    }
+
     const data = {
-      ...Object.fromEntries(
-        Object.entries(values).filter(([, v]) => v !== undefined && v !== '' && v !== null)
-      ),
+      ...Object.fromEntries(rawEntries),
       attachments,
     } as PurchaseContractFormData;
 
@@ -196,9 +203,9 @@ export const ContractList: React.FC = () => {
       key: 'execution_percent',
       width: 120,
       render: (percent: number) => (
-        <Progress 
-          percent={percent || 0} 
-          size="small" 
+        <Progress
+          percent={Number((percent || 0).toFixed(2))}
+          size="small"
           strokeColor={{ '0%': '#722ed1', '100%': '#b37feb' }}
           trailColor="#f0f0f0"
         />
@@ -210,9 +217,9 @@ export const ContractList: React.FC = () => {
       key: 'invoiced_percent',
       width: 120,
       render: (percent: number) => (
-        <Progress 
-          percent={percent || 0} 
-          size="small" 
+        <Progress
+          percent={Number((percent || 0).toFixed(2))}
+          size="small"
           strokeColor={{ '0%': '#722ed1', '100%': '#b37feb' }}
           trailColor="#f0f0f0"
         />
@@ -224,9 +231,9 @@ export const ContractList: React.FC = () => {
       key: 'paid_percent',
       width: 120,
       render: (percent: number) => (
-        <Progress 
-          percent={percent || 0} 
-          size="small" 
+        <Progress
+          percent={Number((percent || 0).toFixed(2))}
+          size="small"
           strokeColor={{ '0%': '#722ed1', '100%': '#b37feb' }}
           trailColor="#f0f0f0"
         />

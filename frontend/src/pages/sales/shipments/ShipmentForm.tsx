@@ -153,7 +153,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
             label="客户到货数量"
             rules={[{ required: true, message: '请输入客户到货数量' }]}
           >
-            <InputNumber min={0.01} precision={4} style={{ width: '100%' }} placeholder="请输入客户到货数量" />
+            <InputNumber min={0.000001} precision={6} style={{ width: '100%' }} placeholder="请输入客户到货数量" />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
