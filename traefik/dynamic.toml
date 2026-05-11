@@ -5,7 +5,47 @@
     middlewares = ["redirect-to-https"]
     service = "noop@internal"
 
+  [http.routers.frontend]
+    rule = "Host(`erp.henghuacheng.cn`)"
+    entryPoints = ["websecure"]
+    service = "frontend"
+    [http.routers.frontend.tls]
+      certResolver = "letsencrypt"
+
+  [http.routers.lanzhou-api]
+    rule = "Host(`api-lanzhou.henghuacheng.cn`)"
+    entryPoints = ["websecure"]
+    service = "lanzhou-pocketbase"
+    [http.routers.lanzhou-api.tls]
+      certResolver = "letsencrypt"
+
+  [http.routers.beijing-api]
+    rule = "Host(`api-beijing.henghuacheng.cn`)"
+    entryPoints = ["websecure"]
+    service = "beijing-pocketbase"
+    [http.routers.beijing-api.tls]
+      certResolver = "letsencrypt"
+
 [http.middlewares]
   [http.middlewares.redirect-to-https.redirectScheme]
     scheme = "https"
     permanent = true
+
+[http.services]
+  [http.services.frontend.loadBalancer]
+    [[http.services.frontend.loadBalancer.servers]]
+      url = "http://erp-frontend:80"
+
+  [http.services.lanzhou-pocketbase.loadBalancer]
+    [[http.services.lanzhou-pocketbase.loadBalancer.servers]]
+      url = "http://erp-pocketbase-lanzhou:8090"
+
+  [http.services.beijing-pocketbase.loadBalancer]
+    [[http.services.beijing-pocketbase.loadBalancer.servers]]
+      url = "http://erp-pocketbase-beijing:8090"
+
+[http.serversTransports]
+  [http.serversTransports.default]
+    [http.serversTransports.default.forwardingTimeouts]
+      dialTimeout = "30s"
+      responseHeaderTimeout = "120s"

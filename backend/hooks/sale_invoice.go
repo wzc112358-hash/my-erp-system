@@ -55,19 +55,49 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			e.Record.Set("uninvoiced_amount", uninvoicedAmount)
 			e.Record.Set("uninvoiced_percent", uninvoicedPercent)
 
+			return e.Next()
+		},
+		Priority: 0,
+	})
+
+	app.OnRecordAfterCreateSuccess("sale_invoices").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			contractId := e.Record.GetString("sales_contract")
+			if contractId == "" {
+				return e.Next()
+			}
+
+			contract, err := GetRecordById(app, "sales_contracts", contractId)
+			if err != nil {
+				log.Printf("[SaleInvoice] AfterCreate: Failed to get contract %s: %v\n", contractId, err)
+				return e.Next()
+			}
+
+			invoices, err := GetRecordsByField(app, "sale_invoices", "sales_contract", contractId)
+			if err != nil {
+				log.Printf("[SaleInvoice] AfterCreate: Failed to get invoices: %v\n", err)
+				invoices = []*core.Record{}
+			}
+
+			totalAmount := SumField(invoices, "amount")
+			totalContractAmount := contract.GetFloat("total_amount")
+			var invoicePercent, uninvoicedAmount, uninvoicedPercent float64
+
+			if totalContractAmount > 0 {
+				invoicePercent = (totalAmount / totalContractAmount) * 100
+				uninvoicedAmount = totalContractAmount - totalAmount
+				uninvoicedPercent = (uninvoicedAmount / totalContractAmount) * 100
+			}
+
 			contract.Set("invoiced_amount", totalAmount)
 			contract.Set("invoice_percent", invoicePercent)
 			contract.Set("uninvoiced_amount", uninvoicedAmount)
 			contract.Set("uninvoiced_percent", uninvoicedPercent)
 
-			log.Printf("[SaleInvoice] Updating contract %s: invoiced_amount=%.2f, invoice_percent=%.2f\n",
+			log.Printf("[SaleInvoice] AfterCreate: Updating contract %s: invoiced_amount=%.2f, invoice_percent=%.2f\n",
 				contractId, totalAmount, invoicePercent)
 
-			if err := updateSalesContractStatus(app, contract); err != nil {
-				return err
-			}
-
-			return e.Next()
+			return updateSalesContractStatus(app, contract)
 		},
 		Priority: 0,
 	})

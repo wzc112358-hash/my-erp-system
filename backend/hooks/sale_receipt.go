@@ -58,19 +58,52 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			e.Record.Set("debt_amount", debtAmount)
 			e.Record.Set("debt_percent", debtPercent)
 
+			return e.Next()
+		},
+		Priority: 0,
+	})
+
+	app.OnRecordAfterCreateSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			contractId := e.Record.GetString("sales_contract")
+			if contractId == "" {
+				return e.Next()
+			}
+
+			contract, err := GetRecordById(app, "sales_contracts", contractId)
+			if err != nil {
+				log.Printf("[SaleReceipt] AfterCreate: Failed to get contract %s: %v\n", contractId, err)
+				return e.Next()
+			}
+
+			receipts, err := GetRecordsByField(app, "sale_receipts", "sales_contract", contractId)
+			if err != nil {
+				log.Printf("[SaleReceipt] AfterCreate: Failed to get receipts: %v\n", err)
+				receipts = []*core.Record{}
+			}
+
+			totalAmount := SumField(receipts, "amount")
+			executedQuantity := contract.GetFloat("executed_quantity")
+			unitPrice := contract.GetFloat("unit_price")
+			receivableAmount := executedQuantity * unitPrice
+
+			var receiptPercent, debtAmount, debtPercent float64
+
+			if receivableAmount > 0 {
+				receiptPercent = (totalAmount / receivableAmount) * 100
+				debtAmount = receivableAmount - totalAmount
+				debtPercent = (totalAmount / receivableAmount) * 100
+			}
+
 			contract.Set("receipted_amount", totalAmount)
 			contract.Set("receipt_percent", receiptPercent)
 			contract.Set("debt_amount", debtAmount)
 			contract.Set("debt_percent", debtPercent)
 
-			log.Printf("[SaleReceipt] Updating contract %s: receipted_amount=%.2f, receipt_percent=%.2f\n",
+			log.Printf("[SaleReceipt] AfterCreate: Updating contract %s: receipted_amount=%.2f, receipt_percent=%.2f\n",
 				contractId, totalAmount, receiptPercent)
 
-			if err := updateSalesContractStatus(app, contract); err != nil {
-				return err
-			}
-
-			return e.Next()
+			return updateSalesContractStatus(app, contract)
 		},
 		Priority: 0,
 	})
