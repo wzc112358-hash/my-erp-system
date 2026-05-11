@@ -91,7 +91,9 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			if oldStatus == "pending" && newStatus == "approved" {
 				creatorId := e.Record.GetString("creator")
 				amount := e.Record.GetFloat("amount")
-				title := "采购付款已确认"
+				contractNo := contract.GetString("no")
+				productName := contract.GetString("product_name")
+				title := fmt.Sprintf("%s %s - 采购付款已确认", contractNo, productName)
 				message := fmt.Sprintf("经理已确认您的采购付款申请，付款金额：%.2f", amount)
 
 				log.Printf("[PurchasePayment] Sending notification to %s: %s\n", creatorId, title)

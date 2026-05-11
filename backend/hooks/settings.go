@@ -24,22 +24,18 @@ func RegisterSettingsHooks(app *pocketbase.PocketBase) {
 			salesUsers, err := GetUsersByType(app, "sales")
 			if err != nil {
 				log.Printf("[Settings] Failed to get sales users: %v\n", err)
-			} else {
-			for _, user := range salesUsers {
-				if err := CreateNotification02(app, "exchange_rate_changed", title, message, user.Id, ""); err != nil {
-					log.Printf("[Settings] Failed to create notification for sales user %s: %v\n", user.Id, err)
+			} else if len(salesUsers) > 0 {
+				if err := CreateNotification02(app, "exchange_rate_changed", title, message, "sales", ""); err != nil {
+					log.Printf("[Settings] Failed to create notification for sales: %v\n", err)
 				}
-			}
 			}
 
 			purchaseUsers, err := GetUsersByType(app, "purchasing")
 			if err != nil {
 				log.Printf("[Settings] Failed to get purchasing users: %v\n", err)
-			} else {
-				for _, user := range purchaseUsers {
-					if err := CreateNotification(app, "exchange_rate_changed", title, message, user.Id, ""); err != nil {
-						log.Printf("[Settings] Failed to create notification for purchase user %s: %v\n", user.Id, err)
-					}
+			} else if len(purchaseUsers) > 0 {
+				if err := CreateNotification(app, "exchange_rate_changed", title, message, "purchasing", ""); err != nil {
+					log.Printf("[Settings] Failed to create notification for purchasing: %v\n", err)
 				}
 			}
 

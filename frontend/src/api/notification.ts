@@ -11,7 +11,9 @@ export const NotificationAPI = {
     }
 
     if (pb.authStore.record) {
-      filters.push(`recipient = "${pb.authStore.record.id}"`);
+      const userId = pb.authStore.record.id;
+      const userType = (pb.authStore.record as Record<string, unknown>).type || '';
+      filters.push(`(recipient = "${userId}" || recipient = "${userType}")`);
     }
 
     const result = await pb.collection('notifications').getList<Notification>(

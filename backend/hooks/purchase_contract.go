@@ -56,7 +56,9 @@ func RegisterPurchaseContractHooks(app *pocketbase.PocketBase) {
 				}
 			}
 
-			title := "新采购合同需要销售"
+			title := fmt.Sprintf("%s %s - 新采购合同需要销售",
+				e.Record.GetString("no"),
+				e.Record.GetString("product_name"))
 			var message string
 			if e.Record.GetBool("is_cross_border") {
 				message = fmt.Sprintf("采购合同 %s 已创建，客户: %s，品名: %s，数量: %.2f吨，金额: $%.2f USD",
@@ -85,11 +87,9 @@ func RegisterPurchaseContractHooks(app *pocketbase.PocketBase) {
 				return e.Next()
 			}
 
-			for _, user := range salesUsers {
-				err := CreateNotification02(app, "purchase_contract_reminder", title, message, user.Id, e.Record.Id)
-				if err != nil {
-					log.Printf("[PurchaseContract] Failed to create notification: %v\n", err)
-				}
+			err = CreateNotification02(app, "purchase_contract_reminder", title, message, "sales", e.Record.Id)
+			if err != nil {
+				log.Printf("[PurchaseContract] Failed to create notification: %v\n", err)
 			}
 
 			return e.Next()

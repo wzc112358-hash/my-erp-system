@@ -177,7 +177,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			if oldStatus == "pending" && newStatus == "approved" {
 				creatorId := e.Record.GetString("creator")
 				invoiceNo := e.Record.GetString("no")
-				title := "销售开票已确认"
+				contractNo := contract.GetString("no")
+				productName := contract.GetString("product_name")
+				title := fmt.Sprintf("%s %s - 销售开票已确认", contractNo, productName)
 				message := fmt.Sprintf("经理已确认您的销售开票申请，发票号：%s", invoiceNo)
 
 				log.Printf("[SaleInvoice] Sending notification to %s: %s\n", creatorId, title)

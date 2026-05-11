@@ -48,4 +48,7 @@
   [http.serversTransports.default]
     [http.serversTransports.default.forwardingTimeouts]
       dialTimeout = "30s"
-      responseHeaderTimeout = "120s"
+      responseHeaderTimeout = "300s"
+      idleConnTimeout = "300s"
+    [http.serversTransports.default.maxIdleConnsPerHost]
+      max = 50

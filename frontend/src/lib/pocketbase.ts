@@ -5,10 +5,6 @@ const getCurrentSystem = (): string => {
 };
 
 const getApiBaseUrl = (): string => {
-  // ⚠️ 开发阶段使用本地 PocketBase
-  // ⚠️ 部署前需替换为生产域名:
-  //    北京: https://api-beijing.henghuacheng.cn
-  //    兰州: https://api-lanzhou.henghuacheng.cn
   if (import.meta.env.DEV) {
     return 'http://127.0.0.1:8090';
   }

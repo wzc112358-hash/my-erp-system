@@ -181,7 +181,9 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			if oldStatus == "pending" && newStatus == "approved" {
 				creatorId := e.Record.GetString("creator")
 				amount := e.Record.GetFloat("amount")
-				title := "销售收款已确认"
+				contractNo := contract.GetString("no")
+				productName := contract.GetString("product_name")
+				title := fmt.Sprintf("%s %s - 销售收款已确认", contractNo, productName)
 				message := fmt.Sprintf("经理已确认您的销售收款登记，收款金额：%.2f", amount)
 
 				log.Printf("[SaleReceipt] Sending notification to %s: %s\n", creatorId, title)

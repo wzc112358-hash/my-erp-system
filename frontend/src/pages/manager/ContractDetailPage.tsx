@@ -26,10 +26,18 @@ interface ProfitCalc {
   totalFreight: number;
   totalMiscellaneous: number;
   quantityMatched: boolean;
+  salesReceivableAmount: number;
+  purchasePaidAmount: number;
 }
 
 const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
+  const salesReceivable = sc ? sc.executed_quantity * sc.unit_price : 0;
+  const salesReceivableAmount = sc?.is_cross_border ? salesReceivable * rate : salesReceivable;
+  const paidAmount = (data.purchase_payments || []).reduce((sum, p) => {
+    return sum + (p.amount ?? 0);
+  }, 0);
+
   if (!sc) {
     const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
       const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
@@ -41,6 +49,8 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
       salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmountCny / 1.13,
       totalFreight: data.profit.total_freight, totalMiscellaneous: data.profit.total_miscellaneous,
       quantityMatched: true,
+      salesReceivableAmount: 0,
+      purchasePaidAmount: paidAmount,
     };
   }
   const salesAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
@@ -67,11 +77,18 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
     totalFreight: freightCny,
     totalMiscellaneous: miscCny,
     quantityMatched: data.profit.is_quantity_matched,
+    salesReceivableAmount,
+    purchasePaidAmount: paidAmount,
   };
 };
 
 const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
+  const salesReceivable = sc ? sc.executed_quantity * sc.unit_price : 0;
+  const paidAmountUSD = (data.purchase_payments || []).reduce((sum, p) => {
+    return sum + (p.amount ?? 0);
+  }, 0);
+
   if (!sc) {
     const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
     return {
@@ -81,6 +98,8 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
       totalFreight: data.profit.total_freight / rate,
       totalMiscellaneous: data.profit.total_miscellaneous / rate,
       quantityMatched: true,
+      salesReceivableAmount: 0,
+      purchasePaidAmount: paidAmountUSD,
     };
   }
   const salesAmount = sc.total_amount;
@@ -102,6 +121,8 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
     totalFreight: freight,
     totalMiscellaneous: misc,
     quantityMatched: data.profit.is_quantity_matched,
+    salesReceivableAmount: salesReceivable,
+    purchasePaidAmount: paidAmountUSD,
   };
 };
 
@@ -492,6 +513,8 @@ const ContractDetailPage: React.FC = () => {
                     <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
                     <Descriptions.Item label="采购总金额（不含税）">{formatCurrency(cnyCalc.purchaseAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="应收金额">{formatCurrency(cnyCalc.salesReceivableAmount)}</Descriptions.Item>
+                    <Descriptions.Item label="已付金额">{formatCurrency(cnyCalc.purchasePaidAmount)}</Descriptions.Item>
                     <Descriptions.Item label="运费合计">{formatCurrency(cnyCalc.totalFreight)}</Descriptions.Item>
                     <Descriptions.Item label="杂费合计">{formatCurrency(cnyCalc.totalMiscellaneous)}</Descriptions.Item>
                     <Descriptions.Item label="营业利润">
@@ -523,6 +546,8 @@ const ContractDetailPage: React.FC = () => {
                     <Descriptions.Item label="采购总金额（含税）">{formatUSD(usdCalc!.purchaseAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="销售总金额（不含税）">{formatUSD(usdCalc!.salesAmountExTax)}</Descriptions.Item>
                     <Descriptions.Item label="采购总金额（不含税）">{formatUSD(usdCalc!.purchaseAmountExTax)}</Descriptions.Item>
+                    <Descriptions.Item label="应收金额">{formatUSD(usdCalc!.salesReceivableAmount)}</Descriptions.Item>
+                    <Descriptions.Item label="已付金额">{formatUSD(usdCalc!.purchasePaidAmount)}</Descriptions.Item>
                     <Descriptions.Item label="运费合计">{formatUSD(usdCalc!.totalFreight)}</Descriptions.Item>
                     <Descriptions.Item label="杂费合计">{formatUSD(usdCalc!.totalMiscellaneous)}</Descriptions.Item>
                     <Descriptions.Item label="营业利润">
@@ -551,6 +576,8 @@ const ContractDetailPage: React.FC = () => {
               <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
               <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
               <Descriptions.Item label="采购总金额（不含税）">{formatCurrency(cnyCalc.purchaseAmountExTax)}</Descriptions.Item>
+              <Descriptions.Item label="应收金额">{formatCurrency(cnyCalc.salesReceivableAmount)}</Descriptions.Item>
+              <Descriptions.Item label="已付金额">{formatCurrency(cnyCalc.purchasePaidAmount)}</Descriptions.Item>
               <Descriptions.Item label="运费合计">{formatCurrency(cnyCalc.totalFreight)}</Descriptions.Item>
               <Descriptions.Item label="杂费合计">{formatCurrency(cnyCalc.totalMiscellaneous)}</Descriptions.Item>
               <Descriptions.Item label="营业利润">
