@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type { 
   SalesContract, 
@@ -44,6 +45,8 @@ export const SalesContractAPI = {
   },
 
   create: async (data: SalesContractFormData) => {
+    const attachments = data.attachments;
+
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('customer', data.customer);
@@ -59,16 +62,12 @@ export const SalesContractAPI = {
     if (data.sales_manager) formData.append('sales_manager', data.sales_manager);
     if (data.is_price_excluding_tax !== undefined) formData.append('is_price_excluding_tax', String(data.is_price_excluding_tax));
     if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('sales_contracts').create<SalesContract>(formData);
+
+    return createWithAttachments<SalesContract>(
+      'sales_contracts',
+      formData,
+      attachments,
+    );
   },
 
   update: async (id: string, data: Partial<SalesContractFormData>) => {

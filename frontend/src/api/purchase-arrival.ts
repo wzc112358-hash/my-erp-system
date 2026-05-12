@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   PurchaseArrival,
@@ -48,6 +49,7 @@ export const PurchaseArrivalAPI = {
   },
 
   create: async (data: PurchaseArrivalFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('product_name', data.product_name);
     formData.append('purchase_contract', data.purchase_contract);
@@ -73,16 +75,7 @@ export const PurchaseArrivalAPI = {
     formData.append('invoice_1_status', data.invoice_1_status);
     if (data.invoice_2_status) formData.append('invoice_2_status', data.invoice_2_status);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('purchase_arrivals').create<PurchaseArrival>(formData);
+    return createWithAttachments<PurchaseArrival>('purchase_arrivals', formData, attachments);
   },
 
   update: async (id: string, data: Partial<PurchaseArrivalFormData>) => {
@@ -92,15 +85,6 @@ export const PurchaseArrivalAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('purchase_arrivals').update<PurchaseArrival>(id, formData);
   },
 

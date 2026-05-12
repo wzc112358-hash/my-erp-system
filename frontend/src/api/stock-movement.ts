@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   StockMovement,
@@ -37,21 +38,13 @@ export const StockMovementAPI = {
   },
 
   create: async (data: StockMovementFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('inventory', data.inventory);
     formData.append('movement_type', data.movement_type);
     formData.append('quantity', String(data.quantity));
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-        formData.append('attachments', '');
-      } else {
-        data.attachments.forEach((file) => {
-          formData.append('attachments', file);
-        });
-      }
-    }
-    return pb.collection('stock_movements').create<StockMovement>(formData);
+    return createWithAttachments<StockMovement>('stock_movements', formData, attachments);
   },
 
   delete: async (id: string) => {
@@ -64,15 +57,6 @@ export const StockMovementAPI = {
     formData.append('movement_type', data.movement_type);
     formData.append('quantity', String(data.quantity));
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-        formData.append('attachments', '');
-      } else {
-        data.attachments.forEach((file) => {
-          formData.append('attachments', file);
-        });
-      }
-    }
     return pb.collection('stock_movements').update<StockMovement>(id, formData);
   },
 };

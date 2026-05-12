@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   BiddingRecord,
@@ -43,6 +44,7 @@ export const BiddingRecordAPI = {
   },
 
   create: async (data: BiddingRecordFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('bidding_company', data.bidding_company);
     formData.append('bidding_no', data.bidding_no);
@@ -65,16 +67,7 @@ export const BiddingRecordAPI = {
         formData.append('tender_fee_invoice', file);
       });
     }
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('bidding_records').create<BiddingRecord>(formData);
+    return createWithAttachments<BiddingRecord>('bidding_records', formData, attachments);
   },
 
   update: async (id: string, data: Partial<BiddingRecordFormData>) => {
@@ -105,15 +98,6 @@ export const BiddingRecordAPI = {
         formData.append('tender_fee_invoice', file);
       });
     }
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('bidding_records').update<BiddingRecord>(id, formData);
   },
 

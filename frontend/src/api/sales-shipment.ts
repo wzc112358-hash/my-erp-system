@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type { SalesShipment, SalesShipmentFormData, SalesShipmentListParams } from '@/types/sales-shipment';
 import { SalesContractAPI as SCAPI } from './sales-contract';
@@ -42,6 +43,7 @@ export const SalesShipmentAPI = {
   },
 
   create: async (data: SalesShipmentFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('product_name', data.product_name);
     formData.append('sales_contract', data.sales_contract);
@@ -51,16 +53,7 @@ export const SalesShipmentAPI = {
     formData.append('logistics_company', data.logistics_company);
     formData.append('delivery_address', data.delivery_address);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('sales_shipments').create<SalesShipment>(formData);
+    return createWithAttachments<SalesShipment>('sales_shipments', formData, attachments);
   },
 
   update: async (id: string, data: Partial<SalesShipmentFormData>) => {
@@ -70,15 +63,6 @@ export const SalesShipmentAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('sales_shipments').update<SalesShipment>(id, formData);
   },
 

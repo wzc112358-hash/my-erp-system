@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type { PurchaseInvoice, PurchaseInvoiceFormData, PurchaseInvoiceListParams } from '@/types/purchase-contract';
 
@@ -31,6 +32,7 @@ export const PurchaseInvoiceAPI = {
   },
 
   create: async (data: PurchaseInvoiceFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('product_name', data.product_name);
@@ -44,16 +46,7 @@ export const PurchaseInvoiceAPI = {
     if (data.tax_rate) formData.append('tax_rate', String(data.tax_rate));
     if (data.tax_amount) formData.append('tax_amount', String(data.tax_amount));
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('purchase_invoices').create<PurchaseInvoice>(formData);
+    return createWithAttachments<PurchaseInvoice>('purchase_invoices', formData, attachments);
   },
 
   update: async (id: string, data: Partial<PurchaseInvoiceFormData>) => {
@@ -63,15 +56,6 @@ export const PurchaseInvoiceAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('purchase_invoices').update<PurchaseInvoice>(id, formData);
   },
 

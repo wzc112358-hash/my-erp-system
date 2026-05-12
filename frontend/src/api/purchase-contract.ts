@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   PurchaseContract,
@@ -47,6 +48,8 @@ export const PurchaseContractAPI = {
   },
 
   create: async (data: PurchaseContractFormData) => {
+    const attachments = data.attachments;
+
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('supplier', data.supplier);
@@ -61,16 +64,12 @@ export const PurchaseContractAPI = {
     if (data.remark) formData.append('remark', data.remark);
     if (data.purchasing_manager) formData.append('purchasing_manager', data.purchasing_manager);
     if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('purchase_contracts').create<PurchaseContract>(formData);
+
+    return createWithAttachments<PurchaseContract>(
+      'purchase_contracts',
+      formData,
+      attachments,
+    );
   },
 
   update: async (id: string, data: Partial<PurchaseContractFormData>) => {
@@ -166,6 +165,7 @@ export const PaymentAPI = {
   },
 
   create: async (data: PurchasePaymentFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('product_name', data.product_name);
@@ -175,16 +175,7 @@ export const PaymentAPI = {
     formData.append('pay_date', data.pay_date);
     if (data.method) formData.append('method', data.method);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('purchase_payments').create<PurchasePayment>(formData);
+    return createWithAttachments<PurchasePayment>('purchase_payments', formData, attachments);
   },
 
   update: async (id: string, data: Partial<PurchasePaymentFormData>) => {

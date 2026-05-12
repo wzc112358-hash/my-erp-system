@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type { SaleReceipt, SaleReceiptFormData, SaleReceiptListParams } from '@/types';
 
@@ -31,6 +32,7 @@ export const ReceiptAPI = {
   },
 
   create: async (data: SaleReceiptFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('product_name', data.product_name);
     formData.append('sales_contract', data.sales_contract);
@@ -41,16 +43,7 @@ export const ReceiptAPI = {
     if (data.method) formData.append('method', data.method);
     if (data.account) formData.append('account', data.account);
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('sale_receipts').create<SaleReceipt>(formData);
+    return createWithAttachments<SaleReceipt>('sale_receipts', formData, attachments);
   },
 
   update: async (id: string, data: Partial<SaleReceiptFormData>) => {
@@ -60,15 +53,6 @@ export const ReceiptAPI = {
         formData.append(key, String(value));
       }
     });
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('sale_receipts').update<SaleReceipt>(id, formData);
   },
 

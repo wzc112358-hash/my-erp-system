@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   Inventory,
@@ -35,37 +36,20 @@ export const InventoryAPI = {
   },
 
   create: async (data: InventoryFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('product_name', data.product_name);
     formData.append('remaining_quantity', '0');
     formData.append('total_in_quantity', '0');
     formData.append('total_out_quantity', '0');
     if (data.remark) formData.append('remark', data.remark);
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-        formData.append('attachments', '');
-      } else {
-        data.attachments.forEach((file) => {
-          formData.append('attachments', file);
-        });
-      }
-    }
-    return pb.collection('inventory').create<Inventory>(formData);
+    return createWithAttachments<Inventory>('inventory', formData, attachments);
   },
 
   update: async (id: string, data: Partial<InventoryFormData>) => {
     const formData = new FormData();
     if (data.product_name !== undefined) formData.append('product_name', data.product_name);
     if (data.remark !== undefined) formData.append('remark', data.remark || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-        formData.append('attachments', '');
-      } else {
-        data.attachments.forEach((file) => {
-          formData.append('attachments', file);
-        });
-      }
-    }
     return pb.collection('inventory').update<Inventory>(id, formData);
   },
 

@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   ServiceContract,
@@ -39,6 +40,7 @@ export const ServiceContractAPI = {
   },
 
   create: async (data: ServiceContractFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('customer', data.customer);
@@ -48,16 +50,7 @@ export const ServiceContractAPI = {
     if (data.remark) formData.append('remark', data.remark);
     if (data.sales_manager) formData.append('sales_manager', data.sales_manager);
     formData.append('creator_user', pb.authStore.record?.id || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('service_contracts').create<ServiceContract>(formData);
+    return createWithAttachments<ServiceContract>('service_contracts', formData, attachments);
   },
 
   update: async (id: string, data: Partial<ServiceContractFormData>) => {
@@ -69,15 +62,6 @@ export const ServiceContractAPI = {
     if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
     if (data.remark !== undefined) formData.append('remark', data.remark);
     if (data.sales_manager !== undefined) formData.append('sales_manager', data.sales_manager || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('service_contracts').update<ServiceContract>(id, formData);
   },
 
@@ -93,6 +77,7 @@ export const ServiceContractAPI = {
   },
 
   createOrder: async (data: ServiceOrderFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('service_contract', data.service_contract);
     formData.append('order_no', data.order_no);
@@ -118,16 +103,7 @@ export const ServiceContractAPI = {
     if (data.remark) formData.append('remark', data.remark);
     if (data.manager) formData.append('manager', data.manager);
     formData.append('creator_user', pb.authStore.record?.id || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('service_orders').create<ServiceOrder>(formData);
+    return createWithAttachments<ServiceOrder>('service_orders', formData, attachments);
   },
 
   updateOrder: async (id: string, data: Partial<ServiceOrderFormData>) => {
@@ -154,15 +130,6 @@ export const ServiceContractAPI = {
     if (data.payment_amount !== undefined) formData.append('payment_amount', String(data.payment_amount));
     if (data.remark !== undefined) formData.append('remark', data.remark);
     if (data.manager !== undefined) formData.append('manager', data.manager || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('service_orders').update<ServiceOrder>(id, formData);
   },
 

@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { createWithAttachments } from './helpers';
 
 import type {
   ExpenseRecord,
@@ -39,6 +40,7 @@ export const ExpenseRecordAPI = {
   },
 
   create: async (data: ExpenseRecordFormData) => {
+    const attachments = data.attachments;
     const formData = new FormData();
     formData.append('no', data.no);
     formData.append('expense_type', data.expense_type);
@@ -49,16 +51,7 @@ export const ExpenseRecordAPI = {
     if (data.remark) formData.append('remark', data.remark);
     if (data.purchasing_manager) formData.append('purchasing_manager', data.purchasing_manager);
     formData.append('creator_user', pb.authStore.record?.id || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
-    return pb.collection('expense_records').create<ExpenseRecord>(formData);
+    return createWithAttachments<ExpenseRecord>('expense_records', formData, attachments);
   },
 
   update: async (id: string, data: Partial<ExpenseRecordFormData>) => {
@@ -71,15 +64,6 @@ export const ExpenseRecordAPI = {
     if (data.method !== undefined) formData.append('method', data.method || '');
     if (data.remark !== undefined) formData.append('remark', data.remark);
     if (data.purchasing_manager !== undefined) formData.append('purchasing_manager', data.purchasing_manager || '');
-    if (data.attachments !== undefined) {
-      if (data.attachments.length === 0) {
-            formData.append('attachments', '');
-      } else {
-            data.attachments.forEach((file) => {
-                  formData.append('attachments', file);
-            });
-      }
-      }
     return pb.collection('expense_records').update<ExpenseRecord>(id, formData);
   },
 
