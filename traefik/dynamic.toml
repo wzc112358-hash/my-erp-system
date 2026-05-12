@@ -50,5 +50,3 @@
       dialTimeout = "30s"
       responseHeaderTimeout = "300s"
       idleConnTimeout = "300s"
-    [http.serversTransports.default.maxIdleConnsPerHost]
-      max = 50
