@@ -98,6 +98,15 @@ export const BiddingRecordAPI = {
         formData.append('tender_fee_invoice', file);
       });
     }
+    if (data.attachments && Array.isArray(data.attachments)) {
+      data.attachments.forEach((attachment) => {
+        if (attachment instanceof File) {
+          formData.append('attachments', attachment);
+        } else if (typeof attachment === 'string') {
+          formData.append('attachments', attachment);
+        }
+      });
+    }
     return pb.collection('bidding_records').update<BiddingRecord>(id, formData);
   },
 

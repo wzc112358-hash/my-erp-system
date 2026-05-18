@@ -16,7 +16,7 @@ interface ContractOption {
 }
 
 interface InvoiceFormProps {
-  initialValues?: Partial<PurchaseInvoiceFormData>;
+  initialValues?: Partial<PurchaseInvoiceFormData> & Record<string, unknown>;
   onFinish: (values: Record<string, unknown>) => void;
   onCancel: () => void;
 }

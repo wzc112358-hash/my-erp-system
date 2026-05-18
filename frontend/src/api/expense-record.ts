@@ -56,14 +56,20 @@ export const ExpenseRecordAPI = {
 
   update: async (id: string, data: Partial<ExpenseRecordFormData>) => {
     const formData = new FormData();
-    if (data.no !== undefined) formData.append('no', data.no);
-    if (data.expense_type !== undefined) formData.append('expense_type', data.expense_type);
-    if (data.description !== undefined) formData.append('description', data.description);
-    if (data.payment_amount !== undefined) formData.append('payment_amount', String(data.payment_amount));
-    if (data.pay_date !== undefined) formData.append('pay_date', data.pay_date);
-    if (data.method !== undefined) formData.append('method', data.method || '');
-    if (data.remark !== undefined) formData.append('remark', data.remark);
-    if (data.purchasing_manager !== undefined) formData.append('purchasing_manager', data.purchasing_manager || '');
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && key !== 'attachments') {
+        formData.append(key, String(value));
+      }
+    });
+    if (data.attachments && Array.isArray(data.attachments)) {
+      data.attachments.forEach((attachment) => {
+        if (attachment instanceof File) {
+          formData.append('attachments', attachment);
+        } else if (typeof attachment === 'string') {
+          formData.append('attachments', attachment);
+        }
+      });
+    }
     return pb.collection('expense_records').update<ExpenseRecord>(id, formData);
   },
 

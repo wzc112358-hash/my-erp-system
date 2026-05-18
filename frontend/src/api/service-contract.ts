@@ -55,13 +55,20 @@ export const ServiceContractAPI = {
 
   update: async (id: string, data: Partial<ServiceContractFormData>) => {
     const formData = new FormData();
-    if (data.no !== undefined) formData.append('no', data.no);
-    if (data.customer !== undefined) formData.append('customer', data.customer);
-    if (data.product_name !== undefined) formData.append('product_name', data.product_name);
-    if (data.sign_date !== undefined) formData.append('sign_date', data.sign_date);
-    if (data.is_cross_border !== undefined) formData.append('is_cross_border', String(data.is_cross_border));
-    if (data.remark !== undefined) formData.append('remark', data.remark);
-    if (data.sales_manager !== undefined) formData.append('sales_manager', data.sales_manager || '');
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && key !== 'attachments') {
+        formData.append(key, String(value));
+      }
+    });
+    if (data.attachments && Array.isArray(data.attachments)) {
+      data.attachments.forEach((attachment) => {
+        if (attachment instanceof File) {
+          formData.append('attachments', attachment);
+        } else if (typeof attachment === 'string') {
+          formData.append('attachments', attachment);
+        }
+      });
+    }
     return pb.collection('service_contracts').update<ServiceContract>(id, formData);
   },
 

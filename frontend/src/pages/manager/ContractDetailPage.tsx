@@ -82,18 +82,10 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny;
 
   let currentProfit = 0;
-  let currentProfitTax = 0;
-  let currentProfitNet = 0;
   if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
-    const salesForMin = salesExTax * (minQty / salesQty);
-    const purchaseForMin = (purchaseTotalAmountCny / 1.13) * (minQty / purchaseQty);
-    const freightForMin = freightCny * (minQty / Math.max(salesQty, purchaseQty));
-    const miscForMin = miscCny * (minQty / Math.max(salesQty, purchaseQty));
-    const salesIncForMin = salesIncTax * (minQty / salesQty);
-    const purchaseIncForMin = purchaseTotalAmountCny * (minQty / purchaseQty);
-    currentProfit = salesForMin - purchaseForMin - freightForMin - miscForMin;
-    currentProfitTax = (salesIncForMin - purchaseIncForMin) * 0.1881;
-    currentProfitNet = salesIncForMin - purchaseIncForMin - currentProfitTax - freightForMin - miscForMin;
+    const salesUnitPrice = salesAmountCny / salesQty;
+    const purchaseUnitPrice = purchaseTotalAmountCny / purchaseQty;
+    currentProfit = (salesUnitPrice - purchaseUnitPrice) * minQty;
   }
 
   return {
@@ -107,7 +99,7 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
     quantityMatched: data.profit.is_quantity_matched,
     salesReceivableAmount,
     purchasePaidAmount: paidAmount,
-    currentProfit, currentProfitTax, currentProfitNet,
+    currentProfit, currentProfitTax: 0, currentProfitNet: 0,
     minQty, salesQty, purchaseQty,
   };
 };
@@ -150,18 +142,10 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc;
 
   let currentProfit = 0;
-  let currentProfitTax = 0;
-  let currentProfitNet = 0;
   if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
-    const salesForMin = salesExTax * (minQty / salesQty);
-    const purchaseForMin = (purchaseTotalAmount / 1.13) * (minQty / purchaseQty);
-    const freightForMin = freight * (minQty / Math.max(salesQty, purchaseQty));
-    const miscForMin = misc * (minQty / Math.max(salesQty, purchaseQty));
-    const salesIncForMin = salesIncTax * (minQty / salesQty);
-    const purchaseIncForMin = purchaseTotalAmount * (minQty / purchaseQty);
-    currentProfit = salesForMin - purchaseForMin - freightForMin - miscForMin;
-    currentProfitTax = (salesIncForMin - purchaseIncForMin) * 0.1881;
-    currentProfitNet = salesIncForMin - purchaseIncForMin - currentProfitTax - freightForMin - miscForMin;
+    const salesUnitPrice = salesAmount / salesQty;
+    const purchaseUnitPrice = purchaseTotalAmount / purchaseQty;
+    currentProfit = (salesUnitPrice - purchaseUnitPrice) * minQty;
   }
 
   return {
@@ -175,7 +159,7 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
     quantityMatched: data.profit.is_quantity_matched,
     salesReceivableAmount: salesReceivable,
     purchasePaidAmount: paidAmountUSD,
-    currentProfit, currentProfitTax, currentProfitNet,
+    currentProfit, currentProfitTax: 0, currentProfitNet: 0,
     minQty, salesQty, purchaseQty,
   };
 };
@@ -581,18 +565,11 @@ const ContractDetailPage: React.FC = () => {
                       <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
                     </Descriptions.Item>
                     {!cnyCalc.quantityMatched && cnyCalc.minQty > 0 && (
-                      <>
-                        <Descriptions.Item label="当前利润（按 {cnyCalc.minQty} 吨计）" span={2}>
-                          <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                            {formatCurrency(cnyCalc.currentProfit)}
-                          </span>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="当前净利润">
-                          <span style={{ color: cnyCalc.currentProfitNet < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold' }}>
-                            {formatCurrency(cnyCalc.currentProfitNet)}
-                          </span>
-                        </Descriptions.Item>
-                      </>
+                      <Descriptions.Item label={`当前利润（按 ${cnyCalc.minQty} 吨计）`} span={4}>
+                        <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
+                          {formatCurrency(cnyCalc.currentProfit)}
+                        </span>
+                      </Descriptions.Item>
                     )}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
@@ -628,18 +605,11 @@ const ContractDetailPage: React.FC = () => {
                       <span style={{ color: usdCalc!.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatUSD(usdCalc!.netProfit)}</span>
                     </Descriptions.Item>
                     {!cnyCalc.quantityMatched && usdCalc!.minQty > 0 && (
-                      <>
-                        <Descriptions.Item label={`当前利润（按 ${usdCalc!.minQty} 吨计）`} span={2}>
-                          <span style={{ color: usdCalc!.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                            {formatUSD(usdCalc!.currentProfit)}
-                          </span>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="当前净利润">
-                          <span style={{ color: usdCalc!.currentProfitNet < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold' }}>
-                            {formatUSD(usdCalc!.currentProfitNet)}
-                          </span>
-                        </Descriptions.Item>
-                      </>
+                      <Descriptions.Item label={`当前利润（按 ${usdCalc!.minQty} 吨计）`} span={4}>
+                        <span style={{ color: usdCalc!.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
+                          {formatUSD(usdCalc!.currentProfit)}
+                        </span>
+                      </Descriptions.Item>
                     )}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
@@ -672,18 +642,11 @@ const ContractDetailPage: React.FC = () => {
                 <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
               </Descriptions.Item>
               {!cnyCalc.quantityMatched && cnyCalc.minQty > 0 && (
-                <>
-                  <Descriptions.Item label={`当前利润（按 ${cnyCalc.minQty} 吨计）`} span={2}>
-                    <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                      {formatCurrency(cnyCalc.currentProfit)}
-                    </span>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="当前净利润">
-                    <span style={{ color: cnyCalc.currentProfitNet < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold' }}>
-                      {formatCurrency(cnyCalc.currentProfitNet)}
-                    </span>
-                  </Descriptions.Item>
-                </>
+                <Descriptions.Item label={`当前利润（按 ${cnyCalc.minQty} 吨计）`} span={4}>
+                  <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
+                    {formatCurrency(cnyCalc.currentProfit)}
+                  </span>
+                </Descriptions.Item>
               )}
             </Descriptions>
             <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>

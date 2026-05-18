@@ -310,8 +310,13 @@ export const InvoiceList: React.FC = () => {
         <InvoiceForm
           initialValues={editingInvoice ? {
             ...editingInvoice,
-            attachments: undefined,
-          } : initialFormValues}
+            attachments: editingInvoice.attachments?.map((name: string) => ({
+              uid: name,
+              name,
+              status: 'done',
+              url: name,
+            })),
+          } as any : initialFormValues}
           onFinish={handleFormFinish}
           onCancel={() => setFormVisible(false)}
         />

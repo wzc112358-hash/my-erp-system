@@ -560,9 +560,15 @@ export const ProgressFlowPage: React.FC = () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming(true);
     try {
-      await pb.collection(modalData.collectionName).update(modalData.recordId, {
-        manager_confirmed: 'approved',
-      });
+      // Fetch current record to preserve attachments
+      const record = await pb.collection(modalData.collectionName).getOne(modalData.recordId);
+      const currentAttachments = Array.isArray(record.attachments) ? record.attachments as string[] : [];
+
+      const formData = new FormData();
+      formData.append('manager_confirmed', 'approved');
+      currentAttachments.forEach((name: string) => formData.append('attachments', name));
+
+      await pb.collection(modalData.collectionName).update(modalData.recordId, formData);
       message.success('确认成功');
       setModalVisible(false);
       setModalData(null);
@@ -586,9 +592,15 @@ export const ProgressFlowPage: React.FC = () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming(true);
     try {
-      await pb.collection(modalData.collectionName).update(modalData.recordId, {
-        manager_confirmed: 'rejected',
-      });
+      // Fetch current record to preserve attachments
+      const record = await pb.collection(modalData.collectionName).getOne(modalData.recordId);
+      const currentAttachments = Array.isArray(record.attachments) ? record.attachments as string[] : [];
+
+      const formData = new FormData();
+      formData.append('manager_confirmed', 'rejected');
+      currentAttachments.forEach((name: string) => formData.append('attachments', name));
+
+      await pb.collection(modalData.collectionName).update(modalData.recordId, formData);
       message.success('已驳回');
       setModalVisible(false);
       setModalData(null);

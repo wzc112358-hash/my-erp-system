@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip, Badge } from 'antd';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip, Badge, Pagination } from 'antd';
 import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
@@ -268,105 +268,6 @@ const PurchaseDetailModal: React.FC<{
   );
 };
 
-interface ConnectionLinesProps {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  leftColumnRef: React.RefObject<HTMLDivElement | null>;
-  rows: ContractRow[];
-  rowHeights: Map<number, number>;
-}
-
-const ConnectionLines: React.FC<ConnectionLinesProps> = ({
-  containerRef,
-  leftColumnRef,
-  rows,
-  rowHeights,
-}) => {
-  const [lines, setLines] = useState<React.ReactElement[]>([]);
-
-  useEffect(() => {
-    const updateLines = () => {
-      if (!containerRef.current || !leftColumnRef.current) return;
-
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const leftColumnRect = leftColumnRef.current.getBoundingClientRect();
-      
-      const leftColumnRight = leftColumnRect.right - containerRect.left;
-      const rightColumnLeft = leftColumnRight + 24;
-
-      const newLines: React.ReactElement[] = [];
-      let currentTop = 0;
-
-      rows.forEach((row, idx) => {
-        const rowHeight = rowHeights.get(idx) || 0;
-        
-        if (row.sales && row.purchaseSummary) {
-          const salesCardMiddle = currentTop + rowHeight / 2;
-          const purchaseCardMiddle = currentTop + rowHeight / 2;
-
-          const pathD = `M ${leftColumnRight - 10} ${salesCardMiddle} 
-                         C ${(leftColumnRight + rightColumnLeft) / 2} ${salesCardMiddle}, 
-                           ${(leftColumnRight + rightColumnLeft) / 2} ${purchaseCardMiddle}, 
-                           ${rightColumnLeft + 10} ${purchaseCardMiddle}`;
-
-          newLines.push(
-            <g key={`connection-${row.sales.id}`}>
-              <path
-                d={pathD}
-                fill="none"
-                stroke="#1890ff"
-                strokeWidth="2"
-                opacity="0.5"
-              />
-              <circle
-                cx={rightColumnLeft + 10}
-                cy={purchaseCardMiddle}
-                r="4"
-                fill="#1890ff"
-                opacity="0.5"
-              />
-            </g>
-          );
-        }
-
-        currentTop += rowHeight + 12;
-      });
-
-      setLines(newLines);
-    };
-
-    updateLines();
-
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(updateLines);
-    });
-
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [containerRef, leftColumnRef, rows, rowHeights]);
-
-  if (lines.length === 0) return null;
-
-  return (
-    <svg style={{ 
-      position: 'absolute', 
-      top: 0, 
-      left: 0, 
-      width: '100%', 
-      height: '100%', 
-      pointerEvents: 'none', 
-      overflow: 'visible',
-      zIndex: 1,
-    }}>
-      {lines}
-    </svg>
-  );
-};
-
 export const OverviewPage: React.FC = () => {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -390,11 +291,10 @@ export const OverviewPage: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalPurchases, setModalPurchases] = useState<OverviewContract[]>([]);
   
-  const containerRef = useRef<HTMLDivElement>(null);
-  const leftColumnRef = useRef<HTMLDivElement>(null);
-  const rightColumnRef = useRef<HTMLDivElement>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
   
-  const [rowHeights, setRowHeights] = useState<Map<number, number>>(new Map());
+
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -584,6 +484,16 @@ export const OverviewPage: React.FC = () => {
     return rows;
   }, [sortedSales, purchaseContracts, supplierFilter]);
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, customerFilter, supplierFilter, dateRange, sortField, sortOrder]);
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return contractRows.slice(start, start + PAGE_SIZE);
+  }, [contractRows, currentPage]);
+
   const handleSalesSelect = useCallback((id: string, checked: boolean) => {
     setSelectedSales(prev => {
       const next = new Set(prev);
@@ -753,56 +663,7 @@ export const OverviewPage: React.FC = () => {
     return row.purchaseSummary.purchaseIds.every(id => selectedPurchases.has(id));
   }, [selectedPurchases]);
 
-  const measureRowHeights = useCallback(() => {
-    if (!leftColumnRef.current || !rightColumnRef.current) return;
 
-    const leftRows = leftColumnRef.current.querySelectorAll('[data-row-idx]');
-    const rightRows = rightColumnRef.current.querySelectorAll('[data-row-idx]');
-    
-    const heights = new Map<number, number>();
-    
-    leftRows.forEach((el) => {
-      const idx = parseInt(el.getAttribute('data-row-idx') || '-1');
-      if (idx >= 0) {
-        const rect = el.getBoundingClientRect();
-        heights.set(idx, Math.max(heights.get(idx) || 0, rect.height));
-      }
-    });
-
-    rightRows.forEach((el) => {
-      const idx = parseInt(el.getAttribute('data-row-idx') || '-1');
-      if (idx >= 0) {
-        const rect = el.getBoundingClientRect();
-        heights.set(idx, Math.max(heights.get(idx) || 0, rect.height));
-      }
-    });
-
-    setRowHeights(heights);
-  }, []);
-
-  useEffect(() => {
-    if (!loading) {
-      const timeoutId = setTimeout(measureRowHeights, 100);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [loading, contractRows, measureRowHeights]);
-
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(measureRowHeights);
-    });
-
-    if (leftColumnRef.current) {
-      resizeObserver.observe(leftColumnRef.current);
-    }
-    if (rightColumnRef.current) {
-      resizeObserver.observe(rightColumnRef.current);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [measureRowHeights]);
 
   if (loading) {
     return (
@@ -912,30 +773,27 @@ export const OverviewPage: React.FC = () => {
           <Empty description="暂无合同数据" />
         </Card>
       ) : (
-        <div 
-          ref={containerRef}
-          style={{ 
-            position: 'relative',
-            display: 'grid', 
-            gridTemplateColumns: '1fr 1fr', 
-            gap: 24 
-          }}
-        >
-          <ConnectionLines 
-            containerRef={containerRef}
-            leftColumnRef={leftColumnRef}
-            rows={contractRows}
-            rowHeights={rowHeights}
-          />
-          
-          <div ref={leftColumnRef}>
-            <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: '#333' }}>
+        <div style={{ borderRadius: 12, border: '1px solid #f0f0f0', background: '#fff' }}>
+          {/* Sticky Header */}
+          <div style={{ background: '#fff', zIndex: 2, padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 0 }}>
+            <div style={{ flex: 1, fontWeight: 'bold', fontSize: 16, color: '#333' }}>
               销售合同 ({filteredSales.length})
             </div>
-            {contractRows.map((row, idx) => (
-              <div key={`sales-${row.sales?.id || 'empty-' + idx}`} data-row-idx={idx}>
-                {row.sales ? (
-                  <SalesContractCard
+            <div style={{ width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {/* Connection header spacer */}
+            </div>
+            <div style={{ flex: 1, fontWeight: 'bold', fontSize: 16, color: '#333' }}>
+              采购合同 ({purchaseContracts.length})
+            </div>
+          </div>
+          
+          {/* Contract Rows */}
+          <div style={{ padding: '8px 16px' }}>
+            {paginatedRows.map((row, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 0, marginBottom: 12, alignItems: 'stretch' }}>
+                <div style={{ flex: 1 }}>
+                  {row.sales ? (
+                    <SalesContractCard
                       contract={row.sales}
                       selected={selectedSales.has(row.sales.id)}
                       onSelect={handleSalesSelect}
@@ -943,41 +801,50 @@ export const OverviewPage: React.FC = () => {
                       onDelete={handleDeleteContract}
                       onViewFlow={() => navigate(`/manager/progress-flow?contractId=${row.sales!.id}&type=sales`)}
                     />
-                ) : (
-                  <div style={{ height: rowHeights.get(idx) || 0, marginBottom: 8 }} />
-                )}
-              </div>
-            ))}
-          </div>
-          
-          <div ref={rightColumnRef}>
-            <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: '#333' }}>
-              采购合同 ({purchaseContracts.length})
-            </div>
-            {contractRows.map((row, idx) => (
-              <div key={`purchase-group-${idx}`} data-row-idx={idx}>
-                {row.purchaseSummary ? (
-                  <div style={{ minHeight: rowHeights.get(idx) || 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  ) : (
+                    <div style={{ height: '100%', minHeight: 80 }} />
+                  )}
+                </div>
+                <div style={{ width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {row.sales && (row.purchaseSummary || row.purchases.length > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <div style={{ width: 16, height: 2, background: '#1890ff' }} />
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#1890ff' }} />
+                    </div>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  {row.purchaseSummary ? (
                     <MultiPurchaseSummaryCard
                       summary={row.purchaseSummary}
                       selected={isAllSelectedForRow(row)}
                       onSelect={handleMultiPurchaseSelect}
                       onClick={() => handleOpenModal(row.purchases)}
                     />
-                  </div>
-                ) : row.purchases.length === 1 && !row.sales ? (
-                  <div style={{ minHeight: rowHeights.get(idx) || 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  ) : row.purchases.length === 1 && !row.sales ? (
                     <PurchaseContractCard
                       contract={row.purchases[0]}
                       selected={selectedPurchases.has(row.purchases[0].id)}
                       onSelect={handlePurchaseSelect}
                     />
-                  </div>
-                ) : (
-                  <div style={{ height: rowHeights.get(idx) || 0, marginBottom: 8 }} />
-                )}
+                  ) : (
+                    <div style={{ height: '100%', minHeight: 80 }} />
+                  )}
+                </div>
               </div>
             ))}
+          </div>
+          
+          {/* Pagination */}
+          <div style={{ padding: '16px', display: 'flex', justifyContent: 'center', borderTop: '1px solid #f0f0f0' }}>
+            <Pagination
+              current={currentPage}
+              pageSize={PAGE_SIZE}
+              total={contractRows.length}
+              onChange={(page) => setCurrentPage(page)}
+              showSizeChanger={false}
+              showTotal={(total) => `共 ${total} 条，第 ${currentPage} / ${Math.ceil(total / PAGE_SIZE)} 页`}
+            />
           </div>
         </div>
       )}

@@ -85,6 +85,15 @@ export const PurchaseArrivalAPI = {
         formData.append(key, String(value));
       }
     });
+    if (data.attachments && Array.isArray(data.attachments)) {
+      data.attachments.forEach((attachment) => {
+        if (attachment instanceof File) {
+          formData.append('attachments', attachment);
+        } else if (typeof attachment === 'string') {
+          formData.append('attachments', attachment);
+        }
+      });
+    }
     return pb.collection('purchase_arrivals').update<PurchaseArrival>(id, formData);
   },
 
