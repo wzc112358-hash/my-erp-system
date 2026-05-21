@@ -153,6 +153,16 @@ export const ArrivalDetail: React.FC = () => {
               {arrival.invoice_2_status === 'issued' ? '已开' : '未开'}
             </Descriptions.Item>
           )}
+          {arrival.expand?.purchase_contract?.is_cross_border && (
+            <>
+              <Descriptions.Item label="关税" span={1}>
+                {arrival.tariff ? fmtFreight(arrival.tariff, 'CNY') : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="增值税" span={1}>
+                {arrival.value_added_tax ? fmtFreight(arrival.value_added_tax, 'CNY') : '-'}
+              </Descriptions.Item>
+            </>
+          )}
           <Descriptions.Item label="备注" span={2}>
             {arrival.remark || '-'}
           </Descriptions.Item>

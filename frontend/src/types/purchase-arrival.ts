@@ -25,6 +25,8 @@ export interface PurchaseArrival {
   invoice_2_status?: 'issued' | 'unissued';
   remark?: string;
   attachments?: string[];
+  tariff?: number;
+  value_added_tax?: number;
   creator: string;
   created: string;
   updated: string;
@@ -75,6 +77,8 @@ export interface PurchaseArrivalFormData {
   invoice_2_status?: 'issued' | 'unissued';
   remark?: string;
   attachments?: (File | string)[];
+  tariff?: number;
+  value_added_tax?: number;
 }
 
 export interface PurchaseArrivalListParams {

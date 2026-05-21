@@ -202,6 +202,8 @@ export interface ProfitAnalysis {
   purchase_quantity: number;
   total_freight: number;
   total_miscellaneous: number;
+  total_tariff?: number;
+  total_value_added_tax?: number;
   is_quantity_matched: boolean;
   tax_rate?: number;
   after_tax_profit?: number;
@@ -288,6 +290,8 @@ export interface PurchaseArrivalRecord {
   manager_confirmed: string;
   remark: string;
   attachments: string[];
+  tariff: number;
+  value_added_tax: number;
   created: string;
 }
 

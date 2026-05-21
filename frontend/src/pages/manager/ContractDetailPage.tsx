@@ -74,12 +74,15 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
     return sum + (pc.is_cross_border ? data.profit.total_freight : data.profit.total_freight);
   }, 0) > 0 || data.profit.total_freight > 0 ? data.profit.total_freight : 0;
   const miscCny = data.profit.total_miscellaneous;
+  // Calculate total tariff and VAT from arrival records
+  const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0);
+  const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0);
   const isExTax = sc.is_price_excluding_tax;
   const salesIncTax = isExTax ? salesAmountCny * 1.13 : salesAmountCny;
   const salesExTax = isExTax ? salesAmountCny : salesAmountCny / 1.13;
-  const operatingProfit = salesExTax - purchaseTotalAmountCny / 1.13 - freightCny - miscCny;
+  const operatingProfit = salesExTax - purchaseTotalAmountCny / 1.13 - freightCny - miscCny - totalTariff - totalVAT;
   const taxAmount = (salesIncTax - purchaseTotalAmountCny) * 0.1881;
-  const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny;
+  const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny - totalTariff - totalVAT;
 
   let currentProfit = 0;
   if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
@@ -134,12 +137,15 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
   const freight = data.profit.total_freight / rate;
   const misc = data.profit.total_miscellaneous / rate;
+  // Calculate total tariff and VAT from arrival records (convert to USD)
+  const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0) / rate;
+  const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0) / rate;
   const isExTax = sc.is_price_excluding_tax;
   const salesIncTax = isExTax ? salesAmount * 1.13 : salesAmount;
   const salesExTax = isExTax ? salesAmount : salesAmount / 1.13;
-  const operatingProfit = salesExTax - purchaseTotalAmount / 1.13 - freight - misc;
+  const operatingProfit = salesExTax - purchaseTotalAmount / 1.13 - freight - misc - totalTariff - totalVAT;
   const taxAmount = (salesIncTax - purchaseTotalAmount) * 0.1881;
-  const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc;
+  const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc - totalTariff - totalVAT;
 
   let currentProfit = 0;
   if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
@@ -353,6 +359,8 @@ const ContractDetailPage: React.FC = () => {
       const currency = ((record as unknown) as Record<string, unknown>).miscellaneous_expenses_currency as 'USD' | 'CNY' || 'CNY';
       return formatFreightAmount(v, currency, exchangeRate);
     } },
+    { title: '关税', dataIndex: 'tariff', key: 'tariff', render: (v: number) => v ? formatCurrency(v) : '-' },
+    { title: '增值税', dataIndex: 'value_added_tax', key: 'value_added_tax', render: (v: number) => v ? formatCurrency(v) : '-' },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
@@ -573,9 +581,9 @@ const ContractDetailPage: React.FC = () => {
                     )}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
-                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>汇率: 1 USD = {exchangeRate} CNY</div>
                   </div>
                 </>
@@ -613,9 +621,9 @@ const ContractDetailPage: React.FC = () => {
                     )}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
-                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
                   </div>
                 </>
               ),
@@ -650,9 +658,9 @@ const ContractDetailPage: React.FC = () => {
               )}
             </Descriptions>
             <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-              <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费</div>
+              <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
               <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
-              <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费</div>
+              <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
               {hasCrossBorder && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
             </div>
           </>

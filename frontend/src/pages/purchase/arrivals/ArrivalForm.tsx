@@ -19,10 +19,11 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
 }) => {
   const [form] = Form.useForm();
   const { message } = App.useApp();
-  const [contractOptions, setContractOptions] = useState<{ label: string; value: string }[]>([]);
+  const [contractOptions, setContractOptions] = useState<{ label: string; value: string; is_cross_border?: boolean }[]>([]);
   const [salesContractOptions, setSalesContractOptions] = useState<{ label: string; value: string }[]>([]);
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [wetherTransit, setWetherTransit] = useState<'yes' | 'no'>('no');
+  const [selectedContractId, setSelectedContractId] = useState<string | undefined>();
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -30,10 +31,11 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       try {
         const result = await PurchaseContractAPI.getOptions();
         const options = result.items.map((item) => {
-          const record = item as unknown as { id: string; no: string; product_name: string };
+          const record = item as unknown as { id: string; no: string; product_name: string; is_cross_border?: boolean };
           return {
             label: `${record.no} - ${record.product_name}`,
             value: record.id,
+            is_cross_border: record.is_cross_border,
           };
         });
         setContractOptions(options);
@@ -71,6 +73,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
     if (initialValues) {
       const transit = initialValues.wether_transit || 'no';
       setWetherTransit(transit);
+      setSelectedContractId(initialValues.purchase_contract);
       form.setFieldsValue({
         ...initialValues,
         shipment_date: initialValues.shipment_date ? dayjs(initialValues.shipment_date) : undefined,
@@ -80,7 +83,11 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
     }
   }, [initialValues, form]);
 
+  const selectedContract = contractOptions.find((opt) => opt.value === selectedContractId);
+  const isCrossBorder = selectedContract?.is_cross_border || false;
+
   const handleContractChange = (value: string) => {
+    setSelectedContractId(value);
     const selected = contractOptions.find((opt) => opt.value === value);
     if (selected && !initialValues?.product_name) {
       form.setFieldsValue({ product_name: '' });
@@ -130,6 +137,8 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       invoice_1_status: (values.invoice_1_status as 'issued' | 'unissued') || 'unissued',
       invoice_2_status: values.invoice_2_status as 'issued' | 'unissued' | undefined,
       remark: values.remark ? String(values.remark) : undefined,
+      tariff: values.tariff !== undefined ? Number(values.tariff) : undefined,
+      value_added_tax: values.value_added_tax !== undefined ? Number(values.value_added_tax) : undefined,
       attachments,
     };
     onFinish(data as unknown as Record<string, unknown>);
@@ -279,17 +288,51 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
 
       {wetherTransit === 'yes' && (
         <Row gutter={16}>
-          <Col span={24}>
+          <Col xs={24} sm={12} md={8}>
             <Form.Item
-              name="transit_warehouse"
-              label="中转仓库"
-              rules={[{ required: true, message: '请输入中转仓库' }]}
+              name="invoice_2_status"
+              label="发票2状态"
+              rules={[{ required: true, message: '请选择发票2状态' }]}
             >
-              <Input placeholder="请输入中转仓库" />
+              <Select
+                options={[
+                  { label: '已开', value: 'issued' },
+                  { label: '未开', value: 'unissued' },
+                ]}
+              />
             </Form.Item>
           </Col>
         </Row>
       )}
+
+      {isCrossBorder && (
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <Form.Item
+              name="tariff"
+              label="关税"
+            >
+              <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入关税金额" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item
+              name="value_added_tax"
+              label="增值税"
+            >
+              <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入增值税金额" />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
+
+      <Row gutter={16}>
+        <Col span={24}>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={3} placeholder="请输入备注" />
+          </Form.Item>
+        </Col>
+      </Row>
 
       <Row gutter={16}>
         <Col xs={24} sm={12} md={6}>

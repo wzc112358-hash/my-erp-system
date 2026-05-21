@@ -185,6 +185,18 @@ export const ArrivalList: React.FC = () => {
       key: 'freight_1_date',
     },
     {
+      title: '关税',
+      dataIndex: 'tariff',
+      key: 'tariff',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    },
+    {
+      title: '增值税',
+      dataIndex: 'value_added_tax',
+      key: 'value_added_tax',
+      render: (v: number) => v ? `¥${v.toFixed(4)}` : '-',
+    },
+    {
       title: '发票1状态',
       dataIndex: 'invoice_1_status',
       key: 'invoice_1_status',

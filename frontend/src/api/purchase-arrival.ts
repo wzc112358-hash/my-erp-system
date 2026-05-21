@@ -75,6 +75,8 @@ export const PurchaseArrivalAPI = {
     formData.append('invoice_1_status', data.invoice_1_status);
     if (data.invoice_2_status) formData.append('invoice_2_status', data.invoice_2_status);
     if (data.remark) formData.append('remark', data.remark);
+    if (data.tariff !== undefined) formData.append('tariff', String(data.tariff));
+    if (data.value_added_tax !== undefined) formData.append('value_added_tax', String(data.value_added_tax));
     return createWithAttachments<PurchaseArrival>('purchase_arrivals', formData, attachments);
   },
 

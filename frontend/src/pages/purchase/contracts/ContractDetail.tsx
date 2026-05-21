@@ -135,6 +135,8 @@ export const ContractDetail: React.FC = () => {
       const currency = ((record as unknown) as Record<string, unknown>).miscellaneous_expenses_currency as 'USD' | 'CNY' || 'CNY';
       return formatFreightAmount(v, currency, exchangeRate);
     } },
+    { title: '关税', dataIndex: 'tariff', key: 'tariff', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
+    { title: '增值税', dataIndex: 'value_added_tax', key: 'value_added_tax', render: (v: number) => v ? `¥${v.toFixed(4)}` : '-' },
     { title: '运费1状态', dataIndex: 'freight_1_status', key: 'freight_1_status', render: (v: string) => v === 'paid' ? <Tag color="green">已付</Tag> : <Tag color="orange">未付</Tag> },
     { title: '运费2状态', dataIndex: 'freight_2_status', key: 'freight_2_status', render: (v: string) => v === 'paid' ? <Tag color="green">已付</Tag> : <Tag color="orange">未付</Tag> },
     { title: '运费1日期', dataIndex: 'freight_1_date', key: 'freight_1_date', render: (v: string) => v?.split(' ')[0] || '-' },
