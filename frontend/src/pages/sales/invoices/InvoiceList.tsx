@@ -64,7 +64,6 @@ export const InvoiceList: React.FC = () => {
         search: search || undefined,
         sales_contract: contractId,
       });
-      console.log('Fetch result:', result);
       setData(result.items);
       setTotal(result.totalItems);
     } catch (err) {
@@ -134,14 +133,12 @@ export const InvoiceList: React.FC = () => {
         ([, v]) => v !== undefined && v !== '' && v !== null
       )
     );
-    console.log('Submitting invoice data:', data);
     try {
       if (editingInvoice) {
         await SaleInvoiceAPI.update(editingInvoice.id, data as Parameters<typeof SaleInvoiceAPI.update>[1]);
         message.success('更新成功');
       } else {
-        const result = await SaleInvoiceAPI.create(data as unknown as Parameters<typeof SaleInvoiceAPI.create>[0]);
-        console.log('Create result full:', JSON.stringify(result, null, 2));
+        await SaleInvoiceAPI.create(data as unknown as Parameters<typeof SaleInvoiceAPI.create>[0]);
         message.success('创建成功');
       }
       setFormVisible(false);

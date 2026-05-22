@@ -24,7 +24,6 @@ export const CustomerAPI = {
   },
 
   create: async (data: CustomerFormData) => {
-    console.log('Creating customer with data:', JSON.stringify(data, null, 2));
     try {
       return await pb.collection('customers').create<Customer>(data);
     } catch (error: unknown) {
@@ -41,9 +40,6 @@ export const CustomerAPI = {
   },
 
   update: async (id: string, data: Partial<CustomerFormData>) => {
-    console.log('Updating customer:', id, 'with data:', JSON.stringify(data, null, 2));
-    console.log('PB Auth valid:', pb.authStore.isValid);
-    console.log('PB Auth token:', pb.authStore.token ? 'exists' : 'none');
     try {
       return await pb.collection('customers').update<Customer>(id, data);
     } catch (error: unknown) {
@@ -60,9 +56,6 @@ export const CustomerAPI = {
   },
 
   delete: async (id: string) => {
-    console.log('Deleting customer:', id);
-    console.log('PB Auth valid:', pb.authStore.isValid);
-    console.log('PB Auth token:', pb.authStore.token ? 'exists' : 'none');
     return pb.collection('customers').delete(id);
   },
 

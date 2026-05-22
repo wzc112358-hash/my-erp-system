@@ -125,8 +125,6 @@ export const ReportPage: React.FC = () => {
       return;
     }
 
-    console.log('displayData:', displayData);
-
     const exportData: Record<string, unknown>[] = [];
     const mergeInfo: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
 
@@ -134,8 +132,6 @@ export const ReportPage: React.FC = () => {
     let rowIndex = 0;
 
     displayData.forEach((row) => {
-      console.log('Processing row:', row.salesContractNo, row.salesRowSpan);
-      
       if (!row.salesContractNo || row.salesRowSpan === 0) {
         exportData.push({
           采购合同编号: row.purchaseContractNo,

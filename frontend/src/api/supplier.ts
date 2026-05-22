@@ -24,7 +24,6 @@ export const SupplierAPI = {
   },
 
   create: async (data: SupplierFormData) => {
-    console.log('Creating supplier with data:', JSON.stringify(data, null, 2));
     try {
       return await pb.collection('suppliers').create<Supplier>(data);
     } catch (error: unknown) {
@@ -41,9 +40,6 @@ export const SupplierAPI = {
   },
 
   update: async (id: string, data: Partial<SupplierFormData>) => {
-    console.log('Updating supplier:', id, 'with data:', JSON.stringify(data, null, 2));
-    console.log('PB Auth valid:', pb.authStore.isValid);
-    console.log('PB Auth token:', pb.authStore.token ? 'exists' : 'none');
     try {
       return await pb.collection('suppliers').update<Supplier>(id, data);
     } catch (error: unknown) {
@@ -60,9 +56,6 @@ export const SupplierAPI = {
   },
 
   delete: async (id: string) => {
-    console.log('Deleting supplier:', id);
-    console.log('PB Auth valid:', pb.authStore.isValid);
-    console.log('PB Auth token:', pb.authStore.token ? 'exists' : 'none');
     return pb.collection('suppliers').delete(id);
   },
 

@@ -12,30 +12,25 @@ import type {
 
 export const SalesContractAPI = {
   list: async (params: SalesContractListParams = {}) => {
-    const result = await pb.collection('sales_contracts').getList<SalesContract>(
-      1,
-      500,
-      {}
-    );
-
-    let filtered = result.items;
+    const filters: string[] = [];
 
     if (params.search) {
-      const s = params.search.toLowerCase();
-      filtered = filtered.filter((i) =>
-        i.no?.toLowerCase().includes(s) || i.product_name?.toLowerCase().includes(s)
-      );
+      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
     }
-
     if (params.status) {
-      filtered = filtered.filter((i) => i.status === params.status);
+      filters.push(`status = "${params.status}"`);
     }
 
-    return {
-      ...result,
-      items: filtered,
-      totalItems: filtered.length,
-    };
+    const result = await pb.collection('sales_contracts').getList<SalesContract>(
+      params.page || 1,
+      params.per_page || 10,
+      {
+        filter: filters.length > 0 ? filters.join(' && ') : undefined,
+        sort: '-created',
+      }
+    );
+
+    return result;
   },
 
   getById: async (id: string) => {

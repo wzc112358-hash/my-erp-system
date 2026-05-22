@@ -123,7 +123,6 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       remark: values.remark ? String(values.remark) : undefined,
       attachments,
     };
-    console.log('Form submit attachments:', attachments);
     onFinish(data as unknown as Record<string, unknown>);
   };
 

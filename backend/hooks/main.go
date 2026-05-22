@@ -26,32 +26,16 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 }
 
 func GetUsersByType(app *pocketbase.PocketBase, userType string) ([]*core.Record, error) {
-	collection, err := app.FindCollectionByNameOrId("users")
+	filter := fmt.Sprintf("type = '%s'", userType)
+	records, err := GetRecordsByFilter(app, "users", filter)
 	if err != nil {
-		log.Printf("[GetUsersByType] Failed to find users collection: %v\n", err)
+		log.Printf("[GetUsersByType] Failed to get users: %v\n", err)
 		return nil, err
 	}
 
-	records, err := app.FindAllRecords(collection)
-	if err != nil {
-		log.Printf("[GetUsersByType] Failed to find all records: %v\n", err)
-		return nil, err
-	}
+	log.Printf("[GetUsersByType] Found %d users with type '%s'\n", len(records), userType)
 
-	log.Printf("[GetUsersByType] Found %d total users\n", len(records))
-
-	var result []*core.Record
-	for _, r := range records {
-		userTypeValue := r.GetString("type")
-		log.Printf("[GetUsersByType] User: %s, type field value: '%s'\n", r.Id, userTypeValue)
-		if userTypeValue == userType {
-			result = append(result, r)
-		}
-	}
-
-	log.Printf("[GetUsersByType] Found %d users with type '%s'\n", len(result), userType)
-
-	return result, nil
+	return records, nil
 }
 
 func GetNotificationCollection(app *pocketbase.PocketBase) (*core.Collection, error) {

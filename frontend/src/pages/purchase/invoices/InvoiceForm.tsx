@@ -128,7 +128,6 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       is_verified: values.is_verified ? String(values.is_verified) : undefined,
       attachments,
     };
-    console.log('Form submit attachments:', attachments);
     onFinish(data as unknown as Record<string, unknown>);
   };
 
