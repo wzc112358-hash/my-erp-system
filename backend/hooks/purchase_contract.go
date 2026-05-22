@@ -103,9 +103,9 @@ func RegisterPurchaseContractHooks(app *pocketbase.PocketBase) {
 			totalQuantity := e.Record.GetFloat("total_quantity")
 			newTotalAmount := unitPrice * totalQuantity
 
+			oldTotalAmount := e.Record.GetFloat("total_amount")
 			e.Record.Set("total_amount", newTotalAmount)
 
-			oldTotalAmount := e.Record.GetFloat("total_amount")
 			if oldTotalAmount > 0 {
 				currentInvoicedAmount := e.Record.GetFloat("invoiced_amount")
 				currentPaidAmount := e.Record.GetFloat("paid_amount")

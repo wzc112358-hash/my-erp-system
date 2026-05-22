@@ -46,47 +46,6 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 		Priority: 0,
 	})
 
-	app.OnRecordUpdate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			contractId := e.Record.GetString("purchase_contract")
-			if contractId == "" {
-				log.Println("[PurchaseInvoice] purchase_contract is empty")
-				return e.Next()
-			}
-
-			contract, err := GetRecordById(app, "purchase_contracts", contractId)
-			if err != nil {
-				log.Printf("[PurchaseInvoice] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
-			}
-
-			invoices, err := GetRecordsByField(app, "purchase_invoices", "purchase_contract", contractId)
-			if err != nil {
-				log.Printf("[PurchaseInvoice] Failed to get invoices: %v\n", err)
-				invoices = []*core.Record{}
-			}
-
-			currentInvoiceId := e.Record.Id
-			newInvoiceProductAmount := e.Record.GetFloat("product_amount")
-
-			totalProductAmount := SumField(invoices, "product_amount")
-			for _, r := range invoices {
-				if r.Id == currentInvoiceId {
-					totalProductAmount = totalProductAmount - r.GetFloat("product_amount") + newInvoiceProductAmount
-					break
-				}
-			}
-			contractTotalQuantity := contract.GetFloat("total_quantity")
-
-			if totalProductAmount > contractTotalQuantity {
-				return fmt.Errorf("发票产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
-			}
-
-			return e.Next()
-		},
-		Priority: 0,
-	})
-
 	app.OnRecordAfterCreateSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			contractId := e.Record.GetString("purchase_contract")
@@ -152,6 +111,21 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 			}
 
 			currentInvoiceId := e.Record.Id
+			newInvoiceProductAmount := e.Record.GetFloat("product_amount")
+
+			totalProductAmount := SumField(invoices, "product_amount")
+			for _, r := range invoices {
+				if r.Id == currentInvoiceId {
+					totalProductAmount = totalProductAmount - r.GetFloat("product_amount") + newInvoiceProductAmount
+					break
+				}
+			}
+			contractTotalQuantity := contract.GetFloat("total_quantity")
+
+			if totalProductAmount > contractTotalQuantity {
+				return fmt.Errorf("发票产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			}
+
 			newInvoiceAmount := e.Record.GetFloat("amount")
 			totalAmount := SumField(invoices, "amount")
 			for _, r := range invoices {

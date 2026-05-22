@@ -108,13 +108,6 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 				}
 			}
 
-			return e.Next()
-		},
-		Priority: 0,
-	})
-
-	app.OnRecordUpdate("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
 			wetherTransit := e.Record.GetString("wether_transit")
 			if wetherTransit == "no" {
 				e.Record.Set("freight_2", 0)
@@ -123,6 +116,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 				e.Record.Set("freight_2_date", nil)
 				e.Record.Set("invoice_2_status", "")
 			}
+
 			return e.Next()
 		},
 		Priority: 0,
