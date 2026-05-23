@@ -42,6 +42,7 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+.worktrees/
 
 # Docker
 .docker/config.json
