@@ -8,7 +8,10 @@ build/
 
 # Database
 backend/pb_data/
-backend/pb_migrations/
+backend/pb_migrations/*
+!backend/pb_migrations/.gitkeep
+!backend/pb_migrations/202605230001_created_opportunity_agent_collections.js
+!backend/pb_migrations/202605230002_seed_monitor_sources.js
 
 # Backend binary
 backend/pocketbase

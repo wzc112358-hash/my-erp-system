@@ -40,6 +40,7 @@ const OtherBusinessPage = lazy(() => import('@/pages/manager/OtherBusinessPage')
 const ExchangeRatePage = lazy(() => import('@/pages/manager/ExchangeRatePage').then(m => ({ default: m.ExchangeRatePage })));
 const InventoryPage = lazy(() => import('@/pages/manager/InventoryPage').then(m => ({ default: m.default })));
 const InventoryDetailPage = lazy(() => import('@/pages/manager/InventoryDetailPage').then(m => ({ default: m.default })));
+const OpportunityMonitorPage = lazy(() => import('@/pages/manager/OpportunityMonitorPage').then(m => ({ default: m.default })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
@@ -206,6 +207,10 @@ export const router = createBrowserRouter([
             path: 'bidding/:id',
             element: <BiddingDetail />,
           },
+          {
+            path: 'opportunities',
+            element: <OpportunityMonitorPage />,
+          },
         ],
       },
       {
@@ -226,6 +231,10 @@ export const router = createBrowserRouter([
           {
             path: 'contracts/:id',
             element: <PurchaseContractDetail />,
+          },
+          {
+            path: 'opportunities',
+            element: <OpportunityMonitorPage />,
           },
           {
             path: 'arrivals',
@@ -311,6 +320,10 @@ export const router = createBrowserRouter([
           {
             path: 'inventory/:id',
             element: <InventoryDetailPage />,
+          },
+          {
+            path: 'opportunities',
+            element: <OpportunityMonitorPage />,
           },
         ],
       },

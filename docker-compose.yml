@@ -62,6 +62,60 @@ services:
       - "traefik.http.routers.lanzhou-api.tls.certResolver=letsencrypt"
       - "traefik.http.services.lanzhou-pocketbase.loadbalancer.server.port=8090"
 
+  opportunity-agent:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: erp-opportunity-agent
+    restart: unless-stopped
+    depends_on:
+      - browser-worker
+    environment:
+      - POCKETBASE_URL=${POCKETBASE_URL}
+      - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
+      - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
+      - OPPORTUNITY_AGENT_SAMPLE_MODE=0
+      - BROWSER_WORKER_URL=http://browser-worker:8095
+      - BROWSER_PUBLIC_BASE_URL=${BROWSER_PUBLIC_BASE_URL:-https://browser.henghuacheng.cn}
+      - BROWSER_INTERNAL_API_TOKEN=${BROWSER_INTERNAL_API_TOKEN}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - web
+      - agent-internal
+
+  browser-worker:
+    build:
+      context: ./browser-worker
+      dockerfile: Dockerfile
+    container_name: erp-browser-worker
+    restart: unless-stopped
+    environment:
+      - BROWSER_WORKER_PORT=8095
+      - BROWSER_PUBLIC_BASE_URL=${BROWSER_PUBLIC_BASE_URL:-https://browser.henghuacheng.cn}
+      - BROWSER_RUNTIME_MODE=playwright
+      - BROWSER_PROFILE_ROOT=/browser_profiles
+      - BROWSER_HEADLESS=${BROWSER_HEADLESS:-1}
+      - BROWSER_ACCESS_SECRET=${BROWSER_ACCESS_SECRET}
+      - BROWSER_INTERNAL_API_TOKEN=${BROWSER_INTERNAL_API_TOKEN}
+    volumes:
+      - /root/my-erp-system/browser_profiles:/browser_profiles
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - web
+      - agent-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.browser-worker.rule=Host(`browser.henghuacheng.cn`)"
+      - "traefik.http.routers.browser-worker.entryPoints=websecure"
+      - "traefik.http.routers.browser-worker.tls.certResolver=letsencrypt"
+      - "traefik.http.services.browser-worker.loadbalancer.server.port=8095"
+
   traefik:
     image: traefik:v2.9
     container_name: erp-traefik
@@ -84,4 +138,6 @@ services:
 
 networks:
   web:
+    driver: bridge
+  agent-internal:
     driver: bridge

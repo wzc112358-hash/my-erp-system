@@ -26,6 +26,13 @@
     [http.routers.beijing-api.tls]
       certResolver = "letsencrypt"
 
+  [http.routers.browser-worker]
+    rule = "Host(`browser.henghuacheng.cn`)"
+    entryPoints = ["websecure"]
+    service = "browser-worker"
+    [http.routers.browser-worker.tls]
+      certResolver = "letsencrypt"
+
 [http.middlewares]
   [http.middlewares.redirect-to-https.redirectScheme]
     scheme = "https"
@@ -43,6 +50,10 @@
   [http.services.beijing-pocketbase.loadBalancer]
     [[http.services.beijing-pocketbase.loadBalancer.servers]]
       url = "http://erp-pocketbase-beijing:8090"
+
+  [http.services.browser-worker.loadBalancer]
+    [[http.services.browser-worker.loadBalancer.servers]]
+      url = "http://erp-browser-worker:8095"
 
 [http.serversTransports]
   [http.serversTransports.default]
