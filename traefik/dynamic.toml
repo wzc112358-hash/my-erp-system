@@ -33,6 +33,20 @@
     [http.routers.browser-worker.tls]
       certResolver = "letsencrypt"
 
+  [http.routers.local-helper-api]
+    rule = "Host(`agent.henghuacheng.cn`) && PathPrefix(`/local-helper`)"
+    entryPoints = ["websecure"]
+    service = "local-helper-api"
+    [http.routers.local-helper-api.tls]
+      certResolver = "letsencrypt"
+
+  [http.routers.local-helper-api-health]
+    rule = "Host(`agent.henghuacheng.cn`) && Path(`/health`)"
+    entryPoints = ["websecure"]
+    service = "local-helper-api"
+    [http.routers.local-helper-api-health.tls]
+      certResolver = "letsencrypt"
+
 [http.middlewares]
   [http.middlewares.redirect-to-https.redirectScheme]
     scheme = "https"
@@ -54,6 +68,10 @@
   [http.services.browser-worker.loadBalancer]
     [[http.services.browser-worker.loadBalancer.servers]]
       url = "http://erp-browser-worker:8095"
+
+  [http.services.local-helper-api.loadBalancer]
+    [[http.services.local-helper-api.loadBalancer.servers]]
+      url = "http://erp-local-helper-api:8097"
 
 [http.serversTransports]
   [http.serversTransports.default]
