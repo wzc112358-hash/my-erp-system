@@ -1,12 +1,23 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
-import { appendAccessToken } from './access-token.js';
+import { appendAccessToken, createAccessToken } from './access-token.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const normalizeBaseUrl = (value = '') => String(value || 'http://127.0.0.1:8095').replace(/\/+$/, '');
 const normalizeProfileRoot = (value = '') => String(value || process.env.BROWSER_PROFILE_ROOT || '/browser_profiles').replace(/\/+$/, '');
+const normalizeSessionStorePath = (value = '', profileRoot = '') => (
+  String(value || process.env.BROWSER_SESSION_STORE_PATH || path.posix.join(normalizeProfileRoot(profileRoot), 'sessions.json'))
+);
+
+const normalizeTimestamp = (value = '') => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString();
+};
 
 const stableSessionId = ({ sourceId = '', sourceName = '', ownerName = '', loginUrl = '' } = {}) => {
   const identity = [sourceId, sourceName, ownerName, loginUrl].filter(Boolean).join('|');
@@ -19,13 +30,17 @@ export const createBrowserSession = ({
   sourceName = '',
   ownerName = '',
   loginUrl = '',
+  createdAt,
+  updatedAt,
+  expiresAt,
   publicBaseUrl,
   profileRoot,
   accessSecret,
   now = new Date(),
 } = {}) => {
-  const createdAt = now.toISOString();
-  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
+  const sessionCreatedAt = normalizeTimestamp(createdAt) || now.toISOString();
+  const sessionUpdatedAt = normalizeTimestamp(updatedAt) || sessionCreatedAt;
+  const sessionExpiresAt = normalizeTimestamp(expiresAt) || new Date(now.getTime() + SESSION_TTL_MS).toISOString();
   const id = stableSessionId({ sourceId, sourceName, ownerName, loginUrl });
   const baseUrl = normalizeBaseUrl(publicBaseUrl);
 
@@ -42,9 +57,10 @@ export const createBrowserSession = ({
     profile_dir: path.posix.join(normalizeProfileRoot(profileRoot), id),
     runtime_status: 'stopped',
     runtime_url: '',
-    created_at: createdAt,
-    updated_at: createdAt,
-    expires_at: expiresAt,
+    created_at: sessionCreatedAt,
+    updated_at: sessionUpdatedAt,
+    expires_at: sessionExpiresAt,
+    access_tokens: [],
   };
   return {
     ...session,
@@ -55,10 +71,51 @@ export const createBrowserSession = ({
 export const createSessionStore = ({
   publicBaseUrl = process.env.BROWSER_PUBLIC_BASE_URL || `http://127.0.0.1:${process.env.BROWSER_WORKER_PORT || 8095}`,
   profileRoot = process.env.BROWSER_PROFILE_ROOT || '/browser_profiles',
+  sessionStorePath,
   accessSecret = process.env.BROWSER_ACCESS_SECRET || '',
   now = () => new Date(),
 } = {}) => {
-  const sessions = new Map();
+  const storePath = normalizeSessionStorePath(sessionStorePath, profileRoot);
+  const loadSessions = () => {
+    try {
+      if (!fs.existsSync(storePath)) return new Map();
+      const raw = fs.readFileSync(storePath, 'utf8');
+      const parsed = JSON.parse(raw || '[]');
+      const records = Array.isArray(parsed) ? parsed : Object.values(parsed);
+      return new Map(records.filter(Boolean).map((session) => [
+        session.id,
+        {
+          ...session,
+          runtime_status: session.runtime_status === 'running' ? 'stopped' : (session.runtime_status || 'stopped'),
+          runtime_url: '',
+        },
+      ]));
+    } catch {
+      return new Map();
+    }
+  };
+  const sessions = loadSessions();
+
+  const mergeSession = (session) => {
+    const existing = sessions.get(session.id);
+    if (!existing) return session;
+    const accessTokens = new Set([
+      ...(Array.isArray(existing.access_tokens) ? existing.access_tokens : []),
+      createAccessToken(existing, accessSecret),
+      createAccessToken(session, accessSecret),
+    ].filter(Boolean));
+    return {
+      ...existing,
+      ...session,
+      access_tokens: [...accessTokens],
+    };
+  };
+
+  const persist = () => {
+    fs.mkdirSync(path.dirname(storePath), { recursive: true });
+    const payload = JSON.stringify([...sessions.values()], null, 2);
+    fs.writeFileSync(storePath, `${payload}\n`);
+  };
 
   return {
     create(input = {}) {
@@ -69,8 +126,9 @@ export const createSessionStore = ({
         accessSecret,
         now: now(),
       });
-      sessions.set(session.id, session);
-      return session;
+      sessions.set(session.id, mergeSession(session));
+      persist();
+      return sessions.get(session.id);
     },
 
     get(id) {
@@ -91,6 +149,7 @@ export const createSessionStore = ({
         updated_at: revokedAt.toISOString(),
       };
       sessions.set(id, revoked);
+      persist();
       return revoked;
     },
 
@@ -103,6 +162,7 @@ export const createSessionStore = ({
         updated_at: updatedAt.toISOString(),
       };
       sessions.set(id, updated);
+      persist();
       return updated;
     },
   };

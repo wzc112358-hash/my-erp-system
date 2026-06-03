@@ -13,11 +13,16 @@ export const createAccessToken = (session, secret = process.env.BROWSER_ACCESS_S
 
 export const verifyAccessToken = (session, token = '', secret = process.env.BROWSER_ACCESS_SECRET || '') => {
   if (!isAccessProtectionEnabled(secret)) return true;
-  const expected = createAccessToken(session, secret);
   const actualBuffer = Buffer.from(String(token || ''), 'utf8');
-  const expectedBuffer = Buffer.from(expected, 'utf8');
-  if (actualBuffer.length !== expectedBuffer.length) return false;
-  return timingSafeEqual(actualBuffer, expectedBuffer);
+  const expectedTokens = [
+    createAccessToken(session, secret),
+    ...(Array.isArray(session.access_tokens) ? session.access_tokens : []),
+  ];
+  return expectedTokens.some((expected) => {
+    const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
+    if (actualBuffer.length !== expectedBuffer.length) return false;
+    return timingSafeEqual(actualBuffer, expectedBuffer);
+  });
 };
 
 export const appendAccessToken = (browserUrl, session, secret = process.env.BROWSER_ACCESS_SECRET || '') => {

@@ -70,6 +70,7 @@ services:
     restart: unless-stopped
     depends_on:
       - browser-worker
+      - collector-service
     environment:
       - POCKETBASE_URL=${POCKETBASE_URL}
       - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
@@ -78,12 +79,57 @@ services:
       - BROWSER_WORKER_URL=http://browser-worker:8095
       - BROWSER_PUBLIC_BASE_URL=${BROWSER_PUBLIC_BASE_URL:-https://browser.henghuacheng.cn}
       - BROWSER_INTERNAL_API_TOKEN=${BROWSER_INTERNAL_API_TOKEN}
+      - COLLECTOR_SERVICE_URL=http://collector-service:8096
     deploy:
       resources:
         limits:
           memory: 256M
     networks:
       - web
+      - agent-internal
+
+  local-helper-api:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: erp-local-helper-api
+    restart: unless-stopped
+    command: ["npm", "run", "local-helper-api"]
+    environment:
+      - POCKETBASE_URL=${POCKETBASE_URL}
+      - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
+      - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
+      - LOCAL_HELPER_API_PORT=8097
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks:
+      - web
+      - agent-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.local-helper-api.rule=Host(`agent.henghuacheng.cn`) && PathPrefix(`/local-helper`)"
+      - "traefik.http.routers.local-helper-api.entryPoints=websecure"
+      - "traefik.http.routers.local-helper-api.tls.certResolver=letsencrypt"
+      - "traefik.http.routers.local-helper-api-health.rule=Host(`agent.henghuacheng.cn`) && Path(`/health`)"
+      - "traefik.http.routers.local-helper-api-health.entryPoints=websecure"
+      - "traefik.http.routers.local-helper-api-health.tls.certResolver=letsencrypt"
+      - "traefik.http.services.local-helper-api.loadbalancer.server.port=8097"
+
+  collector-service:
+    build:
+      context: ./collector-service
+      dockerfile: Dockerfile
+    container_name: erp-collector-service
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_SERVICE_PORT=8096
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
       - agent-internal
 
   browser-worker:

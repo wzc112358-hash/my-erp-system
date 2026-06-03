@@ -37,6 +37,17 @@ test('verifyAccessToken validates expected token and allows disabled protection'
   assert.equal(verifyAccessToken(session, '', ''), true);
 });
 
+test('verifyAccessToken accepts persisted historical access tokens', () => {
+  const token = createAccessToken(session, 'secret');
+  const regenerated = {
+    ...session,
+    expires_at: '2026-06-03T01:00:00.000Z',
+    access_tokens: [token],
+  };
+
+  assert.equal(verifyAccessToken(regenerated, token, 'secret'), true);
+});
+
 test('appendAccessToken adds access_token only when protection is enabled', () => {
   const protectedUrl = appendAccessToken('https://browser.example.com/sessions/session_abc123', session, 'secret');
   const openUrl = appendAccessToken('https://browser.example.com/sessions/session_abc123', session, '');

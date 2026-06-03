@@ -262,3 +262,11 @@ export interface ProductTermFormData {
   aliases?: string;
   status?: ProductTerm['status'];
 }
+
+export interface LocalHelperHealth {
+  ok: boolean;
+  service?: string;
+  paired?: boolean;
+  userName?: string;
+  taskCount?: number;
+}

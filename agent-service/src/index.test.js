@@ -15,6 +15,7 @@ import {
   startScheduler,
   shouldPersistOpportunity,
   shouldRunSource,
+  collectCandidates,
 } from './index.js';
 import { buildOpportunityPayload, runPublicUrlDryRun } from './index.js';
 import { resolveSourceStrategy } from './source-strategies.js';
@@ -112,9 +113,10 @@ test('resolveSourceStrategy returns PRD site strategy for 国能网', () => {
   assert.equal(strategy.siteSearchBehavior, 'supplemental');
   assert.ok(strategy.categoryNames.includes('国能E招-招标公告'));
   assert.equal(strategy.requiresManualAssist, false);
+  assert.equal(strategy.collectionPath, 'cloud_auto');
 });
 
-test('resolveSourceStrategy treats login sources as manual-assist work', () => {
+test('resolveSourceStrategy treats login sources as local-helper work in phase 3', () => {
   const strategy = resolveSourceStrategy({
     source_name: '云梦泽询价网',
     login_type: 'account',
@@ -123,9 +125,25 @@ test('resolveSourceStrategy treats login sources as manual-assist work', () => {
     status: 'active',
   });
 
-  assert.equal(strategy.crawlStrategy, 'manual_assist');
+  assert.equal(strategy.crawlStrategy, 'local_helper');
+  assert.equal(strategy.collectionPath, 'local_helper');
   assert.equal(strategy.requiresManualAssist, true);
   assert.match(strategy.manualAssistReason, /账号登录/);
+});
+
+test('resolveSourceStrategy routes phase 3 local-helper sites to local helper', () => {
+  const strategy = resolveSourceStrategy({
+    source_name: '华锦兵器网',
+    login_type: 'none',
+    requires_login: false,
+    may_have_captcha: false,
+    status: 'active',
+  });
+
+  assert.equal(strategy.crawlStrategy, 'local_helper');
+  assert.equal(strategy.collectionPath, 'local_helper');
+  assert.equal(strategy.firstTool, 'local_playwright_cdp');
+  assert.equal(strategy.requiresManualAssist, true);
 });
 
 test('runPublicUrlDryRun fetches a public page without PocketBase', async () => {
@@ -182,6 +200,137 @@ test('runPublicUrlDryRun can use an injected classifier enhancer', async () => {
     assert.equal(result.opportunities[0].relevance, 'likely_related');
     assert.equal(result.opportunities[0].classification_version, 'chemical-relevance-v1+llm');
     assert.match(result.opportunities[0].matched_sources, /llm/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('runPublicUrlDryRun can collect through collector-service when configured', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        candidates: [
+          {
+            title: '聚丙烯酰胺采购询价公告 截止时间：2099年01月02日',
+            url: 'https://example.com/nitrogen.html',
+            source_name: '测试公开源',
+            owner_name: '小杨',
+            raw_text: '聚丙烯酰胺采购询价公告 截止时间：2099年01月02日',
+            metadata: { source_id: 'collector-source' },
+          },
+        ],
+      }),
+    };
+  };
+  try {
+    const result = await runPublicUrlDryRun({
+      url: 'https://example.com/list.html',
+      sourceName: '测试公开源',
+      ownerName: '小杨',
+      collectorServiceUrl: 'http://collector-service:8096',
+    });
+
+    assert.equal(requests[0].url, 'http://collector-service:8096/collect/url');
+    assert.equal(JSON.parse(requests[0].options.body).url, 'https://example.com/list.html');
+    assert.equal(result.candidate_count, 1);
+    assert.equal(result.retained_count, 1);
+    assert.match(result.opportunities[0].product_keywords, /聚丙烯酰胺/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('collectCandidates uses collector-service for cloud auto http_html sources', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        candidates: [
+          {
+            title: '活性氧化铝采购公告',
+            url: 'https://example.com/alumina.html',
+            source_name: '国能网',
+            owner_name: '小杨',
+            raw_text: '活性氧化铝采购公告',
+          },
+        ],
+      }),
+    };
+  };
+  try {
+    const candidates = await collectCandidates({
+      id: 'source-gn',
+      source_name: '国能网',
+      owner_name: '小杨',
+      source_url: 'https://example.com/list.html',
+      category_urls: 'https://example.com/list.html',
+      status: 'active',
+      login_type: 'none',
+      requires_login: false,
+      may_have_captcha: false,
+    }, {
+      collectorServiceUrl: 'http://collector-service:8096',
+    });
+
+    assert.equal(requests[0].url, 'http://collector-service:8096/collect/source');
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].title, '活性氧化铝采购公告');
+    assert.equal(candidates[0].sourceId, 'source-gn');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('collectCandidates uses collector-service for 国能E购 http_json source', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        candidates: [
+          {
+            title: '煤制油公司化工三剂2026年亚硫酸氢钠询价采购',
+            url: 'https://example.com/neep/1.html',
+            raw_text: '煤制油公司化工三剂2026年亚硫酸氢钠询价采购',
+            published_at: '2026-05-27',
+            deadline_at: '2026-05-31',
+          },
+        ],
+      }),
+    };
+  };
+  try {
+    const candidates = await collectCandidates({
+      id: 'source-egou',
+      source_name: '国能E购',
+      owner_name: '小杨',
+      status: 'active',
+      login_type: 'none',
+      requires_login: false,
+      may_have_captcha: false,
+    }, {
+      collectorServiceUrl: 'http://collector-service:8096',
+    });
+
+    assert.equal(requests[0].url, 'http://collector-service:8096/collect/source');
+    assert.equal(JSON.parse(requests[0].options.body).mode, 'http_json');
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].deadlineDate, '2026-05-31');
   } finally {
     globalThis.fetch = originalFetch;
   }

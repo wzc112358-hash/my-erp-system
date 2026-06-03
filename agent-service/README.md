@@ -19,6 +19,7 @@ agent still records a run so daily monitoring accountability remains visible.
 ```bash
 npm test
 npm run run-once -- --force
+npm run local-helper-api
 ```
 
 Required environment variables for real PocketBase writes:
@@ -31,6 +32,22 @@ POCKETBASE_SUPERUSER_PASSWORD=...
 
 Set `OPPORTUNITY_AGENT_SAMPLE_MODE=1` to generate deterministic sample notices
 for validating the pipeline before site-specific crawlers are configured.
+
+Run the cloud task channel for Windows local helpers:
+
+```bash
+LOCAL_HELPER_API_PORT=8097 npm run local-helper-api
+```
+
+It exposes:
+
+- `GET /health`
+- `POST /local-helper/pair`
+- `POST /local-helper/heartbeat`
+- `GET /local-helper/tasks`
+- `POST /local-helper/tasks/:id/start`
+- `POST /local-helper/tasks/:id/continue`
+- `POST /local-helper/tasks/:id/cancel`
 
 Run a local dry run without connecting to PocketBase:
 

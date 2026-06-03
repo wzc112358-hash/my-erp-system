@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { createServer } from './server.js';
 import { createBrowserRuntime } from './browser-runtime.js';
@@ -18,8 +21,11 @@ const close = async (server) => new Promise((resolve, reject) => {
 });
 
 const withServer = async (fn, options = {}) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-server-test-'));
   const store = createSessionStore({
     publicBaseUrl: 'https://browser.example.com',
+    profileRoot: path.join(tempDir, 'profiles'),
+    sessionStorePath: path.join(tempDir, 'sessions.json'),
     accessSecret: options.accessSecret || '',
     now: () => new Date('2026-05-26T01:00:00.000Z'),
   });
@@ -35,6 +41,7 @@ const withServer = async (fn, options = {}) => {
     return await fn(`http://${address.address}:${address.port}`);
   } finally {
     await close(server);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 };
 
@@ -99,6 +106,29 @@ test('POST /sessions creates a session and GET /sessions/:id loads it', async ()
     assert.equal(created.browser_url, `https://browser.example.com/sessions/${created.id}`);
     assert.equal(loadedResponse.status, 200);
     assert.deepEqual(loaded, created);
+  });
+});
+
+test('POST /sessions can preserve existing session timing when rebuilding worker state', async () => {
+  await withServer(async (baseUrl) => {
+    const createdResponse = await fetch(`${baseUrl}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceId: 'source_rebuild',
+        sourceName: '重建测试',
+        loginUrl: 'https://example.com/login',
+        created_at: '2026-05-20T00:00:00.000Z',
+        updated_at: '2026-05-21T00:00:00.000Z',
+        expires_at: '2026-05-30T00:00:00.000Z',
+      }),
+    });
+    const created = await createdResponse.json();
+
+    assert.equal(createdResponse.status, 201);
+    assert.equal(created.created_at, '2026-05-20T00:00:00.000Z');
+    assert.equal(created.updated_at, '2026-05-21T00:00:00.000Z');
+    assert.equal(created.expires_at, '2026-05-30T00:00:00.000Z');
   });
 });
 

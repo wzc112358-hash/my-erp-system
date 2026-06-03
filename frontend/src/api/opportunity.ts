@@ -4,6 +4,7 @@ import type {
   BidOpportunity,
   BidDocument,
   BidDocumentFormData,
+  LocalHelperHealth,
   MonitorRun,
   MonitorSource,
   MonitorSourceFormData,
@@ -61,7 +62,7 @@ export const OpportunityAPI = {
 
   listAgentTasks: async () => {
     return pb.collection('agent_tasks').getList<AgentTask>(1, 500, {
-      sort: 'status,due_at,-created',
+      sort: '-created',
       expand: 'source,monitor_run,opportunity,session',
     });
   },
@@ -143,6 +144,27 @@ export const OpportunityAPI = {
 
   updateProductTerm: async (id: string, data: Partial<ProductTermFormData>) => {
     return pb.collection('product_terms').update<ProductTerm>(id, data);
+  },
+
+  checkLocalHelper: async () => {
+    const response = await fetch('http://127.0.0.1:17321/health', { signal: AbortSignal.timeout(1200) });
+    if (!response.ok) throw new Error(`local helper ${response.status}`);
+    return response.json() as Promise<LocalHelperHealth>;
+  },
+
+  startLocalHelperTask: async (task: AgentTask) => {
+    window.location.href = `hcz-helper://task/${encodeURIComponent(task.id)}`;
+    const response = await fetch(`http://127.0.0.1:17321/tasks/${encodeURIComponent(task.id)}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceName: task.source_name,
+        entryUrl: task.entry_url,
+        reason: task.reason,
+      }),
+    });
+    if (!response.ok) throw new Error(`local helper task ${response.status}`);
+    return response.json();
   },
 
   copyGroupSummary: async () => {

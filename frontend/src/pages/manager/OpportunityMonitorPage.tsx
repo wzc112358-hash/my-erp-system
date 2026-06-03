@@ -25,6 +25,7 @@ import {
   LinkOutlined,
   ReloadOutlined,
   SearchOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { OpportunityAPI } from '@/api/opportunity';
 import type {
@@ -36,6 +37,7 @@ import type {
   MonitorSourceFormData,
   OpportunityReviewDecision,
   OpportunityStatus,
+  LocalHelperHealth,
 } from '@/types/opportunity';
 import { useAuthStore } from '@/stores/auth';
 
@@ -119,6 +121,9 @@ const loginSessionStatusMap: Record<string, { label: string; color: string }> = 
 
 const fmtDate = (value?: string) => value?.split(' ')[0] || '-';
 const fmtScore = (value?: number) => typeof value === 'number' ? value.toFixed(2) : '-';
+const newestFirst = <T extends { created?: string }>(items: T[]) => (
+  [...items].sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')))
+);
 const tag = (map: Record<string, { label: string; color: string }>, value?: string) => {
   const item = value ? map[value] : undefined;
   return item ? <Tag color={item.color}>{item.label}</Tag> : '-';
@@ -175,6 +180,8 @@ const OpportunityMonitorPage: React.FC = () => {
   const [detail, setDetail] = useState<BidOpportunity | null>(null);
   const [documents, setDocuments] = useState<BidDocument[]>([]);
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
+  const [localHelperHealth, setLocalHelperHealth] = useState<LocalHelperHealth | null>(null);
+  const [localHelperChecking, setLocalHelperChecking] = useState(false);
   const [reviewForm] = Form.useForm<{ decision: OpportunityReviewDecision; comment?: string }>();
   const [sourceForm] = Form.useForm<MonitorSourceFormData>();
   const [documentForm] = Form.useForm<{
@@ -203,8 +210,8 @@ const OpportunityMonitorPage: React.FC = () => {
       ]);
       setOpportunities(opportunityRes.items);
       setSources(sourceRes.items);
-      setRuns(runRes.items);
-      setAgentTasks(taskRes.items);
+      setRuns(newestFirst(runRes.items));
+      setAgentTasks(newestFirst(taskRes.items));
     } catch (error) {
       console.error('Fetch opportunities error:', error);
       message.error('加载商机监测数据失败');
@@ -219,6 +226,22 @@ const OpportunityMonitorPage: React.FC = () => {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [fetchAll]);
+
+  const checkLocalHelper = useCallback(async () => {
+    setLocalHelperChecking(true);
+    try {
+      const health = await OpportunityAPI.checkLocalHelper();
+      setLocalHelperHealth(health);
+    } catch {
+      setLocalHelperHealth(null);
+    } finally {
+      setLocalHelperChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkLocalHelper();
+  }, [checkLocalHelper]);
 
   const myPending = useMemo(() => {
     if (!user) return [];
@@ -351,6 +374,22 @@ const OpportunityMonitorPage: React.FC = () => {
     fetchAll();
   };
 
+  const startLocalHelperTask = async (task: AgentTask) => {
+    try {
+      await OpportunityAPI.startLocalHelperTask(task);
+      await OpportunityAPI.updateAgentTask(task.id, {
+        status: 'in_progress',
+        result_summary: '已交给本地助手处理。',
+      });
+      message.success('已启动本地助手任务');
+      fetchAll();
+    } catch (error) {
+      console.error('Start local helper task error:', error);
+      message.warning('未检测到本地助手，请先安装并启动');
+      setLocalHelperHealth(null);
+    }
+  };
+
   const opportunityColumns: ColumnsType<BidOpportunity> = [
     {
       title: '商机标题',
@@ -419,7 +458,14 @@ const OpportunityMonitorPage: React.FC = () => {
   ];
 
   const runColumns: ColumnsType<MonitorRun> = [
-    { title: '巡检时间', dataIndex: 'created', key: 'created', width: 160 },
+    {
+      title: '巡检时间',
+      dataIndex: 'created',
+      key: 'created',
+      width: 160,
+      defaultSortOrder: 'descend',
+      sorter: (a, b) => String(a.created || '').localeCompare(String(b.created || '')),
+    },
     { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 180 },
     { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
     { title: '结果', dataIndex: 'status', key: 'status', width: 110, render: (v: string) => tag(statusMap, v) },
@@ -429,6 +475,14 @@ const OpportunityMonitorPage: React.FC = () => {
   ];
 
   const agentTaskColumns: ColumnsType<AgentTask> = [
+    {
+      title: '生成时间',
+      dataIndex: 'created',
+      key: 'created',
+      width: 160,
+      defaultSortOrder: 'descend',
+      sorter: (a, b) => String(a.created || '').localeCompare(String(b.created || '')),
+    },
     { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 180, ellipsis: true },
     { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
     { title: '类型', dataIndex: 'task_type', key: 'task_type', width: 110, render: (v: string) => tag(agentTaskTypeMap, v) },
@@ -471,10 +525,15 @@ const OpportunityMonitorPage: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 210,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
+          {record.task_type === 'local_helper' && (
+            <Button type="text" icon={<ApiOutlined />} onClick={() => startLocalHelperTask(record)}>
+              本地
+            </Button>
+          )}
           {record.status !== 'completed' && (
             <Button type="text" onClick={() => updateAgentTaskStatus(record, 'completed')}>完成</Button>
           )}
@@ -521,7 +580,14 @@ const OpportunityMonitorPage: React.FC = () => {
           <Title level={4} style={{ marginBottom: 4 }}>商机监测</Title>
           <Text type="secondary">自动巡检招投标网站，员工在 ERP 判断，群里只发摘要。</Text>
         </div>
-        {isManager && <Button type="primary" onClick={() => openSourceModal()}>新增监测源</Button>}
+        <Space>
+          <Tag color={localHelperHealth?.ok ? 'green' : 'default'}>
+            本地助手{localHelperHealth?.ok ? '在线' : '离线'}
+          </Tag>
+          <Button loading={localHelperChecking} onClick={checkLocalHelper}>检测助手</Button>
+          {!localHelperHealth?.ok && <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">下载本地助手</Button>}
+          {isManager && <Button type="primary" onClick={() => openSourceModal()}>新增监测源</Button>}
+        </Space>
       </Flex>
 
       <Card>

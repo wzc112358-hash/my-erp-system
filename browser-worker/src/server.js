@@ -102,6 +102,7 @@ const renderOperationPage = (session, { accessToken = '' } = {}) => `<!doctype h
       button, a.button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 9px 13px; text-decoration: none; cursor: pointer; font-size: 14px; }
       button.secondary { background: #fff; color: #2563eb; }
       code { background: #f3f4f6; border-radius: 4px; padding: 2px 5px; }
+      .error { color: #b91c1c; }
     </style>
   </head>
   <body>
@@ -114,6 +115,7 @@ const renderOperationPage = (session, { accessToken = '' } = {}) => `<!doctype h
           <dt>入口</dt><dd>${htmlEscape(session.target_url || session.login_url || '')}</dd>
           <dt>Profile</dt><dd>${htmlEscape(session.profile_ref || '')}</dd>
           <dt>运行地址</dt><dd>${htmlEscape(session.runtime_url || '未启动')}</dd>
+          <dt>最近错误</dt><dd class="error">${htmlEscape(session.last_error || '无')}</dd>
         </dl>
         <div class="actions">
           <form method="post" action="/sessions/${htmlEscape(session.id)}/start">${hiddenTokenInput(accessToken)}<button type="submit">启动会话</button></form>
@@ -233,6 +235,9 @@ export const createServer = ({
         sourceName: body.sourceName || body.source_name || '',
         ownerName: body.ownerName || body.owner_name || '',
         loginUrl: body.loginUrl || body.login_url || '',
+        createdAt: body.createdAt || body.created_at || '',
+        updatedAt: body.updatedAt || body.updated_at || '',
+        expiresAt: body.expiresAt || body.expires_at || '',
       });
       json(response, 201, session);
       return;

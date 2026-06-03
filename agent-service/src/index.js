@@ -5,6 +5,7 @@ import {
   processCandidatesWithEnhancement,
 } from './opportunity-agent.js';
 import { collectHttpHtmlCandidates } from './adapters/http-html-adapter.js';
+import { collectSourceWithCollector, collectUrlWithCollector } from './collector-client.js';
 import { buildConfirmationPackage } from './domain/confirmation-package.js';
 import { extractDocumentInsight } from './domain/document-ingestion.js';
 import { classifyWithLlm } from './domain/llm-classifier.js';
@@ -24,6 +25,7 @@ const SCHEDULE_TIME_ZONE = process.env.OPPORTUNITY_AGENT_TIME_ZONE || 'Asia/Shan
 const BROWSER_WORKER_URL = process.env.BROWSER_WORKER_URL || '';
 const BROWSER_PUBLIC_BASE_URL = process.env.BROWSER_PUBLIC_BASE_URL || '';
 const BROWSER_INTERNAL_API_TOKEN = process.env.BROWSER_INTERNAL_API_TOKEN || '';
+const COLLECTOR_SERVICE_URL = process.env.COLLECTOR_SERVICE_URL || '';
 
 const request = async (path, options = {}) => {
   const response = await fetch(`${API_URL}${path}`, {
@@ -101,10 +103,28 @@ const sampleCandidatesFor = (source) => {
   ];
 };
 
-const collectCandidates = async (source) => {
+const COLLECTOR_MODES = new Set(['http_html', 'http_json', 'crawl4ai_markdown', 'scrapling_fetch']);
+
+const shouldUseCollectorService = (strategy, collectorServiceUrl) => (
+  Boolean(collectorServiceUrl) &&
+  !strategy.requiresManualAssist &&
+  ['cloud_auto', 'cloud_then_local'].includes(strategy.collectionPath) &&
+  COLLECTOR_MODES.has(strategy.crawlStrategy)
+);
+
+export const collectCandidates = async (source, {
+  collectorServiceUrl = COLLECTOR_SERVICE_URL,
+} = {}) => {
   if (SAMPLE_MODE) return sampleCandidatesFor(source);
   const strategy = resolveSourceStrategy(source);
   if (strategy.requiresManualAssist) return [];
+  if (shouldUseCollectorService(strategy, collectorServiceUrl)) {
+    return collectSourceWithCollector({
+      collectorUrl: collectorServiceUrl,
+      source,
+      mode: strategy.crawlStrategy,
+    });
+  }
   if (strategy.crawlStrategy === 'http_html') return collectHttpHtmlCandidates(source, {
     enrichDetails: process.env.OPPORTUNITY_AGENT_ENRICH_DETAILS !== '0',
   });
@@ -402,6 +422,7 @@ export const runPublicUrlDryRun = async ({
   sourceName = '测试公开源',
   ownerName = '未分配',
   classifierEnhancer = classifyWithLlm,
+  collectorServiceUrl = COLLECTOR_SERVICE_URL,
 }) => {
   const source = {
     id: 'public-url-source',
@@ -416,9 +437,17 @@ export const runPublicUrlDryRun = async ({
     crawl_strategy: 'http_html',
     site_search_behavior: 'supplemental',
   };
-  const rawCandidates = await collectHttpHtmlCandidates(source, {
-    enrichDetails: process.argv.includes('--enrich-details'),
-  });
+  const rawCandidates = collectorServiceUrl
+    ? await collectUrlWithCollector({
+      collectorUrl: collectorServiceUrl,
+      url,
+      sourceName,
+      ownerName,
+      mode: source.crawl_strategy,
+    })
+    : await collectHttpHtmlCandidates(source, {
+      enrichDetails: process.argv.includes('--enrich-details'),
+    });
   const processed = await processCandidatesWithEnhancement(rawCandidates, { classifierEnhancer });
   const run = {
     id: 'public-url-run',

@@ -112,3 +112,107 @@ test('playwright launch options include an explicit browser executable when conf
   assert.equal(options.executablePath, '/usr/bin/google-chrome');
   assert.deepEqual(options.viewport, { width: 1366, height: 900 });
 });
+
+test('playwright runtime keeps a session running when first navigation is blocked', async () => {
+  const calls = {
+    goto: [],
+    setContent: [],
+    closed: 0,
+  };
+  const page = {
+    async goto(url) {
+      calls.goto.push(url);
+      throw new Error('page.goto: net::ERR_EMPTY_RESPONSE');
+    },
+    async setContent(content) {
+      calls.setContent.push(content);
+    },
+    async screenshot() {
+      return Buffer.from('png');
+    },
+    mouse: {
+      async click() {},
+    },
+    keyboard: {
+      async type() {},
+    },
+  };
+  const context = {
+    pages() {
+      return [page];
+    },
+    async close() {
+      calls.closed += 1;
+    },
+  };
+  const runtime = createBrowserRuntime({
+    mode: 'playwright',
+    chromium: {
+      async launchPersistentContext() {
+        return context;
+      },
+    },
+  });
+
+  const started = await runtime.start(session);
+  const snapshot = await runtime.snapshot(session.id);
+
+  assert.equal(started.runtime_status, 'running');
+  assert.equal(started.target_url, session.target_url);
+  assert.match(started.last_error, /ERR_EMPTY_RESPONSE/);
+  assert.equal(runtime.isRunning(session.id), true);
+  assert.deepEqual(calls.goto, [session.target_url]);
+  assert.equal(calls.closed, 0);
+  assert.match(calls.setContent[0], /目标网站打开失败/);
+  assert.equal(snapshot.content_type, 'image/png');
+});
+
+test('playwright runtime records navigation errors without throwing', async () => {
+  const calls = {
+    goto: [],
+    setContent: [],
+  };
+  const page = {
+    async goto(url) {
+      calls.goto.push(url);
+      if (url.includes('blocked')) {
+        throw new Error('page.goto: net::ERR_EMPTY_RESPONSE');
+      }
+    },
+    async setContent(content) {
+      calls.setContent.push(content);
+    },
+    async screenshot() {
+      return Buffer.from('png');
+    },
+    mouse: {
+      async click() {},
+    },
+    keyboard: {
+      async type() {},
+    },
+  };
+  const context = {
+    pages() {
+      return [page];
+    },
+    async close() {},
+  };
+  const runtime = createBrowserRuntime({
+    mode: 'playwright',
+    chromium: {
+      async launchPersistentContext() {
+        return context;
+      },
+    },
+  });
+
+  await runtime.start(session);
+  const result = await runtime.navigate(session.id, 'https://example.com/blocked');
+
+  assert.equal(result.runtime_status, 'running');
+  assert.equal(result.target_url, 'https://example.com/blocked');
+  assert.match(result.last_error, /ERR_EMPTY_RESPONSE/);
+  assert.deepEqual(calls.goto, [session.target_url, 'https://example.com/blocked']);
+  assert.match(calls.setContent[0], /目标网站打开失败/);
+});
