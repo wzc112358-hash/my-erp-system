@@ -23,7 +23,6 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
   const [salesContractOptions, setSalesContractOptions] = useState<{ label: string; value: string }[]>([]);
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [wetherTransit, setWetherTransit] = useState<'yes' | 'no'>('no');
-  const [selectedContractId, setSelectedContractId] = useState<string | undefined>();
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -73,7 +72,6 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
     if (initialValues) {
       const transit = initialValues.wether_transit || 'no';
       setWetherTransit(transit);
-      setSelectedContractId(initialValues.purchase_contract);
       form.setFieldsValue({
         ...initialValues,
         shipment_date: initialValues.shipment_date ? dayjs(initialValues.shipment_date) : undefined,
@@ -83,11 +81,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
     }
   }, [initialValues, form]);
 
-  const selectedContract = contractOptions.find((opt) => opt.value === selectedContractId);
-  const isCrossBorder = selectedContract?.is_cross_border || false;
-
   const handleContractChange = (value: string) => {
-    setSelectedContractId(value);
     const selected = contractOptions.find((opt) => opt.value === value);
     if (selected && !initialValues?.product_name) {
       form.setFieldsValue({ product_name: '' });
@@ -305,26 +299,24 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
         </Row>
       )}
 
-      {isCrossBorder && (
-        <Row gutter={16}>
-          <Col xs={24} md={12}>
-            <Form.Item
-              name="tariff"
-              label="关税"
-            >
-              <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入关税金额" />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={12}>
-            <Form.Item
-              name="value_added_tax"
-              label="增值税"
-            >
-              <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入增值税金额" />
-            </Form.Item>
-          </Col>
-        </Row>
-      )}
+      <Row gutter={16}>
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="tariff"
+            label="关税"
+          >
+            <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入关税金额" />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="value_added_tax"
+            label="增值税"
+          >
+            <InputNumber min={0} precision={4} style={{ width: '100%' }} placeholder="请输入增值税金额" />
+          </Form.Item>
+        </Col>
+      </Row>
 
       <Row gutter={16}>
         <Col span={24}>

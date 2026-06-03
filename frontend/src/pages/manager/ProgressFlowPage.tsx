@@ -429,8 +429,8 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="运费1">{formatCurrency(r.freight_1 as number)}</Descriptions.Item>
           <Descriptions.Item label="运费2">{formatCurrency(r.freight_2 as number)}</Descriptions.Item>
           <Descriptions.Item label="杂费">{formatCurrency(r.miscellaneous_expenses as number)}</Descriptions.Item>
-          {(r.tariff as number) > 0 && <Descriptions.Item label="关税">{formatCurrency(r.tariff as number)}</Descriptions.Item>}
-          {(r.value_added_tax as number) > 0 && <Descriptions.Item label="增值税">{formatCurrency(r.value_added_tax as number)}</Descriptions.Item>}
+          <Descriptions.Item label="关税">{formatCurrency((r.tariff as number) || 0)}</Descriptions.Item>
+          <Descriptions.Item label="增值税">{formatCurrency((r.value_added_tax as number) || 0)}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
