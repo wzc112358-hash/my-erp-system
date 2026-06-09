@@ -13,6 +13,7 @@ import {
   BarChartOutlined,
   BellOutlined,
   LinkOutlined,
+  RadarChartOutlined,
   InboxOutlined as InventoryIcon,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
@@ -40,12 +41,14 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'receipts', label: '收款', icon: <DollarOutlined />, path: '/sales/receipts' },
     { key: 'services', label: '服务合同', icon: <FileTextOutlined />, path: '/sales/services' },
     { key: 'bidding', label: '投标管理', icon: <FileTextOutlined />, path: '/sales/bidding' },
+    { key: 'opportunities', label: '商机监测', icon: <RadarChartOutlined />, path: '/sales/opportunities' },
     { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/sales/exchange-rate' },
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/sales/notifications' },
   ],
   purchasing: [
     { key: 'suppliers', label: '供应商管理', icon: <TeamOutlined />, path: '/purchase/suppliers' },
     { key: 'contracts', label: '采购合同', icon: <FileTextOutlined />, path: '/purchase/contracts' },
+    { key: 'opportunities', label: '商机监测', icon: <RadarChartOutlined />, path: '/purchase/opportunities' },
     { key: 'arrivals', label: '运输', icon: <InboxOutlined />, path: '/purchase/arrivals' },
     { key: 'invoices', label: '收票', icon: <FileDoneOutlined />, path: '/purchase/invoices' },
     { key: 'payments', label: '付款', icon: <BankOutlined />, path: '/purchase/payments' },
@@ -58,6 +61,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
+    { key: 'opportunities', label: '商机监测', icon: <RadarChartOutlined />, path: '/manager/opportunities' },
     { key: 'inventory', label: '库存管理', icon: <InventoryIcon />, path: '/manager/inventory' },
     { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/manager/exchange-rate' },
   ],

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; connect-src http://127.0.0.1:* http://localhost:*" />
+  <title>恒化成本地采集助手 · 配对</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: "Microsoft YaHei", system-ui, sans-serif; margin: 0; padding: 20px; background: #f5f7fa; color: #1f2d3d; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p.hint { font-size: 12px; color: #6b7a8d; margin: 0 0 16px; }
+    label { display: block; font-size: 13px; margin: 12px 0 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid #cdd6e2; border-radius: 6px; }
+    input:focus { outline: none; border-color: #1978ca; }
+    .err { color: #c0392b; font-size: 12px; min-height: 16px; margin-top: 4px; }
+    button { margin-top: 18px; width: 100%; padding: 10px; font-size: 14px; color: #fff; background: #1978ca; border: none; border-radius: 6px; cursor: pointer; }
+    button:disabled { background: #9bbfe0; cursor: default; }
+    .status { margin-top: 14px; font-size: 13px; padding: 10px; border-radius: 6px; display: none; }
+    .status.ok { display: block; background: #e6f6ec; color: #1e7e44; }
+    .status.bad { display: block; background: #fdecea; color: #c0392b; }
+  </style>
+</head>
+<body>
+  <h1>连接 ERP 云端</h1>
+  <p class="hint">在 ERP「人工协助 / 本地助手」页面获取配对码后填写下方信息。</p>
+
+  <label for="cloudUrl">云端地址</label>
+  <input id="cloudUrl" type="text" placeholder="https://agent.henghuacheng.cn" />
+
+  <label for="code">配对码</label>
+  <input id="code" type="text" placeholder="请输入 ERP 生成的配对码" autocomplete="off" />
+
+  <label for="deviceName">设备名称（可选）</label>
+  <input id="deviceName" type="text" placeholder="例如：小魏-办公室电脑" autocomplete="off" />
+
+  <div class="err" id="err"></div>
+  <button id="submit">配对并连接</button>
+  <div class="status" id="status"></div>
+
+  <script src="./pair.js"></script>
+</body>
+</html>

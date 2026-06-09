@@ -1,0 +1,13 @@
+{
+  "name": "erp-opportunity-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/index.js",
+    "run-once": "node src/index.js run-once",
+    "local-helper-api": "node src/local-helper-api-server.js"
+  },
+  "dependencies": {}
+}

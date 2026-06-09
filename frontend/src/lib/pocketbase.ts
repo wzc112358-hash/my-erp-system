@@ -5,7 +5,10 @@ const getCurrentSystem = (): string => {
 };
 
 const getApiBaseUrl = (): string => {
-  if (import.meta.env.DEV) {
+  const overrideUrl = import.meta.env.VITE_POCKETBASE_URL;
+  if (overrideUrl) return overrideUrl;
+
+  if (import.meta.env.DEV && import.meta.env.VITE_USE_REMOTE_API !== '1') {
     return 'http://127.0.0.1:8090';
   }
   const system = getCurrentSystem();

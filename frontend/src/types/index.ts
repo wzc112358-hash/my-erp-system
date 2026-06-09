@@ -7,3 +7,4 @@ export * from './comparison';
 export * from './notification';
 export * from './inventory';
 export * from './stock-movement';
+export * from './opportunity';
