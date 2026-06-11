@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 package-lock.json
+!local-helper-app/package-lock.json
 
 # Build outputs
 dist/
@@ -13,6 +14,9 @@ backend/pb_migrations/*
 !backend/pb_migrations/.gitkeep
 !backend/pb_migrations/202605230001_created_opportunity_agent_collections.js
 !backend/pb_migrations/202605230002_seed_monitor_sources.js
+!backend/pb_migrations/202605250001_extend_opportunity_agent_schema.js
+!backend/pb_migrations/202605260001_create_agent_login_sessions.js
+!backend/pb_migrations/202606110001_create_local_helper_collections.js
 
 # Backend binary
 backend/pocketbase

@@ -5,7 +5,6 @@ import {
   buildLocalHelperPairingPayload,
   hashPairCode,
   normalizePairCode,
-} from './local-helper-pairing';
 } from './local-helper-pairing.ts';
 
 test('local helper pairing normalizes and hashes pair codes', async () => {
