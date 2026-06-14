@@ -10,7 +10,9 @@
     "build": "node scripts/build.mjs",
     "start:electron": "npm run build && electron .",
     "package:win-unpacked": "npm run build && electron-builder --win dir --x64",
-    "package:win": "npm run build && electron-builder --win nsis --x64"
+    "package:win-portable": "npm run build && electron-builder --win zip --x64",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:release": "node scripts/release.mjs"
   },
   "dependencies": {
     "playwright": "1.60.0"
@@ -39,7 +41,10 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {

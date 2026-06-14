@@ -16,6 +16,8 @@ import {
   shouldPersistOpportunity,
   shouldRunSource,
   collectCandidates,
+  runOnce,
+  shouldFallbackToLocalHelper,
 } from './index.js';
 import { buildOpportunityPayload, runPublicUrlDryRun } from './index.js';
 import { resolveSourceStrategy } from './source-strategies.js';
@@ -144,6 +146,46 @@ test('resolveSourceStrategy routes phase 3 local-helper sites to local helper', 
   assert.equal(strategy.collectionPath, 'local_helper');
   assert.equal(strategy.firstTool, 'local_playwright_cdp');
   assert.equal(strategy.requiresManualAssist, true);
+});
+
+test('resolveSourceStrategy lets phase 3 local-helper matrix override stale stored crawl strategy for Huajin', () => {
+  const strategy = resolveSourceStrategy({
+    source_name: '华锦兵器网',
+    login_type: 'manual',
+    requires_login: true,
+    may_have_captcha: true,
+    crawl_strategy: 'playwright_network',
+    status: 'active',
+  });
+
+  assert.equal(strategy.crawlStrategy, 'local_helper');
+  assert.equal(strategy.collectionPath, 'local_helper');
+});
+
+test('buildManualTaskPayload creates a local-helper task for Huajin pilot even with stale source crawl strategy', () => {
+  const source = {
+    id: 'source-huajin',
+    source_name: '华锦兵器网',
+    owner_name: '小魏',
+    source_url: 'https://www.norincogroup-ebuy.com/',
+    crawl_strategy: 'playwright_network',
+    requires_login: true,
+    may_have_captcha: true,
+    keywords: '消泡剂,液氮',
+  };
+  const task = buildManualTaskPayload({
+    source,
+    run: { id: 'run-huajin' },
+    strategy: resolveSourceStrategy(source),
+    now: new Date('2026-06-12T09:00:00+08:00'),
+  });
+
+  assert.equal(task.task_type, 'local_helper');
+  assert.equal(task.source, 'source-huajin');
+  assert.equal(task.monitor_run, 'run-huajin');
+  assert.equal(task.entry_url, 'https://www.norincogroup-ebuy.com/');
+  assert.equal(task.search_terms, '消泡剂,液氮');
+  assert.match(task.action_steps, /打开本地助手任务窗口/);
 });
 
 test('runPublicUrlDryRun fetches a public page without PocketBase', async () => {
@@ -334,6 +376,127 @@ test('collectCandidates uses collector-service for 国能E购 http_json source',
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('shouldFallbackToLocalHelper only catches cloud_then_local empty or failed runs', () => {
+  assert.equal(shouldFallbackToLocalHelper({
+    strategy: {
+      collectionPath: 'cloud_then_local',
+      fallbackPath: 'local_helper',
+    },
+    rawCandidates: [],
+  }), true);
+  assert.equal(shouldFallbackToLocalHelper({
+    strategy: {
+      collectionPath: 'cloud_then_local',
+      fallbackPath: 'local_helper',
+    },
+    rawCandidates: [{ title: '公告' }],
+  }), false);
+  assert.equal(shouldFallbackToLocalHelper({
+    strategy: {
+      collectionPath: 'cloud_auto',
+      fallbackPath: 'local_helper',
+    },
+    error: new Error('blocked'),
+  }), false);
+});
+
+test('runOnce creates local-helper task when cloud_then_local source returns no candidates', async () => {
+  const source = {
+    id: 'source-yulong',
+    source_name: '裕龙招投标网',
+    owner_name: '小白',
+    source_url: 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99',
+    status: 'active',
+    crawl_strategy: 'playwright_network',
+    login_type: 'none',
+    requires_login: false,
+    may_have_captcha: false,
+  };
+  const createdRecords = [];
+  const manualTasks = [];
+  const updatedRecords = [];
+  const auditLogs = [];
+
+  await runOnce({
+    loginFn: async () => 'token1',
+    listAllFn: async (collection) => {
+      if (collection === 'monitor_sources') return [source];
+      if (collection === 'bid_opportunities') return [];
+      return [];
+    },
+    shouldRunSourceFn: () => true,
+    collectCandidatesFn: async () => [],
+    processCandidatesFn: async () => [],
+    createRecordFn: async (collection, token, data) => {
+      createdRecords.push({ collection, token, data });
+      return { id: `${collection}-1`, ...data };
+    },
+    updateRecordFn: async (collection, id, token, data) => {
+      updatedRecords.push({ collection, id, token, data });
+      return { id, ...data };
+    },
+    createManualTaskFn: async (token, taskSource, run, strategy) => {
+      manualTasks.push({ token, taskSource, run, strategy });
+      return { id: 'task-1', task_type: strategy.crawlStrategy };
+    },
+    auditLogFn: async (token, data) => {
+      auditLogs.push({ token, data });
+    },
+  });
+
+  const run = createdRecords.find((item) => item.collection === 'monitor_runs');
+  assert.equal(run.data.status, 'manual_required');
+  assert.equal(run.data.found_count, 0);
+  assert.match(run.data.error_message, /本地助手/);
+  assert.equal(manualTasks.length, 1);
+  assert.equal(manualTasks[0].strategy.crawlStrategy, 'local_helper');
+  assert.match(manualTasks[0].strategy.manualAssistReason, /云端采集无候选公告/);
+  assert.deepEqual(updatedRecords[0].data.last_result, 'manual_required');
+  assert.match(auditLogs[0].data.output_summary, /manual_required/);
+});
+
+test('runOnce creates local-helper task when cloud_then_local collection throws', async () => {
+  const source = {
+    id: 'source-yanchang',
+    source_name: '延长石油',
+    owner_name: '小杨',
+    source_url: 'https://zc.sxycpc.com/ebidPortal/menu0002.html',
+    status: 'active',
+    crawl_strategy: 'playwright_dom',
+    login_type: 'none',
+    requires_login: false,
+    may_have_captcha: false,
+  };
+  const createdRecords = [];
+  const manualTasks = [];
+
+  await runOnce({
+    loginFn: async () => 'token1',
+    listAllFn: async (collection) => (collection === 'monitor_sources' ? [source] : []),
+    shouldRunSourceFn: () => true,
+    collectCandidatesFn: async () => {
+      throw new Error('cloud playwright blocked');
+    },
+    processCandidatesFn: async () => [],
+    createRecordFn: async (collection, token, data) => {
+      createdRecords.push({ collection, token, data });
+      return { id: `${collection}-1`, ...data };
+    },
+    updateRecordFn: async () => ({}),
+    createManualTaskFn: async (token, taskSource, run, strategy) => {
+      manualTasks.push({ token, taskSource, run, strategy });
+      return { id: 'task-1', task_type: strategy.crawlStrategy };
+    },
+    auditLogFn: async () => {},
+  });
+
+  const run = createdRecords.find((item) => item.collection === 'monitor_runs');
+  assert.equal(run.data.status, 'manual_required');
+  assert.match(run.data.error_message, /cloud playwright blocked/);
+  assert.equal(manualTasks.length, 1);
+  assert.equal(manualTasks[0].strategy.crawlStrategy, 'local_helper');
 });
 
 test('runDocumentTextDryRun parses pasted tender text without PocketBase', () => {

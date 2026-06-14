@@ -1,4 +1,4 @@
-export type HelperTaskStatus = 'pending' | 'running' | 'waiting_agent' | 'cancelled' | 'completed';
+export type HelperTaskStatus = 'pending' | 'running' | 'waiting_agent' | 'cancelled' | 'completed' | 'failed';
 
 export type HelperTask = {
   id: string;
@@ -9,6 +9,8 @@ export type HelperTask = {
   searchTerms?: string;
   actionSteps?: string;
   lastObservation?: string;
+  lastScreenshotPath?: string;
+  lastLog?: string;
   updatedAt?: string;
 };
 
@@ -28,6 +30,18 @@ export type CloudPairing = {
   deviceName: string;
   pairedAt: string;
   lastHeartbeatAt?: string;
+  latestRelease?: LocalHelperRelease;
+};
+
+export type LocalHelperRelease = {
+  latestVersion?: string;
+  minSupportedVersion?: string;
+  portableUrl?: string;
+  installerUrl?: string;
+  sha256Url?: string;
+  updateAvailable?: boolean;
+  updateRequired?: boolean;
+  notes?: string;
 };
 
 export type CloudTask = {
@@ -43,6 +57,12 @@ export type CloudTask = {
   search_terms?: string;
   actionSteps?: string;
   action_steps?: string;
+  lastObservation?: string;
+  last_observation?: string;
+  lastScreenshotPath?: string;
+  last_screenshot_path?: string;
+  lastLog?: string;
+  last_log?: string;
   updatedAt?: string;
   updated?: string;
 };
@@ -51,6 +71,13 @@ export type TaskStoreConfigStore = {
   readCloudPairing(): CloudPairing | null;
   writeCloudPairing(pairing: CloudPairing): void;
   clearCloudPairing(): void;
+};
+
+const mapCloudStatus = (status = ''): HelperTaskStatus => {
+  if (status === 'in_progress') return 'running';
+  if (status === 'request_human') return 'waiting_agent';
+  if (['completed', 'failed', 'cancelled'].includes(status)) return status as HelperTaskStatus;
+  return 'pending';
 };
 
 export const createTaskStore = ({
@@ -78,11 +105,15 @@ export const createTaskStore = ({
       return {
         ok: true,
         service: 'hcz-local-helper-app',
+        helperVersion: process.env.npm_package_version || '0.1.0',
         paired: Boolean(device?.paired),
         userName: device?.userName || '',
         cloudPaired: Boolean(cloudPairing?.paired),
         cloudUrl: cloudPairing?.cloudUrl || '',
         cloudOwnerName: cloudPairing?.ownerName || '',
+        cloudDeviceName: cloudPairing?.deviceName || '',
+        lastHeartbeatAt: cloudPairing?.lastHeartbeatAt || '',
+        latestRelease: cloudPairing?.latestRelease || null,
         taskCount: tasks.size,
       };
     },
@@ -130,12 +161,14 @@ export const createTaskStore = ({
       return cloudPairing;
     },
 
-    markCloudHeartbeat() {
+    markCloudHeartbeat(result: { release?: LocalHelperRelease } = {}) {
       if (!cloudPairing?.paired) throw new Error('cloud is not paired');
       cloudPairing = {
         ...cloudPairing,
         lastHeartbeatAt: new Date().toISOString(),
+        latestRelease: result.release || cloudPairing.latestRelease,
       };
+      configStore?.writeCloudPairing(cloudPairing);
       return cloudPairing;
     },
 
@@ -146,16 +179,22 @@ export const createTaskStore = ({
     },
 
     syncCloudTasks(cloudTasks: CloudTask[] = []) {
-      return cloudTasks.map((task) => this.addTask({
-        id: task.id,
-        sourceName: task.sourceName || task.source_name || '',
-        ownerName: task.ownerName || task.owner_name || '',
-        entryUrl: task.entryUrl || task.entry_url || '',
-        status: task.status === 'in_progress' ? 'running' : 'pending',
-        searchTerms: task.searchTerms || task.search_terms || '',
-        actionSteps: task.actionSteps || task.action_steps || '',
-        updatedAt: task.updatedAt || task.updated || '',
-      }));
+      return cloudTasks.map((task) => {
+        const existing = tasks.get(task.id);
+        return this.addTask({
+          id: task.id,
+          sourceName: task.sourceName || task.source_name || '',
+          ownerName: task.ownerName || task.owner_name || '',
+          entryUrl: task.entryUrl || task.entry_url || '',
+          status: mapCloudStatus(task.status),
+          searchTerms: task.searchTerms || task.search_terms || '',
+          actionSteps: task.actionSteps || task.action_steps || '',
+          lastObservation: task.lastObservation || task.last_observation || existing?.lastObservation || '',
+          lastScreenshotPath: task.lastScreenshotPath || task.last_screenshot_path || existing?.lastScreenshotPath || '',
+          lastLog: task.lastLog || task.last_log || existing?.lastLog || '',
+          updatedAt: task.updatedAt || task.updated || '',
+        });
+      });
     },
 
     listTasks() {
@@ -175,11 +214,23 @@ export const createTaskStore = ({
       return task;
     },
 
-    continueTask(id: string, { observation = '' }: { observation?: string } = {}) {
+    continueTask(id: string, {
+      observation = '',
+      screenshotPath = '',
+      log = '',
+      status = 'waiting_agent',
+    }: {
+      observation?: string;
+      screenshotPath?: string;
+      log?: string;
+      status?: HelperTaskStatus;
+    } = {}) {
       const task = touch({
         ...getTask(id),
-        status: 'waiting_agent',
+        status,
         lastObservation: observation,
+        lastScreenshotPath: screenshotPath,
+        lastLog: log,
       });
       tasks.set(id, task);
       return task;
@@ -189,6 +240,17 @@ export const createTaskStore = ({
       const task = touch({
         ...getTask(id),
         status: 'cancelled',
+      });
+      tasks.set(id, task);
+      return task;
+    },
+
+    failTask(id: string, { observation = '', log = '' }: { observation?: string; log?: string } = {}) {
+      const task = touch({
+        ...getTask(id),
+        status: 'failed',
+        lastObservation: observation,
+        lastLog: log,
       });
       tasks.set(id, task);
       return task;

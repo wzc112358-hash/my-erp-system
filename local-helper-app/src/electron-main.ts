@@ -19,6 +19,7 @@ const store = createTaskStore();
 const server = createLocalApiServer({ store, port: config.port });
 let tray: InstanceType<typeof Tray> | null = null;
 let pairWindow: InstanceType<typeof BrowserWindow> | null = null;
+let taskWindow: InstanceType<typeof BrowserWindow> | null = null;
 
 const openPairingWindow = () => {
   if (pairWindow && !pairWindow.isDestroyed()) {
@@ -42,6 +43,33 @@ const openPairingWindow = () => {
   });
 };
 
+const openTaskWindow = (taskId = '') => {
+  if (taskWindow && !taskWindow.isDestroyed()) {
+    taskWindow.focus();
+    if (taskId) {
+      void taskWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/tasks.html'), {
+        search: `api=${encodeURIComponent(config.localUrl)}&taskId=${encodeURIComponent(taskId)}`,
+      });
+    }
+    return;
+  }
+  taskWindow = new BrowserWindow({
+    width: 1060,
+    height: 720,
+    minWidth: 860,
+    minHeight: 560,
+    title: '恒化成本地采集助手 · 任务',
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  taskWindow.setMenuBarVisibility(false);
+  void taskWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/tasks.html'), {
+    search: `api=${encodeURIComponent(config.localUrl)}${taskId ? `&taskId=${encodeURIComponent(taskId)}` : ''}`,
+  });
+  taskWindow.on('closed', () => {
+    taskWindow = null;
+  });
+};
+
 const runMenuAction = (action = '') => {
   if (action.startsWith('open:')) {
     shell.openExternal(action.slice('open:'.length));
@@ -49,6 +77,10 @@ const runMenuAction = (action = '') => {
   }
   if (action === 'pair') {
     openPairingWindow();
+    return;
+  }
+  if (action === 'tasks') {
+    openTaskWindow();
     return;
   }
   if (action === 'quit') app.quit();
@@ -105,11 +137,7 @@ const handleDeepLink = async (rawUrl = '') => {
   }
   if (link.type === 'task') {
     await fetch(`${config.localUrl}/cloud/tasks`).catch(() => null);
-    await fetch(`${config.localUrl}/cloud/tasks/${encodeURIComponent(link.taskId)}/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    }).catch(() => null);
+    openTaskWindow(link.taskId);
   }
 };
 

@@ -51,6 +51,8 @@ test('electron shell tray menu exposes status, ERP, and exit actions', () => {
   assert.equal(menu[0].label, '恒化成本地采集助手');
   assert.match(menu[1].label, /已连接/);
   assert.ok(menu.some((item) => item.label === '打开 ERP'));
+  assert.ok(menu.some((item) => item.label === '打开任务列表'));
+  assert.ok(menu.some((item) => item.click === 'tasks'));
   assert.ok(menu.some((item) => item.label === '退出'));
   assert.ok(menu.some((item) => item.click === 'pair'));
 });

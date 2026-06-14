@@ -15,7 +15,16 @@ import {
   entryUrlForSource,
   sessionStatusForSource,
 } from './domain/manual-assist.js';
-import { resolveSourceStrategy } from './source-strategies.js';
+import {
+  buildOpportunityPayload,
+  shouldPersistOpportunity,
+} from './opportunity-persistence.js';
+import { CRAWL_STRATEGIES, resolveSourceStrategy } from './source-strategies.js';
+
+export {
+  buildOpportunityPayload,
+  shouldPersistOpportunity,
+} from './opportunity-persistence.js';
 
 const API_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 const SUPERUSER_EMAIL = process.env.POCKETBASE_SUPERUSER_EMAIL || process.env.POCKETBASE_ADMIN_EMAIL;
@@ -112,6 +121,27 @@ const shouldUseCollectorService = (strategy, collectorServiceUrl) => (
   COLLECTOR_MODES.has(strategy.crawlStrategy)
 );
 
+export const shouldFallbackToLocalHelper = ({
+  strategy = {},
+  rawCandidates = [],
+  error = null,
+} = {}) => (
+  strategy.collectionPath === 'cloud_then_local' &&
+  strategy.fallbackPath === 'local_helper' &&
+  (Boolean(error) || rawCandidates.length === 0)
+);
+
+export const buildLocalHelperFallbackStrategy = (strategy = {}, error = null) => {
+  const reason = error
+    ? `云端采集失败，已转本地助手：${error.message}`
+    : '云端采集无候选公告，已转本地助手，避免误记 no_new。';
+  return {
+    ...strategy,
+    crawlStrategy: CRAWL_STRATEGIES.LOCAL_HELPER,
+    manualAssistReason: reason,
+  };
+};
+
 export const collectCandidates = async (source, {
   collectorServiceUrl = COLLECTOR_SERVICE_URL,
 } = {}) => {
@@ -136,46 +166,6 @@ export const needsManualRun = (source) => (
   (!SAMPLE_MODE && !source.source_url) ||
   (!SAMPLE_MODE && resolveSourceStrategy(source).requiresManualAssist)
 );
-
-const urgencyFor = (deadlineDate) => {
-  if (!deadlineDate) return 'unknown';
-  const days = Math.ceil((new Date(`${deadlineDate}T23:59:59+08:00`).getTime() - Date.now()) / 86400000);
-  if (days <= 3) return 'urgent';
-  if (days <= 7) return 'soon';
-  return 'normal';
-};
-
-export const buildOpportunityPayload = (source, run, item) => {
-  const classification = item.classification;
-  return {
-    source: source.id,
-    monitor_run: run.id,
-    source_name: item.sourceName,
-    owner_name: item.ownerName,
-    title: item.title,
-    url: item.url,
-    fingerprint: item.fingerprint,
-    publish_date: item.publishDate || '',
-    deadline_date: item.deadlineDate || '',
-    buyer_name: item.buyerName || '',
-    product_keywords: classification.productKeywords.join(','),
-    relevance: classification.relevance,
-    relevance_score: classification.relevanceScore,
-    matched_terms: classification.matchedTerms.join(','),
-    matched_sources: classification.matchedSources.join(','),
-    evidence_text: classification.evidenceText,
-    negative_terms: classification.negativeTerms.join(','),
-    classification_version: classification.classificationVersion,
-    needs_human_check: classification.needsHumanCheck,
-    status: 'pending_review',
-    urgency: urgencyFor(item.deadlineDate),
-    agent_summary: classification.summary,
-    hard_requirements: classification.hardRequirements.join(','),
-    risk_flags: classification.riskFlags.join(','),
-    attachment_urls: item.attachmentUrls.join('\n'),
-    raw_text: item.rawText,
-  };
-};
 
 const parsePocketBaseDate = (value) => {
   if (!value) return null;
@@ -211,16 +201,19 @@ export const shouldRunSource = (source, now = new Date()) => {
   });
 };
 
-const upsertOpportunity = async (token, source, run, item, existingByFingerprint) => {
+const upsertOpportunity = async (
+  token,
+  source,
+  run,
+  item,
+  existingByFingerprint,
+  createRecordFn = createRecord,
+) => {
   if (existingByFingerprint.has(item.fingerprint)) return null;
-  const record = await createRecord('bid_opportunities', token, buildOpportunityPayload(source, run, item));
+  const record = await createRecordFn('bid_opportunities', token, buildOpportunityPayload(source, run, item));
   existingByFingerprint.set(item.fingerprint, record);
   return record;
 };
-
-export const shouldPersistOpportunity = (item) => (
-  ['likely_related', 'needs_manual_review'].includes(item.classification?.relevance)
-);
 
 export const shouldCreateLoginSession = (source = {}) => (
   source.requires_login === true ||
@@ -304,8 +297,12 @@ export const buildManualTaskPayload = ({
   session = null,
   now,
 } = {}) => {
+  const taskSource = {
+    ...source,
+    crawl_strategy: strategy.crawlStrategy || source.crawl_strategy,
+  };
   const payload = buildManualAssistTask({
-    source,
+    source: taskSource,
     run,
     reason: strategy.manualAssistReason,
     now,
@@ -551,25 +548,51 @@ export const runConfirmationPackageDryRun = () => buildConfirmationPackage({
   ],
 });
 
-export const runOnce = async () => {
-  const token = await login();
-  const sources = await listAll('monitor_sources', token, '&sort=owner_name,source_name');
-  const existing = await listAll('bid_opportunities', token);
+export const runOnce = async ({
+  loginFn = login,
+  listAllFn = listAll,
+  shouldRunSourceFn = shouldRunSource,
+  collectCandidatesFn = collectCandidates,
+  processCandidatesFn = processCandidatesWithEnhancement,
+  createRecordFn = createRecord,
+  updateRecordFn = updateRecord,
+  createManualTaskFn = createManualTask,
+  auditLogFn = auditLog,
+  classifierEnhancer = classifyWithLlm,
+} = {}) => {
+  const token = await loginFn();
+  const sources = await listAllFn('monitor_sources', token, '&sort=owner_name,source_name');
+  const existing = await listAllFn('bid_opportunities', token);
   const existingByFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
   const allProcessed = [];
   const runIds = [];
 
-  for (const source of sources.filter((item) => shouldRunSource(item))) {
+  for (const source of sources.filter((item) => shouldRunSourceFn(item))) {
     try {
-      const rawCandidates = await collectCandidates(source);
-      const processed = await processCandidatesWithEnhancement(rawCandidates, {
-        classifierEnhancer: classifyWithLlm,
+      const strategy = resolveSourceStrategy(source);
+      let rawCandidates = [];
+      let collectionError = null;
+      try {
+        rawCandidates = await collectCandidatesFn(source);
+      } catch (error) {
+        if (!shouldFallbackToLocalHelper({ strategy, error })) throw error;
+        collectionError = error;
+      }
+      const processed = await processCandidatesFn(rawCandidates, {
+        classifierEnhancer,
       });
       const relatedCount = processed.filter((item) => ['likely_related', 'needs_manual_review'].includes(item.classification.relevance)).length;
-      const manual = needsManualRun(source);
-      const strategy = resolveSourceStrategy(source);
+      const fallbackToLocalHelper = shouldFallbackToLocalHelper({
+        strategy,
+        rawCandidates,
+        error: collectionError,
+      });
+      const taskStrategy = fallbackToLocalHelper
+        ? buildLocalHelperFallbackStrategy(strategy, collectionError)
+        : strategy;
+      const manual = needsManualRun(source) || fallbackToLocalHelper;
       const status = manual ? 'manual_required' : processed.length > 0 ? 'success' : 'no_new';
-      const run = await createRecord('monitor_runs', token, {
+      const run = await createRecordFn('monitor_runs', token, {
         source: source.id,
         source_name: source.source_name,
         owner_name: source.owner_name,
@@ -577,21 +600,21 @@ export const runOnce = async () => {
         status,
         found_count: processed.length,
         related_count: relatedCount,
-        error_message: manual ? strategy.manualAssistReason || '该网站第一版需要人工处理或补充登录/验证码方案' : '',
+        error_message: manual ? taskStrategy.manualAssistReason || '该网站第一版需要人工处理或补充登录/验证码方案' : '',
       });
       runIds.push(run.id);
       if (manual) {
-        await createManualTask(token, source, run, strategy);
+        await createManualTaskFn(token, source, run, taskStrategy);
       }
       for (const item of processed.filter(shouldPersistOpportunity)) {
-        const record = await upsertOpportunity(token, source, run, item, existingByFingerprint);
+        const record = await upsertOpportunity(token, source, run, item, existingByFingerprint, createRecordFn);
         if (record) allProcessed.push(item);
       }
-      await updateRecord('monitor_sources', source.id, token, {
+      await updateRecordFn('monitor_sources', source.id, token, {
         last_result: status,
         last_run_at: new Date().toISOString(),
       });
-      await auditLog(token, {
+      await auditLogFn(token, {
         action: 'monitor_source',
         target_collection: 'monitor_sources',
         target_id: source.id,
@@ -599,7 +622,7 @@ export const runOnce = async () => {
         output_summary: `${status}; found=${processed.length}; related=${relatedCount}`,
       });
     } catch (error) {
-      await createRecord('monitor_runs', token, {
+      await createRecordFn('monitor_runs', token, {
         source: source.id,
         source_name: source.source_name,
         owner_name: source.owner_name,
@@ -609,7 +632,7 @@ export const runOnce = async () => {
         related_count: 0,
         error_message: error.message,
       });
-      await auditLog(token, {
+      await auditLogFn(token, {
         action: 'monitor_source',
         target_collection: 'monitor_sources',
         target_id: source.id,
@@ -623,7 +646,7 @@ export const runOnce = async () => {
 
   const groupSummary = buildGroupSummary(allProcessed);
   if (runIds.length > 0) {
-    await updateRecord('monitor_runs', runIds[runIds.length - 1], token, { group_summary: groupSummary });
+    await updateRecordFn('monitor_runs', runIds[runIds.length - 1], token, { group_summary: groupSummary });
   }
   console.log(groupSummary);
   return groupSummary;

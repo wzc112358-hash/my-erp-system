@@ -30,8 +30,10 @@ import {
 import { OpportunityAPI } from '@/api/opportunity';
 import type {
   AgentTask,
+  AgentArtifact,
   BidDocument,
   BidOpportunity,
+  LocalHelperDevice,
   MonitorRun,
   MonitorSource,
   MonitorSourceFormData,
@@ -110,6 +112,22 @@ const agentTaskStatusMap: Record<string, { label: string; color: string }> = {
   cancelled: { label: '已取消', color: 'default' },
 };
 
+const localHelperDeviceStatusMap: Record<string, { label: string; color: string }> = {
+  pending_pair: { label: '待配对', color: 'orange' },
+  active: { label: '已配对', color: 'green' },
+  revoked: { label: '已撤销', color: 'default' },
+};
+
+const artifactTypeMap: Record<string, { label: string; color: string }> = {
+  candidate_bundle: { label: '候选包', color: 'green' },
+  screenshot: { label: '截图', color: 'blue' },
+  log: { label: '日志', color: 'orange' },
+  dom_snapshot: { label: 'DOM', color: 'purple' },
+  network_response: { label: '网络响应', color: 'cyan' },
+  attachment: { label: '附件', color: 'geekblue' },
+  manual_text: { label: '人工文本', color: 'gold' },
+};
+
 const loginSessionStatusMap: Record<string, { label: string; color: string }> = {
   not_started: { label: '未开始', color: 'default' },
   login_required: { label: '需登录', color: 'orange' },
@@ -170,6 +188,8 @@ const OpportunityMonitorPage: React.FC = () => {
   const [sources, setSources] = useState<MonitorSource[]>([]);
   const [runs, setRuns] = useState<MonitorRun[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
+  const [localHelperDevices, setLocalHelperDevices] = useState<LocalHelperDevice[]>([]);
+  const [agentArtifacts, setAgentArtifacts] = useState<AgentArtifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>();
@@ -198,7 +218,7 @@ const OpportunityMonitorPage: React.FC = () => {
     await Promise.resolve();
     setLoading(true);
     try {
-      const [opportunityRes, sourceRes, runRes, taskRes] = await Promise.all([
+      const [opportunityRes, sourceRes, runRes, taskRes, deviceRes, artifactRes] = await Promise.all([
         OpportunityAPI.listOpportunities({
           per_page: 500,
           search: search || undefined,
@@ -207,11 +227,15 @@ const OpportunityMonitorPage: React.FC = () => {
         OpportunityAPI.listSources(),
         OpportunityAPI.listRuns(),
         OpportunityAPI.listAgentTasks(),
+        OpportunityAPI.listLocalHelperDevices(),
+        OpportunityAPI.listAgentArtifacts(),
       ]);
       setOpportunities(opportunityRes.items);
       setSources(sourceRes.items);
       setRuns(newestFirst(runRes.items));
       setAgentTasks(newestFirst(taskRes.items));
+      setLocalHelperDevices(newestFirst(deviceRes.items));
+      setAgentArtifacts(newestFirst(artifactRes.items));
     } catch (error) {
       console.error('Fetch opportunities error:', error);
       message.error('加载商机监测数据失败');
@@ -254,6 +278,11 @@ const OpportunityMonitorPage: React.FC = () => {
   const bossQueue = useMemo(() => opportunities.filter((item) => item.status === 'needs_boss' || item.status === 'follow'), [opportunities]);
 
   const pendingAgentTasks = useMemo(() => agentTasks.filter((item) => ['pending', 'in_progress'].includes(item.status)), [agentTasks]);
+  const offlineLocalHelperDevices = useMemo(() => localHelperDevices.filter((item) => {
+    if (item.status !== 'active') return false;
+    if (!item.last_seen_at) return true;
+    return Date.now() - new Date(item.last_seen_at).getTime() > 10 * 60 * 1000;
+  }), [localHelperDevices]);
 
   const openDetail = async (record: BidOpportunity) => {
     setDetail(record);
@@ -388,6 +417,33 @@ const OpportunityMonitorPage: React.FC = () => {
       message.warning('未检测到本地助手，请先安装并启动');
       setLocalHelperHealth(null);
     }
+  };
+
+  const createPairCode = async () => {
+    if (!user?.id || !user.name) {
+      message.warning('当前账号缺少姓名，无法生成配对码');
+      return;
+    }
+    const result = await OpportunityAPI.createLocalHelperPairCode({
+      ownerUser: user.id,
+      ownerName: user.name,
+      deviceName: `${user.name} 的 Windows 助手`,
+    });
+    await navigator.clipboard.writeText(`${result.pairCode}\n${result.deepLink}`);
+    message.success(`配对码 ${result.pairCode} 已复制，10 分钟内有效`);
+    fetchAll();
+  };
+
+  const revokeDevice = async (device: LocalHelperDevice) => {
+    await OpportunityAPI.revokeLocalHelperDevice(device.id);
+    message.success('设备已撤销');
+    fetchAll();
+  };
+
+  const deleteArtifact = async (artifact: AgentArtifact) => {
+    await OpportunityAPI.deleteAgentArtifact(artifact.id);
+    message.success('artifact 已删除');
+    fetchAll();
   };
 
   const opportunityColumns: ColumnsType<BidOpportunity> = [
@@ -545,6 +601,65 @@ const OpportunityMonitorPage: React.FC = () => {
     },
   ];
 
+  const localHelperDeviceColumns: ColumnsType<LocalHelperDevice> = [
+    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
+    { title: '设备名', dataIndex: 'device_name', key: 'device_name', width: 180, ellipsis: true, render: (v: string) => v || '-' },
+    { title: '版本', dataIndex: 'helper_version', key: 'helper_version', width: 90, render: (v: string) => v || '-' },
+    { title: '平台', dataIndex: 'platform', key: 'platform', width: 90, render: (v: string) => v || '-' },
+    {
+      title: '状态',
+      key: 'status',
+      width: 130,
+      render: (_, record) => {
+        const offline = record.status === 'active' && (
+          !record.last_seen_at ||
+          Date.now() - new Date(record.last_seen_at).getTime() > 10 * 60 * 1000
+        );
+        return offline ? <Tag color="red">离线</Tag> : tag(localHelperDeviceStatusMap, record.status);
+      },
+    },
+    { title: '最近心跳', dataIndex: 'last_seen_at', key: 'last_seen_at', width: 170, render: fmtDate },
+    { title: '配对过期', dataIndex: 'pair_code_expires_at', key: 'pair_code_expires_at', width: 170, render: fmtDate },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_, record) => (
+        record.status !== 'revoked' && isManager
+          ? <Button type="text" danger onClick={() => revokeDevice(record)}>撤销</Button>
+          : null
+      ),
+    },
+  ];
+
+  const agentArtifactColumns: ColumnsType<AgentArtifact> = [
+    { title: '时间', dataIndex: 'created', key: 'created', width: 160, render: fmtDate },
+    { title: '类型', dataIndex: 'artifact_type', key: 'artifact_type', width: 110, render: (v: string) => tag(artifactTypeMap, v) },
+    { title: '标题', dataIndex: 'title', key: 'title', width: 220, ellipsis: true, render: (v: string) => v || '-' },
+    {
+      title: '内容',
+      dataIndex: 'content',
+      key: 'content',
+      ellipsis: true,
+      render: (v: string) => v ? <Text copyable={{ text: v }}>{v.slice(0, 140)}</Text> : '-',
+    },
+    {
+      title: '来源 URL',
+      dataIndex: 'url',
+      key: 'url',
+      width: 90,
+      render: (v: string) => v ? <Button type="text" icon={<LinkOutlined />} href={v} target="_blank" /> : '-',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 90,
+      render: (_, record) => (
+        isManager ? <Button type="text" danger onClick={() => deleteArtifact(record)}>删除</Button> : null
+      ),
+    },
+  ];
+
   const toolbar = (
     <Flex gap="small" wrap="wrap" justify="space-between" style={{ marginBottom: 16 }}>
       <Space wrap>
@@ -622,6 +737,42 @@ const OpportunityMonitorPage: React.FC = () => {
               key: 'tasks',
               label: `人工协助(${pendingAgentTasks.length})`,
               children: <Table rowKey="id" loading={loading} columns={agentTaskColumns} dataSource={agentTasks} scroll={{ x: 1700 }} />,
+            },
+            {
+              key: 'local-helper-ops',
+              label: `本地助手运维(${offlineLocalHelperDevices.length})`,
+              children: (
+                <>
+                  <Flex justify="space-between" align="center" wrap="wrap" gap="small" style={{ marginBottom: 16 }}>
+                    <Space wrap>
+                      <Tag color={offlineLocalHelperDevices.length > 0 ? 'red' : 'green'}>
+                        离线设备 {offlineLocalHelperDevices.length}
+                      </Tag>
+                      <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">免安装包</Button>
+                      <Button href="/downloads/hcz-local-helper-setup.exe" target="_blank">安装包</Button>
+                      <Button href="/downloads/hcz-local-helper-release.json" target="_blank">版本清单</Button>
+                    </Space>
+                    {isManager && <Button type="primary" onClick={createPairCode}>生成我的配对码</Button>}
+                  </Flex>
+                  <Table
+                    rowKey="id"
+                    size="small"
+                    loading={loading}
+                    columns={localHelperDeviceColumns}
+                    dataSource={localHelperDevices}
+                    pagination={{ pageSize: 8 }}
+                  />
+                  <Title level={5} style={{ marginTop: 20 }}>日志 / 截图 / 候选包</Title>
+                  <Table
+                    rowKey="id"
+                    size="small"
+                    loading={loading}
+                    columns={agentArtifactColumns}
+                    dataSource={agentArtifacts}
+                    pagination={{ pageSize: 8 }}
+                  />
+                </>
+              ),
             },
             {
               key: 'sources',

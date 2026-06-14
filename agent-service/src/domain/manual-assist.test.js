@@ -74,6 +74,30 @@ test('buildManualAssistTask creates actionable remote-login instructions', () =>
   assert.equal(task.last_attempt_at, '2026-05-25T09:00:00.000+08:00');
 });
 
+test('buildManualAssistTask creates local-helper pilot instructions for Huajin', () => {
+  const task = buildManualAssistTask({
+    source: {
+      id: 'src-huajin',
+      source_name: '华锦兵器网',
+      owner_name: '小魏',
+      source_url: 'https://www.norincogroup-ebuy.com/',
+      crawl_strategy: 'local_helper',
+      keywords: '消泡剂,液氮',
+      manual_assist_reason: '服务器访问空响应，使用员工本地浏览器登录后采集。',
+    },
+    run: { id: 'run-huajin' },
+    now: new Date('2026-06-12T09:00:00+08:00'),
+  });
+
+  assert.equal(task.task_type, 'local_helper');
+  assert.equal(task.entry_url, 'https://www.norincogroup-ebuy.com/');
+  assert.equal(task.search_terms, '消泡剂,液氮');
+  assert.match(task.action_steps, /打开本地助手任务窗口/);
+  assert.match(task.action_steps, /打开采集浏览器/);
+  assert.match(task.action_steps, /完成账号登录、验证码、短信验证或 CA 验证/);
+  assert.match(task.action_steps, /我已完成登录\/验证码，继续采集/);
+});
+
 test('buildLocalHelperTaskShape exposes the future desktop helper polling contract', () => {
   const task = buildLocalHelperTaskShape({
     source: {

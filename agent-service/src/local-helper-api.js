@@ -53,6 +53,13 @@ export const createLocalHelperApiServer = ({
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/local-helper/release') {
+        sendJson(response, 200, await store.releaseInfo({
+          currentVersion: url.searchParams.get('currentVersion') || '',
+        }));
+        return;
+      }
+
       if (request.method === 'POST' && url.pathname === '/local-helper/pair') {
         const body = await readJson(request);
         sendJson(response, 200, await store.pairDevice(body));

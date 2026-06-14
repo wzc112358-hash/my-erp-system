@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; connect-src http://127.0.0.1:* http://localhost:*" />
+  <title>恒化成本地采集助手 · 任务</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", system-ui, sans-serif;
+      color: #182331;
+      background: #f5f7fa;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    aside {
+      border-right: 1px solid #d9e1ec;
+      background: #fff;
+      padding: 14px;
+      overflow: auto;
+    }
+    main {
+      padding: 18px 22px;
+      overflow: auto;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    h1 { font-size: 16px; margin: 0; }
+    h2 { font-size: 20px; margin: 0 0 4px; }
+    .muted { color: #647386; font-size: 12px; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #eaf0f7;
+      color: #38506b;
+      white-space: nowrap;
+    }
+    .status.running { background: #e6f0ff; color: #1261b5; }
+    .status.waiting_agent { background: #fff6df; color: #956100; }
+    .status.cancelled, .status.failed { background: #fdecea; color: #b42318; }
+    .status.completed { background: #e7f6ed; color: #1a7f45; }
+    button {
+      border: 1px solid #b9c7d8;
+      border-radius: 6px;
+      background: #fff;
+      color: #182331;
+      min-height: 34px;
+      padding: 0 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.primary { background: #1978ca; border-color: #1978ca; color: #fff; }
+    button.danger { border-color: #d9938d; color: #b42318; }
+    button:disabled { opacity: .55; cursor: default; }
+    .task-list { display: grid; gap: 8px; }
+    .task-item {
+      width: 100%;
+      text-align: left;
+      padding: 10px;
+      min-height: 74px;
+      border-radius: 8px;
+      border: 1px solid #d7e0eb;
+      background: #fff;
+    }
+    .task-item.selected { border-color: #1978ca; box-shadow: 0 0 0 2px rgba(25,120,202,.12); }
+    .task-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .task-title strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    .section {
+      padding: 14px 0;
+      border-top: 1px solid #d9e1ec;
+    }
+    .field { display: grid; gap: 6px; margin: 10px 0; }
+    .field label { font-size: 12px; color: #647386; }
+    .value, pre {
+      margin: 0;
+      padding: 10px;
+      min-height: 38px;
+      border: 1px solid #d7e0eb;
+      border-radius: 8px;
+      background: #fff;
+      color: #182331;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    a { color: #1261b5; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 360px;
+      color: #647386;
+      text-align: center;
+    }
+    .notice {
+      display: none;
+      margin: 0 0 12px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      background: #e6f6ec;
+      color: #1e7e44;
+    }
+    .notice.bad { background: #fdecea; color: #b42318; }
+    .notice.update { background: #fff6df; color: #7a4b00; }
+    .notice.update.required { background: #fdecea; color: #b42318; }
+    .notice.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="topbar">
+        <div>
+          <h1>云端任务</h1>
+          <div class="muted" id="cloudState">正在检查连接…</div>
+        </div>
+        <button id="refresh">刷新</button>
+      </div>
+      <div class="task-list" id="taskList"></div>
+    </aside>
+    <main>
+      <div class="notice" id="notice"></div>
+      <div class="notice update" id="releaseNotice"></div>
+      <div id="detail" class="empty">请选择一个云端采集任务</div>
+    </main>
+  </div>
+  <script src="./tasks.js"></script>
+</body>
+</html>

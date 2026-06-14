@@ -112,7 +112,9 @@ export const resolveSourceStrategy = (source) => {
     source.requires_login ||
     source.may_have_captcha ||
     source.login_type === 'account';
-  const crawlStrategy = source.crawl_strategy ||
+  const crawlStrategy = phase3.collectionPath === 'local_helper'
+    ? (phase3.recommendedCrawlStrategy || configured.crawlStrategy || CRAWL_STRATEGIES.LOCAL_HELPER)
+    : source.crawl_strategy ||
     phase3.recommendedCrawlStrategy ||
     configured.crawlStrategy ||
     (requiresManual ? CRAWL_STRATEGIES.MANUAL_ASSIST : CRAWL_STRATEGIES.HTTP_HTML);

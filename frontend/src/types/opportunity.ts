@@ -266,7 +266,55 @@ export interface ProductTermFormData {
 export interface LocalHelperHealth {
   ok: boolean;
   service?: string;
+  helperVersion?: string;
   paired?: boolean;
   userName?: string;
+  cloudPaired?: boolean;
+  cloudUrl?: string;
+  cloudOwnerName?: string;
+  cloudDeviceName?: string;
+  lastHeartbeatAt?: string;
+  latestRelease?: LocalHelperRelease | null;
   taskCount?: number;
+}
+
+export interface LocalHelperRelease {
+  latestVersion?: string;
+  minSupportedVersion?: string;
+  portableUrl?: string;
+  installerUrl?: string;
+  sha256Url?: string;
+  updateAvailable?: boolean;
+  updateRequired?: boolean;
+  notes?: string;
+}
+
+export interface LocalHelperDevice {
+  id: string;
+  owner_user?: string;
+  owner_name: string;
+  device_name?: string;
+  device_fingerprint?: string;
+  status: 'pending_pair' | 'active' | 'revoked';
+  pair_code_hash?: string;
+  pair_code_expires_at?: string;
+  access_token_hash?: string;
+  helper_version?: string;
+  platform?: string;
+  last_seen_at?: string;
+  created: string;
+  updated: string;
+}
+
+export interface AgentArtifact {
+  id: string;
+  local_helper_run?: string;
+  agent_task?: string;
+  artifact_type: 'candidate_bundle' | 'dom_snapshot' | 'network_response' | 'screenshot' | 'attachment' | 'manual_text' | 'log';
+  title?: string;
+  url?: string;
+  content?: string;
+  mime_type?: string;
+  created: string;
+  updated: string;
 }

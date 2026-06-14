@@ -1,9 +1,17 @@
 import { pb } from '@/lib/pocketbase';
+import {
+  buildLocalHelperPairingPayload,
+  buildLocalHelperTaskDeepLink,
+  buildPairDeepLink,
+  generatePairCode,
+} from './local-helper-pairing';
 import type {
   AgentTask,
+  AgentArtifact,
   BidOpportunity,
   BidDocument,
   BidDocumentFormData,
+  LocalHelperDevice,
   LocalHelperHealth,
   MonitorRun,
   MonitorSource,
@@ -15,6 +23,8 @@ import type {
   ProductTerm,
   ProductTermFormData,
 } from '@/types/opportunity';
+
+const LOCAL_HELPER_CLOUD_URL = import.meta.env.VITE_LOCAL_HELPER_CLOUD_URL || 'https://agent.henghuacheng.cn';
 
 const buildOpportunityFilters = (params: OpportunityListParams = {}) => {
   const filters: string[] = [];
@@ -65,6 +75,61 @@ export const OpportunityAPI = {
       sort: '-created',
       expand: 'source,monitor_run,opportunity,session',
     });
+  },
+
+  listLocalHelperDevices: async () => {
+    return pb.collection('local_helper_devices').getList<LocalHelperDevice>(1, 500, {
+      sort: '-updated',
+      expand: 'owner_user',
+    });
+  },
+
+  createLocalHelperPairCode: async ({
+    ownerUser,
+    ownerName,
+    deviceName = '',
+    ttlMinutes = 10,
+  }: {
+    ownerUser: string;
+    ownerName: string;
+    deviceName?: string;
+    ttlMinutes?: number;
+  }) => {
+    const pairCode = generatePairCode();
+    const payload = await buildLocalHelperPairingPayload({
+      pairCode,
+      ownerUser,
+      ownerName,
+      deviceName,
+      ttlMinutes,
+    });
+    const device = await pb.collection('local_helper_devices').create<LocalHelperDevice>(payload);
+    return {
+      device,
+      pairCode,
+      deepLink: buildPairDeepLink({
+        cloudUrl: LOCAL_HELPER_CLOUD_URL,
+        pairCode,
+      }),
+    };
+  },
+
+  revokeLocalHelperDevice: async (id: string) => {
+    return pb.collection('local_helper_devices').update<LocalHelperDevice>(id, {
+      status: 'revoked',
+      access_token_hash: '',
+    });
+  },
+
+  listAgentArtifacts: async () => {
+    return pb.collection('agent_artifacts').getList<AgentArtifact>(1, 500, {
+      sort: '-created',
+      expand: 'agent_task,local_helper_run',
+    });
+  },
+
+  deleteAgentArtifact: async (id: string) => {
+    return pb.collection('agent_artifacts').delete(id);
   },
 
   updateAgentTask: async (id: string, data: Partial<AgentTask>) => {
@@ -153,18 +218,8 @@ export const OpportunityAPI = {
   },
 
   startLocalHelperTask: async (task: AgentTask) => {
-    window.location.href = `hcz-helper://task/${encodeURIComponent(task.id)}`;
-    const response = await fetch(`http://127.0.0.1:17321/tasks/${encodeURIComponent(task.id)}/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sourceName: task.source_name,
-        entryUrl: task.entry_url,
-        reason: task.reason,
-      }),
-    });
-    if (!response.ok) throw new Error(`local helper task ${response.status}`);
-    return response.json();
+    window.location.href = buildLocalHelperTaskDeepLink(task.id);
+    return { opened: true, taskId: task.id };
   },
 
   copyGroupSummary: async () => {

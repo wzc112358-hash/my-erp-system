@@ -48,6 +48,17 @@ const createMockCloudServer = () => {
       }));
       return;
     }
+    if (request.url === '/local-helper/heartbeat') {
+      response.end(JSON.stringify({
+        ok: true,
+        release: {
+          latestVersion: '0.2.0',
+          updateAvailable: true,
+          portableUrl: 'https://erp.example.com/downloads/hcz-local-helper-app.zip',
+        },
+      }));
+      return;
+    }
     if (request.url === '/local-helper/tasks/cloud-task-huajin/start') {
       response.end(JSON.stringify({
         task: { id: 'cloud-task-huajin', status: 'in_progress' },
@@ -132,6 +143,7 @@ test('local API bridges cloud pairing and task channel endpoints', async () => {
         deviceFingerprint: 'fp-xw',
       }),
     });
+    const heartbeat = await requestJson(baseUrl, '/cloud/heartbeat', { method: 'POST' });
     const tasks = await requestJson(baseUrl, '/cloud/tasks');
     const started = await requestJson(baseUrl, '/cloud/tasks/cloud-task-huajin/start', { method: 'POST' });
     const continued = await requestJson(baseUrl, '/cloud/tasks/cloud-task-huajin/continue', {
@@ -140,11 +152,68 @@ test('local API bridges cloud pairing and task channel endpoints', async () => {
     });
 
     assert.equal(pair.body.paired, true);
+    assert.equal(heartbeat.body.release.updateAvailable, true);
     assert.equal(tasks.body.tasks.length, 1);
+    assert.equal((await requestJson(baseUrl, '/health')).body.latestRelease.updateAvailable, true);
     assert.equal(tasks.body.tasks[0].sourceName, '华锦兵器网');
     assert.equal(started.body.run.id, 'run-1');
     assert.equal(continued.body.nextAction.type, 'request_human');
     assert.ok(cloud.calls.some((call) => call.authorization === 'Bearer cloud-token-xiaowei'));
+  } finally {
+    await server.stop();
+    await cloud.stop();
+  }
+});
+
+test('local API continue-run resumes the local browser task and updates task details', async () => {
+  const cloud = createMockCloudServer();
+  await cloud.start();
+  const store = createTaskStore();
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    continueTaskAfterHuman: async ({ task, cloud: taskCloud }) => {
+      await taskCloud.continue(task.id, {
+        status: 'completed',
+        observation: '员工已完成验证码，页面展示采购公告列表。',
+        action: 'continue_after_human',
+        screenshotPath: '/tmp/hcz-artifacts/task.png',
+      });
+      return {
+        status: 'completed',
+        observation: {
+          title: '采购公告列表',
+          url: task.entryUrl,
+          visibleText: '员工已完成验证码，页面展示采购公告列表。',
+          screenshotPath: '/tmp/hcz-artifacts/task.png',
+        },
+      };
+    },
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const cloudUrl = cloud.url();
+
+    await requestJson(baseUrl, '/cloud/pair', {
+      method: 'POST',
+      body: JSON.stringify({
+        cloudUrl,
+        code: 'ABCD1234',
+        deviceName: 'WX-PC-01',
+        deviceFingerprint: 'fp-xw',
+      }),
+    });
+    await requestJson(baseUrl, '/cloud/tasks');
+    const continued = await requestJson(baseUrl, '/cloud/tasks/cloud-task-huajin/continue-run', {
+      method: 'POST',
+    });
+    const tasks = await requestJson(baseUrl, '/tasks');
+
+    assert.equal(continued.body.status, 'completed');
+    assert.equal(tasks.body.tasks[0].status, 'waiting_agent');
+    assert.equal(tasks.body.tasks[0].lastObservation, '员工已完成验证码，页面展示采购公告列表。');
+    assert.equal(tasks.body.tasks[0].lastScreenshotPath, '/tmp/hcz-artifacts/task.png');
   } finally {
     await server.stop();
     await cloud.stop();

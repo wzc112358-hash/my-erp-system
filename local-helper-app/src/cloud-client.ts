@@ -51,6 +51,14 @@ export const sendHeartbeat = async (
   body: JSON.stringify(payload),
 });
 
+export const getReleaseInfo = async (
+  options: CloudClientOptions,
+  currentVersion = '',
+) => requestJson(
+  options,
+  `/local-helper/release${currentVersion ? `?currentVersion=${encodeURIComponent(currentVersion)}` : ''}`,
+);
+
 export const pullCloudTasks = async (options: CloudClientOptions) => requestJson(
   options,
   '/local-helper/tasks',

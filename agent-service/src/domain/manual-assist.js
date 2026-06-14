@@ -40,6 +40,18 @@ export const sessionStatusForSource = (source = {}) => {
 export const actionStepsForSource = (source = {}, reason = '') => {
   const searchTerms = searchTermsForSource(source);
   const entryUrl = entryUrlForSource(source);
+  if (source.crawl_strategy === 'local_helper') {
+    return [
+      '1. 打开 ERP 任务行的“本地”按钮，打开本地助手任务窗口。',
+      `2. 在本地助手中确认入口：${entryUrl || '按网站监测源配置进入对应栏目'}。`,
+      '3. 点击“打开采集浏览器”。',
+      '4. 在弹出的本机浏览器里完成账号登录、验证码、短信验证或 CA 验证。',
+      `5. 搜索关键词：${searchTerms || '按监测源关键词搜索化工品/助剂相关公告'}。`,
+      '6. 停留在公告列表或搜索结果页，点击“我已完成登录/验证码，继续采集”。',
+      '7. 回到 ERP 商机池查看新出现的“待判断”商机。',
+      reason ? `原因：${reason}` : '',
+    ].filter(Boolean).join('\n');
+  }
   return [
     '1. 打开远程浏览器会话。',
     `2. 完成账号登录${source.may_have_captcha ? '、验证码或短信验证' : ''}。`,

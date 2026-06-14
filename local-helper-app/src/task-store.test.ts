@@ -38,8 +38,16 @@ test('task store restores and persists cloud pairing through config store', () =
     token: 'new-token',
     device: { id: 'device-new', ownerName: '小魏', deviceName: 'WX-PC-01' },
   });
+  store.markCloudHeartbeat({
+    release: {
+      latestVersion: '0.2.0',
+      updateAvailable: true,
+      portableUrl: 'https://erp.henghuacheng.cn/downloads/hcz-local-helper-app.zip',
+    },
+  });
 
   assert.equal((persisted[0] as { token: string }).token, 'new-token');
+  assert.equal(store.health().latestRelease?.updateAvailable, true);
 });
 
 test('task store manages local helper task lifecycle', () => {
@@ -68,4 +76,57 @@ test('task store cancels a task', () => {
   const cancelled = store.cancelTask('task-1');
 
   assert.equal(cancelled.status, 'cancelled');
+});
+
+test('task store keeps local task artifacts when cloud sync omits them', () => {
+  const store = createTaskStore();
+  store.addTask({
+    id: 'task-1',
+    sourceName: '华锦兵器网',
+    entryUrl: 'https://example.com/old',
+    status: 'pending',
+  });
+  store.continueTask('task-1', {
+    observation: '已完成验证码，当前页面展示公告列表。',
+    screenshotPath: '/tmp/hcz-artifacts/task-1.png',
+    log: '已尝试继续采集。',
+  });
+
+  const synced = store.syncCloudTasks([{
+    id: 'task-1',
+    sourceName: '华锦兵器网',
+    entryUrl: 'https://example.com/new',
+    status: 'in_progress',
+  }]);
+
+  assert.equal(synced[0].status, 'running');
+  assert.equal(synced[0].entryUrl, 'https://example.com/new');
+  assert.equal(synced[0].lastObservation, '已完成验证码，当前页面展示公告列表。');
+  assert.equal(synced[0].lastScreenshotPath, '/tmp/hcz-artifacts/task-1.png');
+  assert.equal(synced[0].lastLog, '已尝试继续采集。');
+});
+
+test('task store maps cloud task statuses to local display statuses', () => {
+  const store = createTaskStore();
+
+  const synced = store.syncCloudTasks([
+    { id: 'pending', sourceName: 'A', entryUrl: 'https://a.example', status: 'pending' },
+    { id: 'running', sourceName: 'B', entryUrl: 'https://b.example', status: 'in_progress' },
+    { id: 'completed', sourceName: 'C', entryUrl: 'https://c.example', status: 'completed' },
+    { id: 'failed', sourceName: 'D', entryUrl: 'https://d.example', status: 'failed' },
+    { id: 'cancelled', sourceName: 'E', entryUrl: 'https://e.example', status: 'cancelled' },
+    { id: 'human', sourceName: 'F', entryUrl: 'https://f.example', status: 'request_human' },
+  ]);
+
+  assert.deepEqual(
+    synced.map((task) => [task.id, task.status]),
+    [
+      ['pending', 'pending'],
+      ['running', 'running'],
+      ['completed', 'completed'],
+      ['failed', 'failed'],
+      ['cancelled', 'cancelled'],
+      ['human', 'waiting_agent'],
+    ],
+  );
 });

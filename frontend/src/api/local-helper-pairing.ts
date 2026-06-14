@@ -54,3 +54,6 @@ export const buildPairDeepLink = ({
   cloudUrl: string;
   pairCode: string;
 }) => `hcz-helper://pair?cloudUrl=${encodeURIComponent(cloudUrl)}&code=${encodeURIComponent(normalizePairCode(pairCode))}`;
+
+export const buildLocalHelperTaskDeepLink = (taskId: string) =>
+  `hcz-helper://task/${encodeURIComponent(taskId)}`;

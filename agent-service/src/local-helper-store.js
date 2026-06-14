@@ -1,8 +1,15 @@
 import crypto from 'node:crypto';
 
+import { ingestCandidateBundleArtifact } from './local-helper-ingestion.js';
+
 const API_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 const SUPERUSER_EMAIL = process.env.POCKETBASE_SUPERUSER_EMAIL || process.env.POCKETBASE_ADMIN_EMAIL;
 const SUPERUSER_PASSWORD = process.env.POCKETBASE_SUPERUSER_PASSWORD || process.env.POCKETBASE_ADMIN_PASSWORD;
+const LOCAL_HELPER_LATEST_VERSION = process.env.LOCAL_HELPER_LATEST_VERSION || '0.1.0';
+const LOCAL_HELPER_MIN_SUPPORTED_VERSION = process.env.LOCAL_HELPER_MIN_SUPPORTED_VERSION || '0.1.0';
+const LOCAL_HELPER_DOWNLOAD_BASE_URL = (process.env.LOCAL_HELPER_DOWNLOAD_BASE_URL || 'https://erp.henghuacheng.cn/downloads').replace(/\/+$/, '');
+const LOCAL_HELPER_PORTABLE_SHA256 = process.env.LOCAL_HELPER_PORTABLE_SHA256 || '';
+const LOCAL_HELPER_INSTALLER_SHA256 = process.env.LOCAL_HELPER_INSTALLER_SHA256 || '';
 
 const shanghaiIso = (date = new Date()) => {
   const offsetMs = 8 * 60 * 60 * 1000;
@@ -19,6 +26,35 @@ export const hashSecret = (value = '') => crypto
 export const generatePairCode = () => crypto.randomBytes(4).toString('hex').toUpperCase();
 
 export const generateDeviceToken = () => `hczlh_${crypto.randomBytes(24).toString('hex')}`;
+
+export const compareVersions = (a = '', b = '') => {
+  const left = String(a || '0').split(/[.-]/).map((part) => Number(part) || 0);
+  const right = String(b || '0').split(/[.-]/).map((part) => Number(part) || 0);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (left[index] || 0) - (right[index] || 0);
+    if (delta !== 0) return delta > 0 ? 1 : -1;
+  }
+  return 0;
+};
+
+export const buildLocalHelperReleaseInfo = ({
+  currentVersion = '',
+  latestVersion = LOCAL_HELPER_LATEST_VERSION,
+  minSupportedVersion = LOCAL_HELPER_MIN_SUPPORTED_VERSION,
+  downloadBaseUrl = LOCAL_HELPER_DOWNLOAD_BASE_URL,
+} = {}) => ({
+  latestVersion,
+  minSupportedVersion,
+  portableUrl: `${downloadBaseUrl}/hcz-local-helper-app.zip`,
+  installerUrl: `${downloadBaseUrl}/hcz-local-helper-setup.exe`,
+  sha256Url: `${downloadBaseUrl}/SHA256SUMS.txt`,
+  portableSha256: LOCAL_HELPER_PORTABLE_SHA256,
+  installerSha256: LOCAL_HELPER_INSTALLER_SHA256,
+  updateAvailable: currentVersion ? compareVersions(latestVersion, currentVersion) > 0 : false,
+  updateRequired: currentVersion ? compareVersions(minSupportedVersion, currentVersion) > 0 : false,
+  notes: '建议使用最新本地助手；若提示必须升级，请先下载新版本再继续采集。',
+});
 
 const normalizeTask = (task = {}) => ({
   id: task.id || '',
@@ -39,6 +75,7 @@ const normalizeTask = (task = {}) => ({
 export const createInMemoryLocalHelperStore = ({
   now = () => new Date(),
   tokenFactory = generateDeviceToken,
+  ingestCandidateBundle = async () => null,
 } = {}) => {
   const devices = new Map();
   const pairCodes = new Map();
@@ -158,7 +195,15 @@ export const createInMemoryLocalHelperStore = ({
         last_seen_at: now().toISOString(),
       };
       devices.set(device.id, updated);
-      return { ok: true, device: normalizeDevice(updated) };
+      return {
+        ok: true,
+        device: normalizeDevice(updated),
+        release: buildLocalHelperReleaseInfo({ currentVersion: updated.helper_version }),
+      };
+    },
+
+    releaseInfo({ currentVersion = '' } = {}) {
+      return buildLocalHelperReleaseInfo({ currentVersion });
     },
 
     listTasks(token) {
@@ -195,7 +240,7 @@ export const createInMemoryLocalHelperStore = ({
       return { task: updatedTask, run };
     },
 
-    continueTask(token, taskId, payload = {}) {
+    async continueTask(token, taskId, payload = {}) {
       const device = authenticate(token);
       const task = tasks.get(taskId);
       if (!task) throw new Error(`task not found: ${taskId}`);
@@ -223,6 +268,35 @@ export const createInMemoryLocalHelperStore = ({
           content: JSON.stringify(payload.candidateBundle),
         });
       }
+      if (payload.screenshotPath) {
+        artifacts.push({
+          id: `artifact-${artifacts.length + 1}`,
+          taskId,
+          runId: run?.id || '',
+          artifactType: 'screenshot',
+          title: `${task.sourceName} 截图`,
+          url: payload.currentUrl || '',
+          content: payload.screenshotPath,
+        });
+      }
+      if (payload.log || payload.observation) {
+        artifacts.push({
+          id: `artifact-${artifacts.length + 1}`,
+          taskId,
+          runId: run?.id || '',
+          artifactType: 'log',
+          title: `${task.sourceName} 本地助手日志`,
+          url: payload.currentUrl || '',
+          content: payload.log || payload.observation || '',
+        });
+      }
+      const ingestion = payload.candidateBundle
+        ? await ingestCandidateBundle({
+          task,
+          run: run || null,
+          candidateBundle: payload.candidateBundle,
+        })
+        : null;
       if (run) {
         runs.set(run.id, {
           ...run,
@@ -231,10 +305,19 @@ export const createInMemoryLocalHelperStore = ({
           lastObservation: payload.observation || run.lastObservation || '',
         });
       }
+      if (ingestion && status === 'completed') {
+        tasks.set(taskId, {
+          ...task,
+          status: 'completed',
+          resultSummary: `本地助手回灌完成：候选 ${ingestion.processedCount} 条，入库 ${ingestion.createdCount} 条。`,
+          updatedAt: now().toISOString(),
+        });
+      }
       return {
         status,
         step,
         run: run ? runs.get(run.id) : null,
+        ingestion,
         nextAction: payload.requestHuman
           ? { type: 'request_human', reason: payload.humanReason || '需要员工人工接管' }
           : { type: 'wait_cloud_agent' },
@@ -267,6 +350,7 @@ export const createPocketBaseLocalHelperStore = ({
   superuserPassword = SUPERUSER_PASSWORD,
   fetchImpl = fetch,
   now = () => new Date(),
+  ingestCandidateBundle = ingestCandidateBundleArtifact,
 } = {}) => {
   let cachedToken = '';
 
@@ -410,7 +494,15 @@ export const createPocketBaseLocalHelperStore = ({
         platform: payload.platform || device.platform || '',
         last_seen_at: shanghaiIso(now()),
       });
-      return { ok: true, device: updated };
+      return {
+        ok: true,
+        device: updated,
+        release: buildLocalHelperReleaseInfo({ currentVersion: updated.helper_version }),
+      };
+    },
+
+    async releaseInfo({ currentVersion = '' } = {}) {
+      return buildLocalHelperReleaseInfo({ currentVersion });
     },
 
     async listTasks(rawToken) {
@@ -484,10 +576,44 @@ export const createPocketBaseLocalHelperStore = ({
           mime_type: 'application/json',
         });
       }
+      if (payload.screenshotPath) {
+        await createRecord('agent_artifacts', {
+          local_helper_run: updatedRun.id,
+          agent_task: taskId,
+          artifact_type: 'screenshot',
+          title: `${updatedRun.source_name || payload.sourceName || '本地助手'} 截图`,
+          url: payload.currentUrl || '',
+          content: payload.screenshotPath,
+          mime_type: 'text/plain',
+        });
+      }
+      if (payload.log || payload.observation) {
+        await createRecord('agent_artifacts', {
+          local_helper_run: updatedRun.id,
+          agent_task: taskId,
+          artifact_type: 'log',
+          title: `${updatedRun.source_name || payload.sourceName || '本地助手'} 本地助手日志`,
+          url: payload.currentUrl || '',
+          content: payload.log || payload.observation || '',
+          mime_type: 'text/plain',
+        });
+      }
+      const ingestion = payload.candidateBundle
+        ? await ingestCandidateBundle({
+          token: await login(),
+          task,
+          run: updatedRun,
+          candidateBundle: payload.candidateBundle,
+          listRecordsFn: (collection, _token, queryOrFilter = '') => listRecords(collection, queryOrFilter),
+          createRecordFn: (collection, _token, data) => createRecord(collection, data),
+          updateRecordFn: (collection, id, _token, data) => updateRecord(collection, id, data),
+        })
+        : null;
       return {
         status,
         step,
         run: updatedRun,
+        ingestion,
         nextAction: payload.requestHuman
           ? { type: 'request_human', reason: payload.humanReason || '需要员工人工接管' }
           : { type: 'wait_cloud_agent' },

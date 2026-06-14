@@ -28,7 +28,7 @@ export const PurchaseContractAPI = {
       params.per_page || 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
-        sort: '-created',
+        sort: '-created_at',
       }
     );
 

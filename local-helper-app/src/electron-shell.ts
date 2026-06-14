@@ -53,6 +53,7 @@ export const buildTrayMenuTemplate = ({
   { label: paired ? `已连接：${localUrl}` : `未配对：${localUrl}`, enabled: false },
   { type: 'separator' },
   { label: paired ? '配对 / 设置' : '立即配对…', click: 'pair' },
+  { label: '打开任务列表', click: 'tasks', enabled: paired },
   { label: '打开 ERP', click: `open:${erpUrl}` },
   { label: '打开本地状态', click: `open:${localUrl}/health` },
   { type: 'separator' },

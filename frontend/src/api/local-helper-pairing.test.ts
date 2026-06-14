@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
 import {
+  buildLocalHelperTaskDeepLink,
   buildLocalHelperPairingPayload,
   hashPairCode,
   normalizePairCode,
@@ -26,4 +27,11 @@ test('local helper pairing payload stores only pair code hash and expiry', async
   assert.equal(payload.status, 'pending_pair');
   assert.equal(payload.pair_code_expires_at, '2026-05-28T01:10:00.000Z');
   assert.equal(payload.pair_code_hash.includes('ABCD1234'), false);
+});
+
+test('local helper task deep link targets the cloud task detail window', () => {
+  assert.equal(
+    buildLocalHelperTaskDeepLink('task 华锦/1'),
+    'hcz-helper://task/task%20%E5%8D%8E%E9%94%A6%2F1',
+  );
 });
