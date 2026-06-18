@@ -82,8 +82,10 @@ const mapCloudStatus = (status = ''): HelperTaskStatus => {
 
 export const createTaskStore = ({
   configStore,
+  helperVersion = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.7',
 }: {
   configStore?: TaskStoreConfigStore;
+  helperVersion?: string;
 } = {}) => {
   let device: HelperDevice | null = null;
   let cloudPairing: CloudPairing | null = configStore?.readCloudPairing() || null;
@@ -105,7 +107,7 @@ export const createTaskStore = ({
       return {
         ok: true,
         service: 'hcz-local-helper-app',
-        helperVersion: process.env.npm_package_version || '0.1.0',
+        helperVersion,
         paired: Boolean(device?.paired),
         userName: device?.userName || '',
         cloudPaired: Boolean(cloudPairing?.paired),

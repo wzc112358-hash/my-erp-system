@@ -13,6 +13,12 @@ test('task store pairs a device and exposes health state', () => {
   assert.equal(store.health().paired, true);
 });
 
+test('task store exposes the configured helper version', () => {
+  const store = createTaskStore({ helperVersion: '0.1.4' });
+
+  assert.equal(store.health().helperVersion, '0.1.4');
+});
+
 test('task store restores and persists cloud pairing through config store', () => {
   const persisted: Array<unknown> = [];
   const configStore = {

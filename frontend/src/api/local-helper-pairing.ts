@@ -33,19 +33,18 @@ export const buildLocalHelperPairingPayload = async ({
   deviceFingerprint?: string;
   now?: Date;
   ttlMinutes?: number;
-}) => ({
-  owner_user: ownerUser,
-  owner_name: ownerName,
-  device_name: deviceName,
-  device_fingerprint: deviceFingerprint,
-  status: 'pending_pair' as const,
-  pair_code_hash: await hashPairCode(pairCode),
-  pair_code_expires_at: new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString(),
-  access_token_hash: '',
-  helper_version: '',
-  platform: '',
-  last_seen_at: '',
-});
+}) => {
+  const pairCodeHash = await hashPairCode(pairCode);
+  return {
+    owner_user: ownerUser,
+    owner_name: ownerName,
+    device_name: deviceName,
+    device_fingerprint: deviceFingerprint || `pending:${ownerUser}:${pairCodeHash.slice(0, 16)}`,
+    status: 'pending_pair' as const,
+    pair_code_hash: pairCodeHash,
+    pair_code_expires_at: new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString(),
+  };
+};
 
 export const buildPairDeepLink = ({
   cloudUrl,

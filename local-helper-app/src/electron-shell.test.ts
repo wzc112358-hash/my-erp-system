@@ -2,9 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildRendererFileUrl,
   buildProtocolRegistration,
   buildTrayMenuTemplate,
+  buildStartupFailureMessage,
+  chromiumStartupFallbackSwitches,
+  decideStartupMode,
   resolveAppConfig,
+  resolveRendererFilePath,
 } from './electron-shell.ts';
 
 test('electron shell resolves default local helper config', () => {
@@ -67,4 +72,60 @@ test('electron shell tray menu offers immediate pairing when not paired', () => 
   const pairItem = menu.find((item) => item.click === 'pair');
   assert.ok(pairItem);
   assert.match(pairItem.label || '', /配对/);
+});
+
+test('electron shell loads renderer files outside app.asar when packaged', () => {
+  const filePath = resolveRendererFilePath({
+    isPackaged: true,
+    appPath: '/opt/hcz/resources/app.asar',
+    resourcesPath: '/opt/hcz/resources',
+    fileName: 'pair.html',
+  });
+
+  assert.equal(filePath, '/opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html');
+});
+
+test('electron shell builds encoded file URLs for renderer pages', () => {
+  const url = buildRendererFileUrl('/opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html', {
+    api: 'http://127.0.0.1:17321',
+  });
+
+  assert.equal(url, 'file:///opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html?api=http%3A%2F%2F127.0.0.1%3A17321');
+});
+
+test('electron shell exits a secondary instance only when an existing local API is healthy', () => {
+  assert.equal(decideStartupMode({
+    hasSingleInstanceLock: true,
+    existingLocalApiReachable: false,
+  }), 'primary');
+  assert.equal(decideStartupMode({
+    hasSingleInstanceLock: false,
+    existingLocalApiReachable: true,
+  }), 'exit-secondary');
+  assert.equal(decideStartupMode({
+    hasSingleInstanceLock: false,
+    existingLocalApiReachable: false,
+  }), 'recover-stale-lock');
+});
+
+test('electron shell startup failure message includes the failing stage and log path', () => {
+  const message = buildStartupFailureMessage({
+    port: 17321,
+    stage: '启动本地服务端口',
+    errorMessage: 'EADDRINUSE',
+    logFile: 'C:\\Users\\wzc\\AppData\\Local\\HengHuaChengLocalHelper\\startup.log',
+  });
+
+  assert.match(message, /启动本地服务端口/);
+  assert.match(message, /EADDRINUSE/);
+  assert.match(message, /17321/);
+  assert.match(message, /startup\.log/);
+});
+
+test('electron shell applies conservative Chromium fallback switches', () => {
+  const switches = chromiumStartupFallbackSwitches();
+
+  assert.ok(switches.some((item) => item.name === 'disable-gpu'));
+  assert.ok(switches.some((item) => item.name === 'disable-gpu-sandbox'));
+  assert.ok(switches.some((item) => item.value === 'NetworkServiceSandbox'));
 });

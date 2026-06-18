@@ -5,7 +5,9 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const releaseDir = path.join(root, 'release');
-const downloadsDir = path.resolve(root, '..', 'frontend', 'public', 'downloads');
+const downloadsDir = process.env.HCZ_DOWNLOADS_DIR
+  ? path.resolve(process.env.HCZ_DOWNLOADS_DIR)
+  : path.resolve(root, '..', 'frontend', 'public', 'downloads');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 const run = (command, args) => {
@@ -51,9 +53,16 @@ if (!portableSource) throw new Error('portable zip was not generated');
 
 const portableTarget = path.join(downloadsDir, 'hcz-local-helper-app.zip');
 const installerTarget = path.join(downloadsDir, 'hcz-local-helper-setup.exe');
+const blockmapTarget = path.join(downloadsDir, 'hcz-local-helper-setup.exe.blockmap');
 fs.copyFileSync(portableSource, portableTarget);
-if (installerSource) fs.copyFileSync(installerSource, installerTarget);
-if (!installerSource && fs.existsSync(installerTarget)) fs.rmSync(installerTarget);
+if (installerSource) {
+  fs.copyFileSync(installerSource, installerTarget);
+  const blockmapSource = `${installerSource}.blockmap`;
+  if (fs.existsSync(blockmapSource)) fs.copyFileSync(blockmapSource, blockmapTarget);
+} else {
+  if (fs.existsSync(installerTarget)) fs.rmSync(installerTarget);
+  if (fs.existsSync(blockmapTarget)) fs.rmSync(blockmapTarget);
+}
 
 const manifest = {
   productName: pkg.build?.productName || pkg.name,

@@ -21,7 +21,7 @@ const requestJson = async (baseUrl, path, options = {}) => {
   };
 };
 
-test('local helper cloud API pairs a device, lists owner tasks, and accepts observations', async () => {
+test('local helper cloud API pairs a device, lists collaborative tasks, and accepts observations', async () => {
   const store = createInMemoryLocalHelperStore({
     tokenFactory: () => 'token-xiaowei',
     now: () => new Date('2026-05-27T01:00:00.000Z'),
@@ -82,11 +82,54 @@ test('local helper cloud API pairs a device, lists owner tasks, and accepts obse
     assert.equal(health.body.ok, true);
     assert.equal(paired.status, 200);
     assert.equal(paired.body.device.ownerName, '小魏');
-    assert.equal(tasks.body.tasks.length, 1);
-    assert.equal(tasks.body.tasks[0].id, 'task-huajin-1');
+    assert.equal(tasks.body.tasks.length, 2);
+    assert.deepEqual(tasks.body.tasks.map((task) => task.id).sort(), ['task-huajin-1', 'task-other-owner']);
     assert.equal(started.body.task.status, 'in_progress');
     assert.equal(continued.body.status, 'request_human');
     assert.equal(continued.body.nextAction.type, 'request_human');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local helper cloud API allows any paired helper to operate collaborative local tasks', async () => {
+  const store = createInMemoryLocalHelperStore({
+    tokenFactory: () => 'token-manager',
+    now: () => new Date('2026-06-18T01:00:00.000Z'),
+  });
+  const pair = store.createPairCode({ code: 'OPENALL1', ownerName: 'manager-test' });
+  store.addTask({
+    id: 'task-yulong',
+    sourceName: '裕龙招投标网',
+    ownerName: '小白',
+    taskType: 'local_helper',
+    status: 'pending',
+    entryUrl: 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96',
+    searchTerms: '裕龙石化',
+  });
+
+  const server = createLocalHelperApiServer({ store, port: 0, host: '127.0.0.1' });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const paired = await requestJson(baseUrl, '/local-helper/pair', {
+      method: 'POST',
+      body: JSON.stringify({ code: pair.code, deviceName: 'manager-test-pc' }),
+    });
+    const token = paired.body.token;
+    const tasks = await requestJson(baseUrl, '/local-helper/tasks', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const started = await requestJson(baseUrl, '/local-helper/tasks/task-yulong/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    assert.equal(tasks.status, 200);
+    assert.equal(tasks.body.tasks.length, 1);
+    assert.equal(tasks.body.tasks[0].ownerName, '小白');
+    assert.equal(started.status, 200);
+    assert.equal(started.body.task.id, 'task-yulong');
   } finally {
     await server.stop();
   }
@@ -116,6 +159,37 @@ test('local helper cloud API rejects missing tokens and used pair codes', async 
     assert.equal(second.status, 400);
     assert.match(second.body.error, /invalid or used/);
     assert.equal(unauthorized.status, 401);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local helper cloud API allows pending placeholder fingerprint to be replaced during pairing', async () => {
+  const store = createInMemoryLocalHelperStore({
+    tokenFactory: () => 'token-xiaowei',
+    now: () => new Date('2026-05-27T01:00:00.000Z'),
+  });
+  store.createPairCode({
+    code: 'FINGER01',
+    ownerName: '小魏',
+    deviceName: '小魏 的 Windows 助手',
+    deviceFingerprint: 'placeholder-from-erp',
+  });
+  const server = createLocalHelperApiServer({ store, port: 0, host: '127.0.0.1' });
+  await server.start();
+  try {
+    const paired = await requestJson(server.url(), '/local-helper/pair', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: 'FINGER01',
+        deviceName: 'WX-PC-01',
+        deviceFingerprint: 'actual-local-helper-fingerprint',
+      }),
+    });
+
+    assert.equal(paired.status, 200);
+    assert.equal(paired.body.device.deviceName, 'WX-PC-01');
+    assert.equal(paired.body.device.deviceFingerprint, 'actual-local-helper-fingerprint');
   } finally {
     await server.stop();
   }
@@ -247,6 +321,69 @@ test('local helper cloud API ingests completed candidate bundle and finishes the
   } finally {
     await server.stop();
   }
+});
+
+test('PocketBase local helper store lists open local tasks across responsible owners', async () => {
+  const fetchCalls = [];
+  const store = createPocketBaseLocalHelperStore({
+    apiUrl: 'https://pb.example.test',
+    superuserEmail: 'admin@example.com',
+    superuserPassword: 'secret',
+    fetchImpl: async (url) => {
+      fetchCalls.push(String(url));
+      const path = String(url).replace('https://pb.example.test', '');
+      const json = (body, ok = true, status = ok ? 200 : 400) => ({
+        ok,
+        status,
+        statusText: ok ? 'OK' : 'Bad Request',
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      });
+      if (path === '/api/collections/_superusers/auth-with-password') {
+        return json({ token: 'pb-token' });
+      }
+      if (path.startsWith('/api/collections/local_helper_devices/records?')) {
+        return json({
+          items: [{
+            id: 'device-1',
+            owner_name: 'manager-test',
+            status: 'active',
+            access_token_hash: hashSecret('token-manager'),
+          }],
+        });
+      }
+      if (path.startsWith('/api/collections/agent_tasks/records?')) {
+        const filter = new URL(String(url)).searchParams.get('filter') || '';
+        assert.match(filter, /task_type = "local_helper"/);
+        assert.doesNotMatch(filter, /owner_name/);
+        return json({
+          items: [
+            {
+              id: 'task-huajin',
+              source_name: '华锦兵器网',
+              owner_name: '小魏',
+              task_type: 'local_helper',
+              status: 'pending',
+            },
+            {
+              id: 'task-yulong',
+              source_name: '裕龙招投标网',
+              owner_name: '小白',
+              task_type: 'local_helper',
+              status: 'pending',
+            },
+          ],
+        });
+      }
+      return json({ error: `unexpected ${path}` }, false, 404);
+    },
+  });
+
+  const tasks = await store.listTasks('token-manager');
+
+  assert.equal(tasks.length, 2);
+  assert.deepEqual(tasks.map((task) => task.ownerName), ['小魏', '小白']);
+  assert.ok(fetchCalls.some((url) => url.includes('/api/collections/agent_tasks/records?')));
 });
 
 test('PocketBase local helper store passes token-aware record functions to candidate bundle ingestion', async () => {

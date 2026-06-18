@@ -41,7 +41,7 @@
 - [x] Add a real Playwright browser runtime with persistent profile and screenshot capture boundary.
 - [x] Add `/cloud/tasks/:id/run` for 华锦 local-helper task execution.
 - [x] Generate a Windows `win-unpacked` app directory for smoke verification.
-- [ ] Build a one-file NSIS installer on Windows or Linux with `wine`. (deferred: needs Windows/wine; v1 ships `release/win-unpacked/`, build steps documented in local-helper-app/README.md)
+- [x] Build a one-file NSIS installer on Linux with Docker + `electronuserland/builder:wine`.
 - [x] Add a first-run pairing UI. (src/pairing.ts + src/renderer/pair.html|pair.js; auto-opens unpaired, tray 配对 entry)
 - [x] Add second batch sites: 易派克, 云梦泽, 能源一号, 隆道云, 金能招标网. (config-driven site-harness profiles in src/site-profiles.ts; 易派克 also moved to cloud http_html; 能源一号=微信群粘贴/manual ingestion; 隆道云 & 金能 await a verified entry URL before seeding as local_helper sources)
 

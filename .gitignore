@@ -17,6 +17,8 @@ backend/pb_migrations/*
 !backend/pb_migrations/202605250001_extend_opportunity_agent_schema.js
 !backend/pb_migrations/202605260001_create_agent_login_sessions.js
 !backend/pb_migrations/202606110001_create_local_helper_collections.js
+!backend/pb_migrations/202606180001_relax_local_helper_device_fingerprint_index.js
+!backend/pb_migrations/202606180002_open_local_helper_pairing_to_authenticated_users.js
 
 # Backend binary
 backend/pocketbase

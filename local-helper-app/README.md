@@ -53,16 +53,41 @@ Build the JavaScript bundles:
 npm run build
 ```
 
-Build a Windows unpacked app directory:
+Build Windows release artifacts:
+
+```bash
+npm run package:release
+```
+
+This writes the ERP download artifacts to `../frontend/public/downloads/`:
+
+- `hcz-local-helper-app.zip`
+- `hcz-local-helper-setup.exe` when NSIS can run
+- `hcz-local-helper-release.json`
+- `SHA256SUMS.txt`
+
+Build only the unpacked app directory:
 
 ```bash
 npm run package:win-unpacked
 ```
 
 The generated app is under `release/win-unpacked/` and contains
-`恒化成本地采集助手.exe`. Building a one-file NSIS installer with
-`npm run package:win` requires `wine` on Linux/WSL, or a real Windows build
-machine.
+`恒化成本地采集助手.exe`.
+
+Build the NSIS installer from Linux/WSL without installing wine locally:
+
+```bash
+docker run --rm \
+  -e ELECTRON_CACHE=/root/.cache/electron \
+  -e ELECTRON_BUILDER_CACHE=/root/.cache/electron-builder \
+  -e HCZ_DOWNLOADS_DIR=/repo/frontend/public/downloads \
+  -v "$PWD/..:/repo" \
+  -v "$HOME/.cache/electron:/root/.cache/electron" \
+  -v "$HOME/.cache/electron-builder:/root/.cache/electron-builder" \
+  electronuserland/builder:wine \
+  /bin/bash -lc 'cd /repo/local-helper-app && npm ci && npm run package:release'
+```
 
 Pair with cloud API:
 
@@ -75,13 +100,18 @@ curl -X POST http://127.0.0.1:17321/cloud/pair \
 First-run pairing UI: **done** — the app opens the pairing window automatically when
 unpaired, and the tray exposes a 配对/设置 entry.
 
-Remaining packaging step (NSIS one-file installer):
+Packaging notes:
 
-- The one-file installer (`npm run package:win`) is **not built in this slice** because it
-  needs a real Windows build host or `wine` on Linux/WSL (not installed in the current
-  environment). The verified v1 deliverable is the免安装 `release/win-unpacked/` directory.
-- To produce the installer: on Windows run `npm run package:win`; on Linux/WSL install `wine`
-  first (`apt-get install -y wine64`) then run the same command. `electron-builder` downloads
-  the NSIS toolchain automatically.
+- The one-file installer is built as `release/恒化成本地采集助手 Setup <version>.exe`
+  and published as `frontend/public/downloads/hcz-local-helper-setup.exe`.
+- The NSIS installer uses a guided install flow, creates desktop/start-menu shortcuts,
+  and launches the helper after installation so the employee can pair with the cloud
+  and open local collection tasks immediately.
+- On Windows, `npm run package:release` works directly. On Linux/WSL, either install `wine`
+  locally or use the Docker command above. `electron-builder` downloads the NSIS toolchain
+  automatically.
+- If the app appears to do nothing after double-clicking, check
+  `%LOCALAPPDATA%\HengHuaChengLocalHelper\startup.log`. Startup errors are written there,
+  and local API port failures show an error dialog.
 - Before release: add a company icon (`build/icon.ico`) and signer metadata so SmartScreen
   shows the publisher.

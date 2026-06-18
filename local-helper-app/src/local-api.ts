@@ -1,4 +1,7 @@
+import fs from 'node:fs/promises';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   cancelCloudTask,
@@ -25,7 +28,22 @@ type TaskRunner = (input: {
   cloud: CloudTaskChannel;
 }) => Promise<any>;
 
-const HELPER_VERSION = process.env.npm_package_version || '0.1.0';
+const DEFAULT_HELPER_VERSION = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.7';
+const DEFAULT_DATA_DIR_NAME = 'HengHuaChengLocalHelper';
+
+const UI_FILES: Record<string, string> = {
+  '/ui/pair': 'pair.html',
+  '/ui/pair.html': 'pair.html',
+  '/ui/pair.js': 'pair.js',
+  '/ui/tasks': 'tasks.html',
+  '/ui/tasks.html': 'tasks.html',
+  '/ui/tasks.js': 'tasks.js',
+};
+
+const UI_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+};
 
 const readBody = async (request: http.IncomingMessage): Promise<Record<string, unknown>> => {
   const chunks = [];
@@ -44,24 +62,52 @@ const sendJson = (response: http.ServerResponse, status: number, body: unknown) 
   response.end(JSON.stringify(body));
 };
 
+const sanitizePathSegment = (value = '') => (
+  String(value || 'default')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '') || 'default'
+);
+
+export const resolveRuntimeDirs = (
+  task: { sourceName?: string } = {},
+  env: Record<string, string | undefined> = process.env,
+) => {
+  const dataRoot = path.join(
+    env.LOCALAPPDATA || env.APPDATA || os.tmpdir(),
+    DEFAULT_DATA_DIR_NAME,
+  );
+  return {
+    profileDir: String(env.HCZ_LOCAL_HELPER_PROFILE_DIR || path.join(dataRoot, 'profiles', sanitizePathSegment(task.sourceName))),
+    screenshotDir: String(env.HCZ_LOCAL_HELPER_ARTIFACT_DIR || path.join(dataRoot, 'artifacts')),
+  };
+};
+
 export const createLocalApiServer = ({
   store,
   port = 17321,
   host = '127.0.0.1',
   runTask = runLocalHelperTask,
   continueTaskAfterHuman = continueLocalHelperTaskAfterHuman,
+  helperVersion = DEFAULT_HELPER_VERSION,
+  rendererDir = '',
 }: {
   store: Store;
   port?: number;
   host?: string;
   runTask?: TaskRunner;
   continueTaskAfterHuman?: TaskRunner;
+  helperVersion?: string;
+  rendererDir?: string;
 }) => {
-  const createBrowser = (task: { sourceName?: string }): BrowserHarnessRuntime => createPlaywrightRuntime({
-    profileDir: String(process.env.HCZ_LOCAL_HELPER_PROFILE_DIR || `profiles/${task.sourceName || 'default'}`),
-    screenshotDir: String(process.env.HCZ_LOCAL_HELPER_ARTIFACT_DIR || 'artifacts'),
-    headless: process.env.HCZ_LOCAL_HELPER_HEADLESS === '1',
-  });
+  const createBrowser = (task: { sourceName?: string }): BrowserHarnessRuntime => {
+    const runtimeDirs = resolveRuntimeDirs(task);
+    return createPlaywrightRuntime({
+      ...runtimeDirs,
+      headless: process.env.HCZ_LOCAL_HELPER_HEADLESS === '1',
+    });
+  };
 
   const cloudChannel = (pairing: { cloudUrl: string; token: string }): CloudTaskChannel => ({
     start: (taskId, payload = {}) => startCloudTask({
@@ -101,6 +147,24 @@ export const createLocalApiServer = ({
       const url = new URL(request.url || '/', `http://${host}`);
       const parts = url.pathname.split('/').filter(Boolean);
 
+      if (request.method === 'GET' && url.pathname === '/ui') {
+        response.writeHead(302, { Location: '/ui/tasks' });
+        response.end();
+        return;
+      }
+
+      if (request.method === 'GET' && rendererDir && UI_FILES[url.pathname]) {
+        const fileName = UI_FILES[url.pathname];
+        const filePath = path.join(rendererDir, fileName);
+        const content = await fs.readFile(filePath);
+        response.writeHead(200, {
+          'Content-Type': UI_MIME[path.extname(fileName)] || 'application/octet-stream',
+          'Cache-Control': 'no-store',
+        });
+        response.end(content);
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/health') {
         sendJson(response, 200, store.health());
         return;
@@ -122,7 +186,7 @@ export const createLocalApiServer = ({
           code: String(body.code || ''),
           deviceName: String(body.deviceName || ''),
           deviceFingerprint: String(body.deviceFingerprint || ''),
-          helperVersion: String(body.helperVersion || HELPER_VERSION),
+          helperVersion: String(body.helperVersion || helperVersion),
           platform: String(body.platform || process.platform),
         });
         store.setCloudPairing({
@@ -141,7 +205,7 @@ export const createLocalApiServer = ({
           cloudUrl: pairing.cloudUrl,
           token: pairing.token,
         }, {
-          helperVersion: String(body.helperVersion || HELPER_VERSION),
+          helperVersion: String(body.helperVersion || helperVersion),
           platform: String(body.platform || process.platform),
         });
         store.markCloudHeartbeat(result);
@@ -154,7 +218,7 @@ export const createLocalApiServer = ({
         const result = await getReleaseInfo({
           cloudUrl: pairing.cloudUrl,
           token: pairing.token,
-        }, url.searchParams.get('currentVersion') || HELPER_VERSION);
+        }, url.searchParams.get('currentVersion') || helperVersion);
         store.markCloudHeartbeat({ release: result });
         sendJson(response, 200, result);
         return;
@@ -272,8 +336,17 @@ export const createLocalApiServer = ({
   });
 
   return {
-    start: () => new Promise<void>((resolve) => {
-      server.listen(port, host, () => resolve());
+    start: () => new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server.off('listening', onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve();
+      };
+      server.once('error', onError);
+      server.listen(port, host, onListening);
     }),
     stop: () => new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

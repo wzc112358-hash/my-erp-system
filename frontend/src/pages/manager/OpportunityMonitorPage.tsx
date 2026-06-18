@@ -161,6 +161,29 @@ const BOSS_DECISIONS: Array<{ label: string; value: OpportunityReviewDecision }>
   { label: '需补资料', value: 'needs_documents' },
 ];
 
+const errorMessageOf = (error: unknown, fallback: string) => {
+  const maybeResponse = error as { response?: { data?: { message?: string; data?: Record<string, { message?: string }> } } };
+  const fieldMessages = maybeResponse.response?.data?.data
+    ? Object.entries(maybeResponse.response.data.data)
+      .map(([field, detail]) => `${field}: ${detail.message || '字段校验失败'}`)
+      .join('；')
+    : '';
+  if (fieldMessages) return fieldMessages;
+  if (maybeResponse.response?.data?.message) return maybeResponse.response.data.message;
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const copyTextSafely = async (text: string) => {
+  if (!navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const decisionToStatus = (decision: OpportunityReviewDecision): OpportunityStatus => {
   if (decision === 'approved') return 'converted';
   if (decision === 'rejected') return 'irrelevant';
@@ -182,7 +205,7 @@ const buildConfirmationPackageText = (opportunity: BidOpportunity, decisionComme
 ].join('\n');
 
 const OpportunityMonitorPage: React.FC = () => {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const [opportunities, setOpportunities] = useState<BidOpportunity[]>([]);
   const [sources, setSources] = useState<MonitorSource[]>([]);
@@ -202,6 +225,7 @@ const OpportunityMonitorPage: React.FC = () => {
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
   const [localHelperHealth, setLocalHelperHealth] = useState<LocalHelperHealth | null>(null);
   const [localHelperChecking, setLocalHelperChecking] = useState(false);
+  const [pairCodeCreating, setPairCodeCreating] = useState(false);
   const [reviewForm] = Form.useForm<{ decision: OpportunityReviewDecision; comment?: string }>();
   const [sourceForm] = Form.useForm<MonitorSourceFormData>();
   const [documentForm] = Form.useForm<{
@@ -424,14 +448,34 @@ const OpportunityMonitorPage: React.FC = () => {
       message.warning('当前账号缺少姓名，无法生成配对码');
       return;
     }
-    const result = await OpportunityAPI.createLocalHelperPairCode({
-      ownerUser: user.id,
-      ownerName: user.name,
-      deviceName: `${user.name} 的 Windows 助手`,
-    });
-    await navigator.clipboard.writeText(`${result.pairCode}\n${result.deepLink}`);
-    message.success(`配对码 ${result.pairCode} 已复制，10 分钟内有效`);
-    fetchAll();
+    setPairCodeCreating(true);
+    try {
+      const result = await OpportunityAPI.createLocalHelperPairCode({
+        ownerUser: user.id,
+        ownerName: user.name,
+        deviceName: `${user.name} 的 Windows 助手`,
+      });
+      const copyText = `${result.pairCode}\n${result.deepLink}`;
+      const copied = await copyTextSafely(copyText);
+      modal.success({
+        title: copied ? '配对码已生成并复制' : '配对码已生成',
+        content: (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Text>10 分钟内有效。请在本地助手配对窗口中输入配对码，或使用下方深链。</Text>
+            <Input addonBefore="配对码" value={result.pairCode} readOnly />
+            <Input.TextArea value={result.deepLink} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
+            {!copied && <Text type="secondary">浏览器未允许自动复制，请手动复制上面的配对码。</Text>}
+          </Space>
+        ),
+      });
+      message.success(copied ? `配对码 ${result.pairCode} 已复制` : `配对码 ${result.pairCode} 已生成`);
+      fetchAll();
+    } catch (error) {
+      console.error('Create local helper pair code error:', error);
+      message.error(errorMessageOf(error, '生成配对码失败'));
+    } finally {
+      setPairCodeCreating(false);
+    }
   };
 
   const revokeDevice = async (device: LocalHelperDevice) => {
@@ -700,7 +744,7 @@ const OpportunityMonitorPage: React.FC = () => {
             本地助手{localHelperHealth?.ok ? '在线' : '离线'}
           </Tag>
           <Button loading={localHelperChecking} onClick={checkLocalHelper}>检测助手</Button>
-          {!localHelperHealth?.ok && <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">下载本地助手</Button>}
+          {!localHelperHealth?.ok && <Button type="primary" href="/downloads/hcz-local-helper-setup.exe" target="_blank">下载本地助手安装包</Button>}
           {isManager && <Button type="primary" onClick={() => openSourceModal()}>新增监测源</Button>}
         </Space>
       </Flex>
@@ -748,11 +792,11 @@ const OpportunityMonitorPage: React.FC = () => {
                       <Tag color={offlineLocalHelperDevices.length > 0 ? 'red' : 'green'}>
                         离线设备 {offlineLocalHelperDevices.length}
                       </Tag>
-                      <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">免安装包</Button>
-                      <Button href="/downloads/hcz-local-helper-setup.exe" target="_blank">安装包</Button>
+                      <Button type="primary" href="/downloads/hcz-local-helper-setup.exe" target="_blank">安装包</Button>
+                      <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">免安装包备用</Button>
                       <Button href="/downloads/hcz-local-helper-release.json" target="_blank">版本清单</Button>
                     </Space>
-                    {isManager && <Button type="primary" onClick={createPairCode}>生成我的配对码</Button>}
+                    <Button type="primary" loading={pairCodeCreating} onClick={createPairCode}>生成我的配对码</Button>
                   </Flex>
                   <Table
                     rowKey="id"

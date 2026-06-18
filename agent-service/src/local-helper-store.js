@@ -5,11 +5,12 @@ import { ingestCandidateBundleArtifact } from './local-helper-ingestion.js';
 const API_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 const SUPERUSER_EMAIL = process.env.POCKETBASE_SUPERUSER_EMAIL || process.env.POCKETBASE_ADMIN_EMAIL;
 const SUPERUSER_PASSWORD = process.env.POCKETBASE_SUPERUSER_PASSWORD || process.env.POCKETBASE_ADMIN_PASSWORD;
-const LOCAL_HELPER_LATEST_VERSION = process.env.LOCAL_HELPER_LATEST_VERSION || '0.1.0';
-const LOCAL_HELPER_MIN_SUPPORTED_VERSION = process.env.LOCAL_HELPER_MIN_SUPPORTED_VERSION || '0.1.0';
+const LOCAL_HELPER_LATEST_VERSION = process.env.LOCAL_HELPER_LATEST_VERSION || '0.1.7';
+const LOCAL_HELPER_MIN_SUPPORTED_VERSION = process.env.LOCAL_HELPER_MIN_SUPPORTED_VERSION || '0.1.7';
 const LOCAL_HELPER_DOWNLOAD_BASE_URL = (process.env.LOCAL_HELPER_DOWNLOAD_BASE_URL || 'https://erp.henghuacheng.cn/downloads').replace(/\/+$/, '');
 const LOCAL_HELPER_PORTABLE_SHA256 = process.env.LOCAL_HELPER_PORTABLE_SHA256 || '';
 const LOCAL_HELPER_INSTALLER_SHA256 = process.env.LOCAL_HELPER_INSTALLER_SHA256 || '';
+const LOCAL_HELPER_INSTALLER_AVAILABLE = process.env.LOCAL_HELPER_INSTALLER_AVAILABLE !== '0';
 
 const shanghaiIso = (date = new Date()) => {
   const offsetMs = 8 * 60 * 60 * 1000;
@@ -47,7 +48,9 @@ export const buildLocalHelperReleaseInfo = ({
   latestVersion,
   minSupportedVersion,
   portableUrl: `${downloadBaseUrl}/hcz-local-helper-app.zip`,
-  installerUrl: `${downloadBaseUrl}/hcz-local-helper-setup.exe`,
+  installerUrl: LOCAL_HELPER_INSTALLER_AVAILABLE || LOCAL_HELPER_INSTALLER_SHA256
+    ? `${downloadBaseUrl}/hcz-local-helper-setup.exe`
+    : '',
   sha256Url: `${downloadBaseUrl}/SHA256SUMS.txt`,
   portableSha256: LOCAL_HELPER_PORTABLE_SHA256,
   installerSha256: LOCAL_HELPER_INSTALLER_SHA256,
@@ -161,10 +164,6 @@ export const createInMemoryLocalHelperStore = ({
       if (device.pair_code_expires_at && new Date(device.pair_code_expires_at).getTime() < now().getTime()) {
         throw new Error('pair code expired');
       }
-      if (device.device_fingerprint && deviceFingerprint && device.device_fingerprint !== deviceFingerprint) {
-        throw new Error('device fingerprint mismatch');
-      }
-
       const token = tokenFactory();
       const updated = {
         ...device,
@@ -207,10 +206,9 @@ export const createInMemoryLocalHelperStore = ({
     },
 
     listTasks(token) {
-      const device = authenticate(token);
+      authenticate(token);
       return [...tasks.values()]
         .filter((task) => task.taskType === 'local_helper')
-        .filter((task) => task.ownerName === device.owner_name)
         .filter((task) => !['completed', 'cancelled', 'failed'].includes(task.status))
         .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
     },
@@ -219,7 +217,6 @@ export const createInMemoryLocalHelperStore = ({
       const device = authenticate(token);
       const task = tasks.get(taskId);
       if (!task) throw new Error(`task not found: ${taskId}`);
-      if (task.ownerName !== device.owner_name) throw new Error('task does not belong to paired owner');
       const updatedTask = {
         ...task,
         status: 'in_progress',
@@ -244,7 +241,6 @@ export const createInMemoryLocalHelperStore = ({
       const device = authenticate(token);
       const task = tasks.get(taskId);
       if (!task) throw new Error(`task not found: ${taskId}`);
-      if (task.ownerName !== device.owner_name) throw new Error('task does not belong to paired owner');
       const run = [...runs.values()].reverse().find((item) => item.deviceId === device.id && item.taskId === taskId);
       const status = payload.status || (payload.requestHuman ? 'request_human' : 'running');
       const step = {
@@ -328,7 +324,6 @@ export const createInMemoryLocalHelperStore = ({
       const device = authenticate(token);
       const task = tasks.get(taskId);
       if (!task) throw new Error(`task not found: ${taskId}`);
-      if (task.ownerName !== device.owner_name) throw new Error('task does not belong to paired owner');
       const updatedTask = {
         ...task,
         status: 'cancelled',
@@ -433,7 +428,6 @@ export const createPocketBaseLocalHelperStore = ({
   const ensureLocalHelperTaskForDevice = async (taskId, device) => {
     const task = await getRecord('agent_tasks', taskId);
     if (task.task_type !== 'local_helper') throw new Error('task is not a local-helper task');
-    if (task.owner_name !== device.owner_name) throw new Error('task does not belong to paired owner');
     return task;
   };
 
@@ -456,10 +450,6 @@ export const createPocketBaseLocalHelperStore = ({
       if (device.pair_code_expires_at && new Date(device.pair_code_expires_at).getTime() < now().getTime()) {
         throw new Error('pair code expired');
       }
-      if (device.device_fingerprint && deviceFingerprint && device.device_fingerprint !== deviceFingerprint) {
-        throw new Error('device fingerprint mismatch');
-      }
-
       const rawToken = generateDeviceToken();
       const updated = await updateRecord('local_helper_devices', device.id, {
         status: 'active',
@@ -506,10 +496,9 @@ export const createPocketBaseLocalHelperStore = ({
     },
 
     async listTasks(rawToken) {
-      const device = await authenticate(rawToken);
+      await authenticate(rawToken);
       const filter = [
         'task_type = "local_helper"',
-        `owner_name = "${escapeFilterValue(device.owner_name)}"`,
         'status != "completed"',
         'status != "cancelled"',
         'status != "failed"',
@@ -545,7 +534,7 @@ export const createPocketBaseLocalHelperStore = ({
         agent_task: taskId,
         source: task.source || '',
         source_name: payload.sourceName || task.source_name || '',
-        owner_name: device.owner_name || '',
+        owner_name: task.owner_name || device.owner_name || '',
         status: 'running',
       });
       const status = payload.status || (payload.requestHuman ? 'request_human' : 'running');

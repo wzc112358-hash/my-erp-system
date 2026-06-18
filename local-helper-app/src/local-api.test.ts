@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 
-import { createLocalApiServer } from './local-api.ts';
+import { createLocalApiServer, resolveRuntimeDirs } from './local-api.ts';
 import { createTaskStore } from './task-store.ts';
 
 const requestJson = async (baseUrl: string, path: string, options: RequestInit = {}) => {
@@ -121,6 +124,86 @@ test('local API exposes health, pair, tasks, and lifecycle endpoints', async () 
     assert.equal(continued.body.lastObservation, '已登录，当前页面展示采购公告列表。');
   } finally {
     await server.stop();
+  }
+});
+
+test('local API start rejects when the configured port is already in use', async () => {
+  const occupied = createLocalApiServer({ store: createTaskStore(), port: 0 });
+  await occupied.start();
+  try {
+    const occupiedUrl = new URL(occupied.url());
+    const blocked = createLocalApiServer({
+      store: createTaskStore(),
+      port: Number(occupiedUrl.port),
+    });
+
+    await assert.rejects(
+      blocked.start(),
+      (error) => error instanceof Error && 'code' in error && error.code === 'EADDRINUSE',
+    );
+  } finally {
+    await occupied.stop();
+  }
+});
+
+test('local API defaults browser profile and artifacts to the user data directory', () => {
+  const dirs = resolveRuntimeDirs({
+    sourceName: '华锦兵器网',
+  }, {
+    LOCALAPPDATA: 'C:\\Users\\wzc\\AppData\\Local',
+  });
+
+  assert.equal(
+    dirs.profileDir,
+    path.join('C:\\Users\\wzc\\AppData\\Local', 'HengHuaChengLocalHelper', 'profiles', '华锦兵器网'),
+  );
+  assert.equal(
+    dirs.screenshotDir,
+    path.join('C:\\Users\\wzc\\AppData\\Local', 'HengHuaChengLocalHelper', 'artifacts'),
+  );
+  assert.doesNotMatch(dirs.profileDir, /^profiles[\\/]/);
+});
+
+test('local API runtime directories preserve explicit env overrides', () => {
+  const dirs = resolveRuntimeDirs({
+    sourceName: '华锦兵器网',
+  }, {
+    LOCALAPPDATA: 'C:\\Users\\wzc\\AppData\\Local',
+    HCZ_LOCAL_HELPER_PROFILE_DIR: 'D:\\hcz-profile',
+    HCZ_LOCAL_HELPER_ARTIFACT_DIR: 'D:\\hcz-artifacts',
+  });
+
+  assert.equal(dirs.profileDir, 'D:\\hcz-profile');
+  assert.equal(dirs.screenshotDir, 'D:\\hcz-artifacts');
+});
+
+test('local API serves fallback renderer pages for browser-based helper UI', async () => {
+  const rendererDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hcz-renderer-'));
+  await fs.writeFile(path.join(rendererDir, 'pair.html'), '<!doctype html><script src="./pair.js"></script>', 'utf8');
+  await fs.writeFile(path.join(rendererDir, 'pair.js'), 'window.__pair = true;', 'utf8');
+  await fs.writeFile(path.join(rendererDir, 'tasks.html'), '<!doctype html><script src="./tasks.js"></script>', 'utf8');
+  await fs.writeFile(path.join(rendererDir, 'tasks.js'), 'window.__tasks = true;', 'utf8');
+
+  const server = createLocalApiServer({
+    store: createTaskStore(),
+    port: 0,
+    rendererDir,
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const pair = await fetch(`${baseUrl}/ui/pair`);
+    const pairScript = await fetch(`${baseUrl}/ui/pair.js`);
+    const tasks = await fetch(`${baseUrl}/ui/tasks`);
+
+    assert.equal(pair.status, 200);
+    assert.match(await pair.text(), /pair\.js/);
+    assert.equal(pairScript.headers.get('content-type'), 'application/javascript; charset=utf-8');
+    assert.match(await pairScript.text(), /__pair/);
+    assert.match(await tasks.text(), /tasks\.js/);
+  } finally {
+    await server.stop();
+    await fs.rm(rendererDir, { recursive: true, force: true });
   }
 });
 

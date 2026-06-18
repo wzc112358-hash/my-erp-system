@@ -53,7 +53,7 @@ const createLocalHelperDevicesCollection = (users) => new Collection({
   system: false,
   listRule: "@request.auth.id != ''",
   viewRule: "@request.auth.id != ''",
-  createRule: "@request.auth.type = 'manager'",
+  createRule: "@request.auth.id != ''",
   updateRule: "@request.auth.id != ''",
   deleteRule: "@request.auth.type = 'manager'",
   indexes: [
@@ -66,7 +66,7 @@ const createLocalHelperDevicesCollection = (users) => new Collection({
     relationField("owner_user", users.id),
     textField("owner_name", true),
     textField("device_name"),
-    textField("device_fingerprint"),
+    textField("device_fingerprint", true),
     selectField("status", ["pending_pair", "active", "revoked"], true),
     textField("pair_code_hash"),
     dateField("pair_code_expires_at"),

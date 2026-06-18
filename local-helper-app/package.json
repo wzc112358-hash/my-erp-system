@@ -1,6 +1,6 @@
 {
   "name": "hcz-local-helper-app",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "main": "dist/electron-main.js",
@@ -32,6 +32,9 @@
       "dist/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "dist/renderer/**"
+    ],
     "protocols": [
       {
         "name": "HCZ Local Helper",
@@ -50,7 +53,11 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "恒化成本地采集助手"
     }
   }
 }

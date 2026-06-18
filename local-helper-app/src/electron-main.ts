@@ -1,25 +1,141 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
 import { parseDeepLink } from './deep-link.ts';
 import {
   buildProtocolRegistration,
+  buildRendererFileUrl,
+  buildStartupFailureMessage,
   buildTrayMenuTemplate,
+  chromiumStartupFallbackSwitches,
+  decideStartupMode,
   resolveAppConfig,
+  resolveRendererFilePath,
   type TrayMenuItem,
 } from './electron-shell.ts';
+import { createJsonFileConfigStore } from './local-config-store.ts';
 import { createLocalApiServer } from './local-api.ts';
 import { createTaskStore } from './task-store.ts';
 
 const electron = await import('electron');
-const { app, BrowserWindow, Menu, shell, Tray, nativeImage } = electron;
+const { app, BrowserWindow, Menu, shell, Tray, nativeImage, dialog } = electron;
+
+const localDataDir = path.join(
+  process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir(),
+  'HengHuaChengLocalHelper',
+);
+const startupLogFile = path.join(
+  localDataDir,
+  'startup.log',
+);
+const configFile = path.join(localDataDir, 'config.json');
+
+const appendStartupLog = (message: string, error?: unknown) => {
+  try {
+    fs.mkdirSync(path.dirname(startupLogFile), { recursive: true });
+    const detail = error instanceof Error ? `${error.stack || error.message}` : error ? String(error) : '';
+    fs.appendFileSync(startupLogFile, `[${new Date().toISOString()}] [pid:${process.pid}] ${message}${detail ? `\n${detail}` : ''}\n`, 'utf8');
+  } catch {
+    // Logging must never stop the helper from opening.
+  }
+};
+
+appendStartupLog(`process start; pid=${process.pid}; platform=${process.platform}; arch=${process.arch}; electron=${process.versions.electron || ''}; argv=${process.argv.join(' ')}`);
+app.disableHardwareAcceleration();
+for (const item of chromiumStartupFallbackSwitches()) {
+  app.commandLine.appendSwitch(item.name, item.value);
+}
+appendStartupLog(`chromium startup fallbacks enabled: ${chromiumStartupFallbackSwitches().map((item) => (item.value ? `${item.name}=${item.value}` : item.name)).join(', ')}`);
+
+process.on('uncaughtException', (error) => {
+  appendStartupLog('uncaughtException', error);
+});
+process.on('unhandledRejection', (error) => {
+  appendStartupLog('unhandledRejection', error);
+});
+process.on('exit', (code) => {
+  appendStartupLog(`process exit: ${code}`);
+});
+
+app.on('will-finish-launching', () => appendStartupLog('app event: will-finish-launching'));
+app.on('ready', () => appendStartupLog('app event: ready'));
+app.on('before-quit', () => appendStartupLog('app event: before-quit'));
+app.on('quit', (_event, exitCode) => appendStartupLog(`app event: quit ${exitCode}`));
+app.on('render-process-gone', (_event, _webContents, details) => {
+  appendStartupLog(`app event: render-process-gone ${JSON.stringify(details)}`);
+});
+app.on('child-process-gone', (_event, details) => {
+  appendStartupLog(`app event: child-process-gone ${JSON.stringify(details)}`);
+});
 
 const config = resolveAppConfig();
-const store = createTaskStore();
-const server = createLocalApiServer({ store, port: config.port });
+const helperVersion = app.getVersion();
+const store = createTaskStore({
+  configStore: createJsonFileConfigStore(configFile),
+  helperVersion,
+});
 let tray: InstanceType<typeof Tray> | null = null;
 let pairWindow: InstanceType<typeof BrowserWindow> | null = null;
 let taskWindow: InstanceType<typeof BrowserWindow> | null = null;
+let resolveLocalApiReady: () => void = () => {};
+let rejectLocalApiReady: (error: unknown) => void = () => {};
+const localApiReady = new Promise<void>((resolve, reject) => {
+  resolveLocalApiReady = resolve;
+  rejectLocalApiReady = reject;
+});
+void localApiReady.catch(() => null);
+const electronReady = app.whenReady();
+void electronReady.catch((error) => appendStartupLog('app.whenReady rejected', error));
+
+const rendererPath = (fileName: string) => resolveRendererFilePath({
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  resourcesPath: process.resourcesPath || path.dirname(app.getAppPath()),
+  fileName,
+});
+const rendererDir = path.dirname(rendererPath('pair.html'));
+const server = createLocalApiServer({
+  store,
+  port: config.port,
+  helperVersion,
+  rendererDir,
+});
+
+const loadRendererWindow = async (
+  window: InstanceType<typeof BrowserWindow>,
+  fileName: string,
+  params: Record<string, string>,
+  label: string,
+) => {
+  const filePath = rendererPath(fileName);
+  const fileExists = fs.existsSync(filePath);
+  const url = buildRendererFileUrl(filePath, params);
+  appendStartupLog(`${label}: ${filePath}; exists=${fileExists}; url=${url}`);
+  if (!fileExists) {
+    throw new Error(`renderer file missing: ${filePath}`);
+  }
+  await window.loadURL(url);
+};
+
+const loadDiagnosticPage = (
+  window: InstanceType<typeof BrowserWindow>,
+  title: string,
+  message: string,
+) => {
+  const body = `
+    <!doctype html>
+    <meta charset="utf-8" />
+    <title>${title}</title>
+    <body style="font-family: system-ui, sans-serif; padding: 24px; line-height: 1.6;">
+      <h2>${title}</h2>
+      <pre style="white-space: pre-wrap; background: #f6f7f9; padding: 12px; border-radius: 6px;">${message}</pre>
+    </body>
+  `;
+  void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(body)}`)
+    .catch((error) => appendStartupLog('diagnostic page load failed', error));
+};
 
 const openPairingWindow = () => {
   if (pairWindow && !pairWindow.isDestroyed()) {
@@ -34,8 +150,20 @@ const openPairingWindow = () => {
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   });
   pairWindow.setMenuBarVisibility(false);
-  void pairWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/pair.html'), {
-    search: `api=${encodeURIComponent(config.localUrl)}`,
+  pairWindow.on('close', () => appendStartupLog('pairing window close'));
+  pairWindow.webContents.on('render-process-gone', (_event, details) => {
+    appendStartupLog(`pairing window render gone: ${JSON.stringify(details)}`);
+  });
+  pairWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    appendStartupLog(`pairing window load failed event: ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
+  void loadRendererWindow(pairWindow, 'pair.html', {
+    api: config.localUrl,
+  }, 'open pairing window').catch((error) => {
+    appendStartupLog('pairing window load failed', error);
+    if (pairWindow && !pairWindow.isDestroyed()) {
+      loadDiagnosticPage(pairWindow, '本地助手页面加载失败', `${error instanceof Error ? error.stack || error.message : String(error)}\n\n日志位置：${startupLogFile}`);
+    }
   });
   pairWindow.on('closed', () => {
     pairWindow = null;
@@ -47,8 +175,14 @@ const openTaskWindow = (taskId = '') => {
   if (taskWindow && !taskWindow.isDestroyed()) {
     taskWindow.focus();
     if (taskId) {
-      void taskWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/tasks.html'), {
-        search: `api=${encodeURIComponent(config.localUrl)}&taskId=${encodeURIComponent(taskId)}`,
+      void loadRendererWindow(taskWindow, 'tasks.html', {
+        api: config.localUrl,
+        taskId,
+      }, 'reload task window').catch((error) => {
+        appendStartupLog('task window reload failed', error);
+        if (taskWindow && !taskWindow.isDestroyed()) {
+          loadDiagnosticPage(taskWindow, '本地助手任务页加载失败', `${error instanceof Error ? error.stack || error.message : String(error)}\n\n日志位置：${startupLogFile}`);
+        }
       });
     }
     return;
@@ -62,8 +196,21 @@ const openTaskWindow = (taskId = '') => {
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   });
   taskWindow.setMenuBarVisibility(false);
-  void taskWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/tasks.html'), {
-    search: `api=${encodeURIComponent(config.localUrl)}${taskId ? `&taskId=${encodeURIComponent(taskId)}` : ''}`,
+  taskWindow.on('close', () => appendStartupLog('task window close'));
+  taskWindow.webContents.on('render-process-gone', (_event, details) => {
+    appendStartupLog(`task window render gone: ${JSON.stringify(details)}`);
+  });
+  taskWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    appendStartupLog(`task window load failed event: ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
+  void loadRendererWindow(taskWindow, 'tasks.html', {
+    api: config.localUrl,
+    taskId,
+  }, 'open task window').catch((error) => {
+    appendStartupLog('task window load failed', error);
+    if (taskWindow && !taskWindow.isDestroyed()) {
+      loadDiagnosticPage(taskWindow, '本地助手任务页加载失败', `${error instanceof Error ? error.stack || error.message : String(error)}\n\n日志位置：${startupLogFile}`);
+    }
   });
   taskWindow.on('closed', () => {
     taskWindow = null;
@@ -137,44 +284,164 @@ const handleDeepLink = async (rawUrl = '') => {
   }
   if (link.type === 'task') {
     await fetch(`${config.localUrl}/cloud/tasks`).catch(() => null);
-    openTaskWindow(link.taskId);
+    afterElectronReady('open task window from deep link', () => openTaskWindow(link.taskId));
   }
 };
 
+const openDefaultWindow = () => {
+  if (store.health().cloudPaired) {
+    openTaskWindow();
+    return;
+  }
+  openPairingWindow();
+};
+
+const afterLocalApiReady = (label: string, action: () => void | Promise<void>) => {
+  void localApiReady
+    .then(() => action())
+    .catch((error) => appendStartupLog(`${label} skipped because startup failed`, error));
+};
+
+const afterElectronReady = (label: string, action: () => void | Promise<void>) => {
+  void electronReady
+    .then(() => action())
+    .catch((error) => appendStartupLog(`${label} skipped because Electron failed`, error));
+};
+
+const probeLocalApiHealth = async (timeoutMs = 1500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${config.localUrl}/health`, {
+      signal: controller.signal,
+    });
+    appendStartupLog(`local api health probe: status=${response.status}`);
+    return response.ok;
+  } catch (error) {
+    appendStartupLog('local api health probe failed', error);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const summarizeError = (error: unknown) => {
+  if (!(error instanceof Error)) return String(error);
+  const code = 'code' in error ? String((error as Error & { code?: unknown }).code || '') : '';
+  return code ? `${error.message} (${code})` : error.message;
+};
+
 app.on('second-instance', (_event, argv) => {
+  appendStartupLog(`second-instance; argv=${argv.join(' ')}`);
   const deepLink = argv.find((item) => item.startsWith('hcz-helper://'));
-  if (deepLink) handleDeepLink(deepLink);
+  if (deepLink) {
+    afterLocalApiReady('second-instance deep link', () => handleDeepLink(deepLink));
+    return;
+  }
+  afterElectronReady('second-instance focus', () => openDefaultWindow());
 });
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  handleDeepLink(url);
+  afterLocalApiReady('open-url deep link', () => handleDeepLink(url));
 });
 
 const singleInstance = app.requestSingleInstanceLock();
-if (!singleInstance) app.quit();
-
-await app.whenReady();
-registerProtocol();
-await server.start();
-
-const icon = nativeImage.createEmpty();
-tray = new Tray(icon);
-tray.setToolTip('恒化成本地采集助手');
-refreshTray();
-
-const startupLink = process.argv.find((item) => item.startsWith('hcz-helper://'));
-if (startupLink) handleDeepLink(startupLink);
-
-// 首次运行（尚未与云端配对）且不是通过配对深链启动时，自动弹出配对窗口。
-if (!store.health().cloudPaired && !startupLink) {
-  openPairingWindow();
+const startupMode = decideStartupMode({
+  hasSingleInstanceLock: singleInstance,
+  existingLocalApiReachable: singleInstance ? false : await probeLocalApiHealth(),
+});
+if (startupMode === 'exit-secondary') {
+  appendStartupLog('single instance lock unavailable and existing local api is healthy; exiting secondary process');
+  app.quit();
+  process.exit(0);
 }
+if (startupMode === 'recover-stale-lock') {
+  appendStartupLog('single instance lock unavailable but local api is not healthy; continuing startup to recover a stale helper process');
+}
+
+let startupStage = '启动本地服务端口';
+try {
+  startupStage = '启动本地服务端口';
+  await server.start();
+  resolveLocalApiReady();
+  appendStartupLog(`local api listening: ${config.localUrl}`);
+} catch (error) {
+  if (startupStage === '启动本地服务端口' && await probeLocalApiHealth()) {
+    appendStartupLog('local api became healthy after startup failure; exiting this helper process');
+    app.quit();
+    process.exit(0);
+  }
+  rejectLocalApiReady(error);
+  appendStartupLog('local api start failed', error);
+  dialog.showErrorBox(
+    '恒化成本地采集助手启动失败',
+    buildStartupFailureMessage({
+      port: config.port,
+      stage: startupStage,
+      errorMessage: summarizeError(error),
+      logFile: startupLogFile,
+    }),
+  );
+  throw error;
+}
+
+let desktopShellStarted = false;
+const startupLink = process.argv.find((item) => item.startsWith('hcz-helper://'));
+const startDesktopShell = async () => {
+  appendStartupLog('waiting for Electron ready for desktop shell');
+  startupStage = '等待 Electron 初始化';
+  await electronReady;
+  desktopShellStarted = true;
+  appendStartupLog(`app ready; version=${app.getVersion()}; path=${app.getAppPath()}; resources=${process.resourcesPath || ''}; fallbackUi=${config.localUrl}/ui/tasks`);
+
+  startupStage = '注册深链协议';
+  registerProtocol();
+
+  try {
+    const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP8z8BQDwAFgwJ/lU0+IwAAAABJRU5ErkJggg==');
+    tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+    tray.setToolTip('恒化成本地采集助手');
+    refreshTray();
+  } catch (error) {
+    appendStartupLog('tray creation failed; continuing without tray', error);
+  }
+
+  if (startupLink) {
+    await handleDeepLink(startupLink);
+    return;
+  }
+  openDefaultWindow();
+};
+
+void startDesktopShell().catch((error) => {
+  appendStartupLog('desktop shell start failed; local api remains available', error);
+  dialog.showErrorBox(
+    '恒化成本地采集助手界面启动失败',
+    `${buildStartupFailureMessage({
+      port: config.port,
+      stage: startupStage,
+      errorMessage: summarizeError(error),
+      logFile: startupLogFile,
+    })}\n\n本地服务已启动，可先在浏览器打开：${config.localUrl}/ui/tasks`,
+  );
+});
+
+setTimeout(() => {
+  if (desktopShellStarted || app.isReady()) return;
+  const error = new Error(`app.whenReady still pending after 30000ms; isReady=${app.isReady()}; pid=${process.pid}; execPath=${process.execPath}`);
+  appendStartupLog('desktop shell readiness delayed; local api remains available', error);
+  dialog.showErrorBox(
+    '恒化成本地采集助手界面启动较慢',
+    `本地服务已经启动：${config.localUrl}\n\n桌面窗口仍在初始化。你可以先在浏览器打开备用界面：${config.localUrl}/ui/tasks\n\n日志位置：${startupLogFile}`,
+  );
+}, 30000);
 
 app.on('window-all-closed', (event) => {
   event.preventDefault();
 });
 
 app.on('before-quit', async () => {
+  appendStartupLog('before quit');
   await server.stop().catch(() => null);
 });
