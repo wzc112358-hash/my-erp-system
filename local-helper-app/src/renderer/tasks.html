@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; connect-src http://127.0.0.1:* http://localhost:*" />
-  <title>恒化成本地采集助手 · 任务</title>
+  <title>恒化成本地采集助手 · 本地采集任务</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -16,17 +16,20 @@
     .app {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr);
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
     aside {
       border-right: 1px solid #d9e1ec;
       background: #fff;
       padding: 14px;
       overflow: auto;
+      min-height: 0;
     }
     main {
       padding: 18px 22px;
       overflow: auto;
+      min-height: 0;
     }
     .topbar {
       display: flex;
@@ -66,7 +69,87 @@
     button.primary { background: #1978ca; border-color: #1978ca; color: #fff; }
     button.danger { border-color: #d9938d; color: #b42318; }
     button:disabled { opacity: .55; cursor: default; }
-    .task-list { display: grid; gap: 8px; }
+    .task-list { display: grid; gap: 10px; }
+    .create-form {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      margin-bottom: 14px;
+      border: 1px solid #d7e0eb;
+      border-radius: 8px;
+      background: #f7f9fc;
+    }
+    .create-form label {
+      display: grid;
+      gap: 4px;
+      color: #647386;
+      font-size: 12px;
+    }
+    input, select {
+      width: 100%;
+      min-height: 32px;
+      border: 1px solid #b9c7d8;
+      border-radius: 6px;
+      padding: 0 8px;
+      color: #182331;
+      background: #fff;
+      font: inherit;
+      font-size: 13px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 58px;
+      border: 1px solid #b9c7d8;
+      border-radius: 6px;
+      padding: 8px;
+      resize: vertical;
+      color: #182331;
+      background: #fff;
+      font: inherit;
+      font-size: 13px;
+    }
+    .task-group { display: grid; gap: 6px; }
+    .group-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 8px;
+      border-color: #d7e0eb;
+      background: #f7f9fc;
+      font-weight: 700;
+      text-align: left;
+    }
+    .group-toggle::before {
+      content: "▾";
+      color: #647386;
+      width: 12px;
+      flex: 0 0 12px;
+    }
+    .group-toggle[aria-expanded="false"]::before { content: "▸"; }
+    .group-toggle span:first-child {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .group-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #eaf0f7;
+      color: #38506b;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .group-body { display: grid; gap: 8px; }
     .task-item {
       width: 100%;
       text-align: left;
@@ -120,6 +203,14 @@
     .notice.update { background: #fff6df; color: #7a4b00; }
     .notice.update.required { background: #fdecea; color: #b42318; }
     .notice.show { display: block; }
+    .candidate-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .candidate-list li {
+      border: 1px solid #d7e0eb;
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+    }
+    .candidate-list strong { display: block; margin-bottom: 4px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -127,17 +218,36 @@
     <aside>
       <div class="topbar">
         <div>
-          <h1>云端任务</h1>
+          <h1>本地采集任务</h1>
           <div class="muted" id="cloudState">正在检查连接…</div>
         </div>
         <button id="refresh">刷新</button>
       </div>
+      <form class="create-form" id="createTaskForm">
+        <label>
+          站点
+          <select id="siteSelect"></select>
+        </label>
+        <label>
+          自定义站点名
+          <input id="customSourceName" placeholder="未在列表中时填写" />
+        </label>
+        <label>
+          搜索词
+          <input id="searchTerms" placeholder="例如：裕龙石化 缓蚀剂" />
+        </label>
+        <label>
+          入口 URL
+          <input id="entryUrl" placeholder="选择站点后自动填充，可手动修改" />
+        </label>
+        <button class="primary" type="submit">新建本地采集任务</button>
+      </form>
       <div class="task-list" id="taskList"></div>
     </aside>
     <main>
       <div class="notice" id="notice"></div>
       <div class="notice update" id="releaseNotice"></div>
-      <div id="detail" class="empty">请选择一个云端采集任务</div>
+      <div id="detail" class="empty">请选择或新建一个本地采集任务</div>
     </main>
   </div>
   <script src="./tasks.js"></script>

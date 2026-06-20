@@ -65,3 +65,30 @@ test('huajin harness opens local browser, pauses for human, then continues after
   assert.equal(continued.candidateBundle?.candidates.length, 1);
   assert.match(continued.candidateBundle?.candidates[0].title || '', /液氮/);
 });
+
+test('huajin harness ignores login nav text once notice rows are visible', async () => {
+  const browser = {
+    open: async () => ({
+      title: '华锦兵器网 登录',
+      url: 'https://www.norincogroup-ebuy.com/',
+      visibleText: '供应商登录 验证码',
+    }),
+    observe: async () => ({
+      title: '华锦兵器网',
+      url: 'https://www.norincogroup-ebuy.com/',
+      visibleText: [
+        '首页 登录 退出登录',
+        '2026-05-27 华锦化工液氮采购询价公告 截止 2026-05-29',
+      ].join('\n'),
+    }),
+  };
+  const harness = createHuajinHarness({ browser });
+
+  const first = await harness.openTask(task);
+  const continued = await harness.continueTask(task);
+
+  assert.equal(first.status, 'request_human');
+  assert.equal(continued.status, 'completed');
+  assert.equal(continued.candidateBundle?.candidates.length, 1);
+  assert.match(continued.candidateBundle?.candidates[0].title || '', /液氮/);
+});

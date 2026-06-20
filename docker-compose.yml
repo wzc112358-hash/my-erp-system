@@ -100,6 +100,7 @@ services:
       - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
       - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
       - LOCAL_HELPER_API_PORT=8097
+      - LOCAL_HELPER_RELEASE_MANIFEST_URL=${LOCAL_HELPER_RELEASE_MANIFEST_URL:-http://frontend/downloads/hcz-local-helper-release.json}
     deploy:
       resources:
         limits:

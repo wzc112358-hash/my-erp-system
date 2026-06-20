@@ -75,6 +75,58 @@ test('task store manages local helper task lifecycle', () => {
   assert.equal(store.listTasks()[0].lastObservation, '员工已完成登录，当前页面显示询价交易列表。');
 });
 
+test('task store creates local tasks with known site entry URL defaults', () => {
+  const store = createTaskStore();
+
+  const task = store.createTask({
+    sourceName: '中石油招投标网',
+    searchTerms: '缓蚀剂',
+  });
+
+  assert.match(task.id, /^local-/);
+  assert.equal(task.mode, 'local');
+  assert.equal(task.entryUrl, 'https://www.cnpcbidding.com/#/tenders');
+  assert.equal(task.searchTerms, '缓蚀剂');
+});
+
+test('task store keeps local agent candidate bundle and artifacts', () => {
+  const store = createTaskStore();
+  const task = store.createTask({
+    sourceName: '华锦兵器网',
+    searchTerms: '消泡剂',
+  });
+
+  const updated = store.continueTask(task.id, {
+    status: 'completed',
+    observation: '2026-05-27 华锦化工消泡剂采购询价公告',
+    candidateBundle: {
+      source_name: '华锦兵器网',
+      candidates: [{
+        title: '华锦化工消泡剂采购询价公告',
+        url: 'https://example.com/notice/1',
+        published_at: '2026-05-27',
+        deadline_at: '',
+        buyer_name: '华锦兵器网',
+        raw_text: '2026-05-27 华锦化工消泡剂采购询价公告',
+        attachments: [],
+      }],
+    },
+    artifacts: [{
+      artifact_type: 'dom_snapshot',
+      title: '华锦 DOM 快照',
+      url: 'https://example.com',
+      content: '<html></html>',
+      mime_type: 'text/html',
+    }],
+    resultSummary: '本次采集识别到 1 条候选公告。',
+  });
+
+  assert.equal(updated.status, 'completed');
+  assert.equal(updated.lastCandidateBundle?.candidates[0].title, '华锦化工消泡剂采购询价公告');
+  assert.equal(updated.lastArtifacts?.[0].artifact_type, 'dom_snapshot');
+  assert.match(updated.lastResultSummary || '', /1 条候选/);
+});
+
 test('task store cancels a task', () => {
   const store = createTaskStore();
   store.addTask({ id: 'task-1', sourceName: '易派克', entryUrl: 'https://example.com', status: 'pending' });
@@ -110,6 +162,19 @@ test('task store keeps local task artifacts when cloud sync omits them', () => {
   assert.equal(synced[0].lastObservation, '已完成验证码，当前页面展示公告列表。');
   assert.equal(synced[0].lastScreenshotPath, '/tmp/hcz-artifacts/task-1.png');
   assert.equal(synced[0].lastLog, '已尝试继续采集。');
+});
+
+test('task store fills known site entry URLs when cloud sync omits them', () => {
+  const store = createTaskStore();
+
+  const synced = store.syncCloudTasks([{
+    id: 'task-cnpc-empty-entry',
+    sourceName: '中石油招投标网',
+    entryUrl: '',
+    status: 'pending',
+  }]);
+
+  assert.equal(synced[0].entryUrl, 'https://www.cnpcbidding.com/#/tenders');
 });
 
 test('task store maps cloud task statuses to local display statuses', () => {

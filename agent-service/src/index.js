@@ -299,6 +299,8 @@ export const buildManualTaskPayload = ({
 } = {}) => {
   const taskSource = {
     ...source,
+    source_url: source.source_url || strategy.categoryUrls?.[0] || '',
+    category_urls: source.category_urls || strategy.categoryUrls?.join(',') || '',
     crawl_strategy: strategy.crawlStrategy || source.crawl_strategy,
   };
   const payload = buildManualAssistTask({

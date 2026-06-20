@@ -8,6 +8,7 @@ import {
   createInMemoryLocalHelperStore,
   createPocketBaseLocalHelperStore,
   hashSecret,
+  resolveLocalHelperReleaseInfo,
 } from './local-helper-store.js';
 
 const requestJson = async (baseUrl, path, options = {}) => {
@@ -218,6 +219,35 @@ test('local helper release info marks update prompts from semantic versions', ()
   assert.equal(release.installerUrl, 'https://erp.example.com/downloads/hcz-local-helper-setup.exe');
 });
 
+test('local helper release info fills package hashes from release manifest', async () => {
+  const release = await resolveLocalHelperReleaseInfo({
+    currentVersion: '0.1.13',
+    latestVersion: '0.1.13',
+    minSupportedVersion: '0.1.13',
+    downloadBaseUrl: 'https://erp.example.com/downloads',
+    manifestUrl: 'http://frontend/downloads/hcz-local-helper-release.json',
+    fetchImpl: async (url) => {
+      assert.equal(url, 'http://frontend/downloads/hcz-local-helper-release.json');
+      return {
+        ok: true,
+        json: async () => ({
+          version: '0.1.14',
+          files: {
+            portable: { sha256: 'portable-sha' },
+            installer: { sha256: 'installer-sha' },
+          },
+        }),
+      };
+    },
+    now: () => new Date('2026-06-20T01:00:00.000Z'),
+  });
+
+  assert.equal(release.latestVersion, '0.1.14');
+  assert.equal(release.portableSha256, 'portable-sha');
+  assert.equal(release.installerSha256, 'installer-sha');
+  assert.equal(release.updateAvailable, true);
+});
+
 test('local helper cloud API exposes release manifest and heartbeat update hints', async () => {
   const store = createInMemoryLocalHelperStore({
     tokenFactory: () => 'token-xiaowei',
@@ -293,6 +323,22 @@ test('local helper cloud API ingests completed candidate bundle and finishes the
         action: 'continue_after_human',
         screenshotPath: '/tmp/hcz-artifacts/task-huajin-1.png',
         log: '员工完成验证码后继续采集。',
+        artifacts: [
+          {
+            artifact_type: 'dom_snapshot',
+            title: '华锦 DOM 快照',
+            url: 'https://www.norincogroup-ebuy.com/list',
+            content: '<html>消泡剂采购询价公告</html>',
+            mime_type: 'text/html',
+          },
+          {
+            artifact_type: 'network_response',
+            title: '华锦接口响应',
+            url: 'https://www.norincogroup-ebuy.com/api/notice/list',
+            content: '{"title":"消泡剂采购询价公告"}',
+            mime_type: 'application/json',
+          },
+        ],
         candidateBundle: {
           source_name: '华锦兵器网',
           candidates: [{
@@ -318,6 +364,73 @@ test('local helper cloud API ingests completed candidate bundle and finishes the
     assert.equal(artifacts.some((item) => item.artifactType === 'candidate_bundle'), true);
     assert.equal(artifacts.some((item) => item.artifactType === 'screenshot'), true);
     assert.equal(artifacts.some((item) => item.artifactType === 'log'), true);
+    assert.equal(artifacts.some((item) => item.artifactType === 'dom_snapshot'), true);
+    assert.equal(artifacts.some((item) => item.artifactType === 'network_response'), true);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local helper cloud API keeps a task open when candidate bundle creates no opportunity', async () => {
+  const store = createInMemoryLocalHelperStore({
+    tokenFactory: () => 'token-xiaowei',
+    now: () => new Date('2026-06-12T01:00:00.000Z'),
+    ingestCandidateBundle: async () => ({
+      rawCount: 1,
+      processedCount: 1,
+      persistableCount: 0,
+      createdCount: 0,
+      status: 'request_human',
+      resultSummary: '本地助手已采集候选 1 条，但没有生成可入库商机。',
+    }),
+  });
+  const pair = store.createPairCode({ code: 'NOOPP001', ownerName: '小魏' });
+  store.addTask({
+    id: 'task-huajin-1',
+    sourceId: 'source-huajin',
+    sourceName: '华锦兵器网',
+    ownerName: '小魏',
+    taskType: 'local_helper',
+    status: 'pending',
+    entryUrl: 'https://www.norincogroup-ebuy.com/',
+    searchTerms: '消泡剂',
+  });
+
+  const server = createLocalHelperApiServer({ store, port: 0, host: '127.0.0.1' });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const paired = await requestJson(baseUrl, '/local-helper/pair', {
+      method: 'POST',
+      body: JSON.stringify({ code: pair.code, deviceName: 'WX-PC-01' }),
+    });
+    const token = paired.body.token;
+    await requestJson(baseUrl, '/local-helper/tasks/task-huajin-1/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const continued = await requestJson(baseUrl, '/local-helper/tasks/task-huajin-1/continue', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        status: 'completed',
+        currentUrl: 'https://www.norincogroup-ebuy.com/',
+        observation: '已提取门户公告。',
+        action: 'continue_after_human',
+        candidateBundle: {
+          source_name: '华锦兵器网',
+          candidates: [{ title: '2026年端午节假期公告' }],
+        },
+      }),
+    });
+    const tasks = await requestJson(baseUrl, '/local-helper/tasks', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    assert.equal(continued.body.status, 'request_human');
+    assert.equal(continued.body.nextAction.type, 'request_human');
+    assert.equal(tasks.body.tasks.length, 1);
+    assert.equal(tasks.body.tasks[0].status, 'request_human');
   } finally {
     await server.stop();
   }
@@ -488,6 +601,13 @@ test('PocketBase local helper store passes token-aware record functions to candi
     status: 'completed',
     currentUrl: 'https://example.com/list',
     observation: '已提取 1 条公告。',
+    artifacts: [{
+      artifact_type: 'dom_snapshot',
+      title: '华锦 DOM 快照',
+      url: 'https://example.com/list',
+      content: '<html>华锦化工消泡剂采购询价公告</html>',
+      mime_type: 'text/html',
+    }],
     candidateBundle: {
       source_name: '华锦兵器网',
       candidates: [{ title: '华锦化工消泡剂采购询价公告' }],
@@ -496,6 +616,11 @@ test('PocketBase local helper store passes token-aware record functions to candi
 
   assert.equal(result.ingestion.createdCount, 1);
   assert.equal(ingestionInputs[0].token, 'pb-token');
+  assert.ok(fetchCalls.some((call) => {
+    if (!String(call.url).endsWith('/api/collections/agent_artifacts/records')) return false;
+    const body = JSON.parse(call.options.body);
+    return body.artifact_type === 'dom_snapshot' && /消泡剂/.test(body.content);
+  }));
   assert.ok(fetchCalls.some((call) => String(call.url).includes('/api/collections/bid_opportunities/records?')));
   assert.ok(fetchCalls.some((call) => String(call.url).endsWith('/api/collections/agent_tasks/records/task-huajin-1')));
 });

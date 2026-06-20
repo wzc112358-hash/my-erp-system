@@ -107,6 +107,7 @@ const agentTaskTypeMap: Record<string, { label: string; color: string }> = {
 const agentTaskStatusMap: Record<string, { label: string; color: string }> = {
   pending: { label: '待处理', color: 'orange' },
   in_progress: { label: '处理中', color: 'blue' },
+  request_human: { label: '需人工继续', color: 'purple' },
   completed: { label: '已完成', color: 'green' },
   failed: { label: '失败', color: 'red' },
   cancelled: { label: '已取消', color: 'default' },
@@ -301,7 +302,7 @@ const OpportunityMonitorPage: React.FC = () => {
 
   const bossQueue = useMemo(() => opportunities.filter((item) => item.status === 'needs_boss' || item.status === 'follow'), [opportunities]);
 
-  const pendingAgentTasks = useMemo(() => agentTasks.filter((item) => ['pending', 'in_progress'].includes(item.status)), [agentTasks]);
+  const pendingAgentTasks = useMemo(() => agentTasks.filter((item) => ['pending', 'in_progress', 'request_human'].includes(item.status)), [agentTasks]);
   const offlineLocalHelperDevices = useMemo(() => localHelperDevices.filter((item) => {
     if (item.status !== 'active') return false;
     if (!item.last_seen_at) return true;

@@ -17,6 +17,7 @@ import {
   shouldRunSource,
   collectCandidates,
   runOnce,
+  buildLocalHelperFallbackStrategy,
   shouldFallbackToLocalHelper,
 } from './index.js';
 import { buildOpportunityPayload, runPublicUrlDryRun } from './index.js';
@@ -455,6 +456,27 @@ test('runOnce creates local-helper task when cloud_then_local source returns no 
   assert.match(manualTasks[0].strategy.manualAssistReason, /云端采集无候选公告/);
   assert.deepEqual(updatedRecords[0].data.last_result, 'manual_required');
   assert.match(auditLogs[0].data.output_summary, /manual_required/);
+});
+
+test('buildManualTaskPayload carries configured fallback category URLs into local-helper tasks', () => {
+  const source = {
+    id: 'source-yulong',
+    source_name: '裕龙招投标网',
+    owner_name: '小白',
+    source_url: '',
+    category_urls: '',
+    crawl_strategy: 'http_html',
+  };
+  const task = buildManualTaskPayload({
+    source,
+    run: { id: 'run-yulong' },
+    strategy: buildLocalHelperFallbackStrategy(resolveSourceStrategy(source)),
+    now: new Date('2026-06-18T09:00:00+08:00'),
+  });
+
+  assert.equal(task.task_type, 'local_helper');
+  assert.equal(task.entry_url, 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96');
+  assert.match(task.action_steps, /ctbpsp\.com/);
 });
 
 test('runOnce creates local-helper task when cloud_then_local collection throws', async () => {

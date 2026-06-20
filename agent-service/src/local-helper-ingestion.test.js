@@ -134,6 +134,143 @@ test('ingestCandidateBundleArtifact upserts related opportunities and marks the 
   }]);
 });
 
+test('ingestCandidateBundleArtifact keeps the agent task open when no opportunity can be persisted', async () => {
+  const updates = [];
+  const result = await ingestCandidateBundleArtifact({
+    token: 'pb-token',
+    task: {
+      id: 'task-huajin',
+      source: 'source-huajin',
+      monitor_run: 'run-huajin',
+      source_name: '华锦兵器网',
+      owner_name: '小魏',
+      result_summary: '',
+    },
+    run: {
+      id: 'local-run-1',
+    },
+    candidateBundle: {
+      source_name: '华锦兵器网',
+      candidates: [{
+        title: '2026年端午节假期公告',
+        url: 'https://www.norincogroup-ebuy.com/',
+        raw_text: '2026年端午节假期公告',
+        attachments: [],
+      }],
+    },
+    listRecordsFn: async () => [],
+    createRecordFn: async () => {
+      throw new Error('should not create an opportunity');
+    },
+    updateRecordFn: async (collection, id, token, data) => {
+      updates.push({ collection, id, token, data });
+      return { id, ...data };
+    },
+    processor: async (rawCandidates) => rawCandidates.map((candidate) => ({
+      sourceName: candidate.sourceName,
+      ownerName: candidate.ownerName,
+      title: candidate.title,
+      url: candidate.url,
+      fingerprint: 'fp-platform-notice',
+      publishDate: candidate.publishDate,
+      deadlineDate: candidate.deadlineDate,
+      buyerName: candidate.buyerName,
+      productKeywords: [],
+      sourceKeywords: '',
+      attachmentUrls: [],
+      rawText: candidate.content,
+      classification: {
+        relevance: 'irrelevant',
+        relevanceScore: 0.2,
+        matchedTerms: [],
+        matchedSources: [],
+        evidenceText: candidate.content,
+        negativeTerms: [],
+        classificationVersion: 'test-classifier-v1',
+        needsHumanCheck: false,
+        productKeywords: [],
+        summary: '平台公告，不是商机',
+        hardRequirements: [],
+        riskFlags: [],
+      },
+    })),
+  });
+
+  assert.equal(result.status, 'request_human');
+  assert.equal(result.processedCount, 1);
+  assert.equal(result.persistableCount, 0);
+  assert.equal(result.createdCount, 0);
+  assert.deepEqual(updates, [{
+    collection: 'agent_tasks',
+    id: 'task-huajin',
+    token: 'pb-token',
+    data: {
+      status: 'request_human',
+      result_summary: '本地助手已采集候选 1 条，但没有生成可入库商机。请在本地浏览器进入具体公告列表或按搜索词筛选后再次点击继续采集。',
+      uploaded_artifacts: 'local-run-1',
+    },
+  }]);
+});
+
+test('ingestCandidateBundleArtifact falls back when PocketBase has not migrated request_human status yet', async () => {
+  const updates = [];
+  const result = await ingestCandidateBundleArtifact({
+    token: 'pb-token',
+    task: {
+      id: 'task-huajin',
+      source: 'source-huajin',
+      monitor_run: 'run-huajin',
+      source_name: '华锦兵器网',
+      owner_name: '小魏',
+    },
+    run: { id: 'local-run-1' },
+    candidateBundle: {
+      source_name: '华锦兵器网',
+      candidates: [{ title: '2026年端午节假期公告' }],
+    },
+    listRecordsFn: async () => [],
+    createRecordFn: async () => {
+      throw new Error('should not create an opportunity');
+    },
+    updateRecordFn: async (collection, id, token, data) => {
+      updates.push({ collection, id, token, data });
+      if (data.status === 'request_human') {
+        throw new Error('400 Bad Request: {"data":{"status":{"code":"validation_invalid_value","message":"Invalid value request_human."}}}');
+      }
+      return { id, ...data };
+    },
+    processor: async (rawCandidates) => rawCandidates.map((candidate) => ({
+      sourceName: candidate.sourceName,
+      ownerName: candidate.ownerName,
+      title: candidate.title,
+      url: candidate.url,
+      fingerprint: 'fp-platform-notice',
+      productKeywords: [],
+      sourceKeywords: '',
+      attachmentUrls: [],
+      rawText: candidate.content,
+      classification: {
+        relevance: 'irrelevant',
+        relevanceScore: 0.2,
+        matchedTerms: [],
+        matchedSources: [],
+        evidenceText: candidate.content,
+        negativeTerms: [],
+        classificationVersion: 'test-classifier-v1',
+        needsHumanCheck: false,
+        productKeywords: [],
+        summary: '平台公告，不是商机',
+        hardRequirements: [],
+        riskFlags: [],
+      },
+    })),
+  });
+
+  assert.equal(result.status, 'request_human');
+  assert.deepEqual(updates.map((item) => item.data.status), ['request_human', 'in_progress']);
+  assert.match(updates[1].data.result_summary, /状态枚举未升级/);
+});
+
 test('ingestCandidateBundleArtifact marks the agent task failed when ingestion throws', async () => {
   const updates = [];
 

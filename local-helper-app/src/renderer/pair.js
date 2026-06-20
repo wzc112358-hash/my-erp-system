@@ -65,7 +65,7 @@ submitBtn.addEventListener('click', async () => {
     const body = await res.json();
     if (!res.ok || body.error) throw new Error(body.error || `配对失败（${res.status}）`);
     const owner = body.device?.ownerName || body.device?.owner_name || '';
-    setStatus('ok', `配对成功${owner ? ` · 负责人 ${owner}` : ''}，本机已连接云端任务通道。`);
+    setStatus('ok', `配对成功${owner ? ` · 负责人 ${owner}` : ''}，本机已连接云端上传/兼容通道。`);
   } catch (err) {
     setStatus('bad', `配对失败：${err && err.message ? err.message : err}`);
   } finally {

@@ -67,10 +67,10 @@ export const buildTrayMenuTemplate = ({
   paired?: boolean;
 }): TrayMenuItem[] => [
   { label: '恒化成本地采集助手', enabled: false },
-  { label: paired ? `已连接：${localUrl}` : `未配对：${localUrl}`, enabled: false },
+  { label: paired ? `本机模式 · 云端上传已配置` : `本机模式：${localUrl}`, enabled: false },
   { type: 'separator' },
-  { label: paired ? '配对 / 设置' : '立即配对…', click: 'pair' },
-  { label: '打开任务列表', click: 'tasks', enabled: paired },
+  { label: '打开本地任务台', click: 'tasks' },
+  { label: paired ? '云端上传设置' : '配置云端上传…', click: 'pair' },
   { label: '打开 ERP', click: `open:${erpUrl}` },
   { label: '打开本地状态', click: `open:${localUrl}/health` },
   { type: 'separator' },

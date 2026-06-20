@@ -106,7 +106,7 @@ const createAgentTasksCollection = (monitorSources, monitorRuns, opportunities) 
     textField("source_name", true),
     textField("owner_name", true),
     selectField("task_type", ["manual_assist", "local_helper", "document_upload", "captcha", "purchase_document"], true),
-    selectField("status", ["pending", "in_progress", "completed", "failed", "cancelled"]),
+    selectField("status", ["pending", "in_progress", "request_human", "completed", "failed", "cancelled"]),
     textField("reason"),
     textField("required_artifact"),
     dateField("due_at"),

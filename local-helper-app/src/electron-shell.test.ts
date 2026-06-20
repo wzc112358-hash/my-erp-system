@@ -54,15 +54,15 @@ test('electron shell tray menu exposes status, ERP, and exit actions', () => {
   });
 
   assert.equal(menu[0].label, '恒化成本地采集助手');
-  assert.match(menu[1].label, /已连接/);
+  assert.match(menu[1].label, /云端上传已配置/);
   assert.ok(menu.some((item) => item.label === '打开 ERP'));
-  assert.ok(menu.some((item) => item.label === '打开任务列表'));
+  assert.ok(menu.some((item) => item.label === '打开本地任务台'));
   assert.ok(menu.some((item) => item.click === 'tasks'));
   assert.ok(menu.some((item) => item.label === '退出'));
   assert.ok(menu.some((item) => item.click === 'pair'));
 });
 
-test('electron shell tray menu offers immediate pairing when not paired', () => {
+test('electron shell tray menu keeps local task desk available when not paired', () => {
   const menu = buildTrayMenuTemplate({
     localUrl: 'http://127.0.0.1:17321',
     erpUrl: 'https://erp.henghuacheng.cn',
@@ -70,8 +70,11 @@ test('electron shell tray menu offers immediate pairing when not paired', () => 
   });
 
   const pairItem = menu.find((item) => item.click === 'pair');
+  const taskItem = menu.find((item) => item.click === 'tasks');
   assert.ok(pairItem);
-  assert.match(pairItem.label || '', /配对/);
+  assert.match(pairItem.label || '', /云端上传/);
+  assert.ok(taskItem);
+  assert.equal(taskItem.enabled, undefined);
 });
 
 test('electron shell loads renderer files outside app.asar when packaged', () => {

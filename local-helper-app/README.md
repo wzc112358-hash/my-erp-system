@@ -1,14 +1,20 @@
-# HCZ Local Helper App
+# HCZ Local Bidding Agent
 
-Windows-side collection helper for websites that need employee login, captcha, SMS, CA, or local browser state.
+Windows-side bidding collection Agent for websites that need employee login,
+captcha, SMS, CA, or local browser state.
 
-Current Phase 3.5/3.6 MVP:
+Current local-agent phase:
 
 - Local HTTP API on `http://127.0.0.1:17321`.
 - Health probe for ERP: `GET /health`.
-- Pairing stub: `POST /pair`.
-- Task lifecycle: `GET /tasks`, `POST /tasks/:id/start`, `POST /tasks/:id/continue`, `POST /tasks/:id/cancel`.
-- Cloud pairing and task channel:
+- Local task lifecycle:
+  - `GET /site-profiles`
+  - `GET /tasks`
+  - `POST /tasks`
+  - `POST /tasks/:id/run`
+  - `POST /tasks/:id/continue-run`
+  - `POST /tasks/:id/cancel`
+- Optional legacy cloud pairing and task channel:
   - `POST /cloud/pair`
   - `POST /cloud/heartbeat`
   - `GET /cloud/tasks`
@@ -25,15 +31,16 @@ Current Phase 3.5/3.6 MVP:
 - Electron tray shell:
   - Registers `hcz-helper://`.
   - Starts the local API in the background.
-  - Tray menu shows connection status, a 配对/设置 entry, ERP link, local health link, and exit.
+  - Opens the local task desk by default.
+  - Tray menu shows local mode, a cloud upload settings entry, ERP link, local health link, and exit.
 - First-run pairing window (`src/renderer/pair.html` + `pair.js`, logic in `src/pairing.ts`):
-  - Opens automatically the first time the app runs unpaired (or via the tray 配对 entry).
+  - Kept as optional cloud upload settings.
   - Employee enters 云端地址 + 配对码 (+ optional 设备名); the window POSTs `/cloud/pair`
     to the local API and shows the connection result. No node integration in the page.
 - Playwright local browser runtime:
   - Uses a persistent Chrome profile directory for login/cookie reuse.
   - Captures visible text and screenshots for local-helper observations.
-  - `/cloud/tasks/:id/run` runs the current 华锦 pilot flow.
+  - `/tasks/:id/run` opens a local task; `/tasks/:id/continue-run` extracts candidates after employee takeover.
 
 Run locally:
 
@@ -97,8 +104,8 @@ curl -X POST http://127.0.0.1:17321/cloud/pair \
   -d '{"cloudUrl":"https://agent.henghuacheng.cn","code":"PAIRCODE","deviceName":"WX-PC-01","deviceFingerprint":"WX-PC-01"}'
 ```
 
-First-run pairing UI: **done** — the app opens the pairing window automatically when
-unpaired, and the tray exposes a 配对/设置 entry.
+Cloud pairing UI: **optional** — the app can work in local mode without pairing, and
+the tray exposes a cloud upload settings entry for compatibility with the legacy task channel.
 
 Packaging notes:
 

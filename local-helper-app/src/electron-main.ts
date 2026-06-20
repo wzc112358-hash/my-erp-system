@@ -289,11 +289,7 @@ const handleDeepLink = async (rawUrl = '') => {
 };
 
 const openDefaultWindow = () => {
-  if (store.health().cloudPaired) {
-    openTaskWindow();
-    return;
-  }
-  openPairingWindow();
+  openTaskWindow();
 };
 
 const afterLocalApiReady = (label: string, action: () => void | Promise<void>) => {

@@ -1,19 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { BrowserHarnessRuntime, BrowserObservation } from './huajin-harness.ts';
+import type {
+  BrowserHarnessRuntime,
+  BrowserLink,
+  BrowserNetworkResponse,
+  BrowserObservation,
+} from './site-harness.ts';
 
 type PageLike = {
   goto?: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
   title: () => Promise<string>;
   url: () => string;
-  locator: (selector: string) => { innerText: (options?: Record<string, unknown>) => Promise<string> };
+  content?: () => Promise<string>;
+  locator: (selector: string) => {
+    innerText: (options?: Record<string, unknown>) => Promise<string>;
+    evaluateAll?: <T>(fn: (elements: Element[]) => T) => Promise<T>;
+  };
   screenshot?: (options: { path: string; fullPage?: boolean }) => Promise<unknown>;
+  on?: (event: 'response' | 'download', handler: (payload: unknown) => void) => void;
 };
 
 type ContextLike = {
   pages: () => PageLike[];
   newPage: () => Promise<PageLike>;
+  close?: () => Promise<unknown>;
 };
 
 type ChromiumLike = {
@@ -29,10 +40,34 @@ export type PlaywrightRuntimeOptions = {
 };
 
 const ensureDir = (dir: string) => fs.mkdirSync(dir, { recursive: true });
+const MAX_NETWORK_RESPONSES = 30;
+const MAX_RESPONSE_BODY = 40_000;
+const MAX_DOM_SNAPSHOT = 180_000;
+const RESPONSE_INTEREST_PATTERN = /招标|采购|询价|询比|竞价|谈判|公告|notice|bid|tender|bulletin|query|page|list/i;
 
 const loadChromium = async (): Promise<ChromiumLike> => {
   const playwright = await import('playwright');
   return playwright.chromium;
+};
+
+const trim = (value = '', limit: number) => (
+  value.length > limit ? `${value.slice(0, limit)}\n...[truncated]` : value
+);
+
+const collectLinks = async (target: PageLike): Promise<BrowserLink[]> => {
+  const locator = target.locator('a');
+  if (!locator.evaluateAll) return [];
+  return locator.evaluateAll((anchors) => anchors
+    .map((anchor) => {
+      const element = anchor as HTMLAnchorElement;
+      return {
+        text: (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim(),
+        href: element.href || element.getAttribute('href') || '',
+        title: element.title || element.getAttribute('title') || '',
+      };
+    })
+    .filter((link) => link.text || link.title || link.href)
+    .slice(0, 240));
 };
 
 export const createPlaywrightRuntime = ({
@@ -44,6 +79,55 @@ export const createPlaywrightRuntime = ({
 }: PlaywrightRuntimeOptions): BrowserHarnessRuntime => {
   let contextPromise: Promise<ContextLike> | null = null;
   let activePage: PageLike | null = null;
+  const networkResponses: BrowserNetworkResponse[] = [];
+  const downloadedFiles: string[] = [];
+  const wiredPages = new WeakSet<PageLike>();
+
+  const pushNetworkResponse = (response: BrowserNetworkResponse) => {
+    networkResponses.push(response);
+    if (networkResponses.length > MAX_NETWORK_RESPONSES) {
+      networkResponses.splice(0, networkResponses.length - MAX_NETWORK_RESPONSES);
+    }
+  };
+
+  const wirePage = (target: PageLike) => {
+    if (!target.on || wiredPages.has(target)) return;
+    wiredPages.add(target);
+    target.on('response', (payload: unknown) => {
+      void (async () => {
+        const response = payload as {
+          url?: () => string;
+          status?: () => number;
+          headers?: () => Record<string, string>;
+          text?: () => Promise<string>;
+        };
+        const url = response.url?.() || '';
+        const headers = response.headers?.() || {};
+        const contentType = headers['content-type'] || headers['Content-Type'] || '';
+        if (!RESPONSE_INTEREST_PATTERN.test(`${url} ${contentType}`)) return;
+        let bodySnippet = '';
+        if (/json|text|html|xml|javascript/i.test(contentType)) {
+          bodySnippet = trim(await response.text?.().catch(() => '') || '', MAX_RESPONSE_BODY);
+        }
+        pushNetworkResponse({
+          url,
+          status: response.status?.() || 0,
+          contentType,
+          bodySnippet,
+        });
+      })();
+    });
+    target.on('download', (payload: unknown) => {
+      void (async () => {
+        const download = payload as {
+          suggestedFilename?: () => string;
+          path?: () => Promise<string | null>;
+        };
+        const filePath = await download.path?.().catch(() => null);
+        downloadedFiles.push(filePath || download.suggestedFilename?.() || 'download');
+      })();
+    });
+  };
 
   const context = async () => {
     if (!contextPromise) {
@@ -65,6 +149,7 @@ export const createPlaywrightRuntime = ({
   const page = async () => {
     const browserContext = await context();
     activePage = activePage || browserContext.pages()[0] || await browserContext.newPage();
+    wirePage(activePage);
     return activePage;
   };
 
@@ -72,6 +157,10 @@ export const createPlaywrightRuntime = ({
     title: await target.title(),
     url: target.url(),
     visibleText: await target.locator('body').innerText({ timeout: 5000 }).catch(() => ''),
+    domSnapshot: trim(await target.content?.().catch(() => '') || '', MAX_DOM_SNAPSHOT),
+    links: await collectLinks(target).catch(() => []),
+    networkResponses: [...networkResponses],
+    downloadedFiles: [...downloadedFiles],
     screenshotPath,
   });
 
@@ -94,6 +183,13 @@ export const createPlaywrightRuntime = ({
       const file = path.join(screenshotDir, `${Date.now()}-screenshot.png`);
       await target.screenshot?.({ path: file, fullPage: true });
       return file;
+    },
+
+    async close() {
+      const existingContext = await contextPromise?.catch(() => null);
+      contextPromise = null;
+      activePage = null;
+      await existingContext?.close?.();
     },
   };
 };

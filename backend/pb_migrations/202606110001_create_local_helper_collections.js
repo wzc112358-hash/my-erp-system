@@ -144,7 +144,7 @@ const createAgentArtifactsCollection = (localHelperRuns, agentTasks) => new Coll
   fields: [
     relationField("local_helper_run", localHelperRuns.id),
     relationField("agent_task", agentTasks.id),
-    selectField("artifact_type", ["candidate_bundle", "dom_snapshot", "network_response", "screenshot", "attachment", "manual_text"], true),
+    selectField("artifact_type", ["candidate_bundle", "dom_snapshot", "network_response", "screenshot", "attachment", "manual_text", "log"], true),
     textField("title"),
     textField("url"),
     textField("content"),

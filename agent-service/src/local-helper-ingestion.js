@@ -40,6 +40,30 @@ const monitorRunFrom = ({ task = {}, run = {} } = {}) => ({
   id: task.monitor_run || task.monitorRun || run.monitor_run || run.monitorRun || run.id || '',
 });
 
+const isRequestHumanStatusValidationError = (error) => /validation_invalid_value|Invalid value request_human/i.test(
+  error instanceof Error ? error.message : String(error),
+);
+
+const updateAgentTaskAfterIngestion = async ({
+  updateRecordFn,
+  taskId,
+  token,
+  data,
+}) => {
+  try {
+    return await updateRecordFn('agent_tasks', taskId, token, data);
+  } catch (error) {
+    if (data.status === 'request_human' && isRequestHumanStatusValidationError(error)) {
+      return updateRecordFn('agent_tasks', taskId, token, {
+        ...data,
+        status: 'in_progress',
+        result_summary: `${data.result_summary}\n\n系统提示：服务器状态枚举未升级，暂按“处理中”显示。`,
+      });
+    }
+    throw error;
+  }
+};
+
 export const ingestCandidateBundleArtifact = async ({
   token,
   task,
@@ -69,23 +93,38 @@ export const ingestCandidateBundleArtifact = async ({
     const existingByFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
     const created = [];
 
-    for (const item of processed.filter(shouldPersistOpportunity)) {
+    const persistable = processed.filter(shouldPersistOpportunity);
+
+    for (const item of persistable) {
       if (existingByFingerprint.has(item.fingerprint)) continue;
       const record = await createRecordFn('bid_opportunities', token, buildOpportunityPayload(source, monitorRun, item));
       existingByFingerprint.set(item.fingerprint, record);
       created.push(record);
     }
 
-    await updateRecordFn('agent_tasks', task.id, token, {
-      status: 'completed',
-      result_summary: `本地助手回灌完成：候选 ${processed.length} 条，入库 ${created.length} 条。`,
-      uploaded_artifacts: run.id || '',
+    const status = persistable.length > 0 ? 'completed' : 'request_human';
+    const resultSummary = status === 'completed'
+      ? `本地助手回灌完成：候选 ${processed.length} 条，入库 ${created.length} 条。`
+      : `本地助手已采集候选 ${processed.length} 条，但没有生成可入库商机。请在本地浏览器进入具体公告列表或按搜索词筛选后再次点击继续采集。`;
+
+    await updateAgentTaskAfterIngestion({
+      updateRecordFn,
+      taskId: task.id,
+      token,
+      data: {
+        status,
+        result_summary: resultSummary,
+        uploaded_artifacts: run.id || '',
+      },
     });
 
     return {
       rawCount: rawCandidates.length,
       processedCount: processed.length,
+      persistableCount: persistable.length,
       createdCount: created.length,
+      status,
+      resultSummary,
     };
   } catch (error) {
     await updateRecordFn('agent_tasks', task.id, token, {

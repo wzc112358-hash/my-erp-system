@@ -5,12 +5,20 @@ import { ingestCandidateBundleArtifact } from './local-helper-ingestion.js';
 const API_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 const SUPERUSER_EMAIL = process.env.POCKETBASE_SUPERUSER_EMAIL || process.env.POCKETBASE_ADMIN_EMAIL;
 const SUPERUSER_PASSWORD = process.env.POCKETBASE_SUPERUSER_PASSWORD || process.env.POCKETBASE_ADMIN_PASSWORD;
-const LOCAL_HELPER_LATEST_VERSION = process.env.LOCAL_HELPER_LATEST_VERSION || '0.1.7';
-const LOCAL_HELPER_MIN_SUPPORTED_VERSION = process.env.LOCAL_HELPER_MIN_SUPPORTED_VERSION || '0.1.7';
+const LOCAL_HELPER_LATEST_VERSION = process.env.LOCAL_HELPER_LATEST_VERSION || '0.1.14';
+const LOCAL_HELPER_MIN_SUPPORTED_VERSION = process.env.LOCAL_HELPER_MIN_SUPPORTED_VERSION || '0.1.14';
 const LOCAL_HELPER_DOWNLOAD_BASE_URL = (process.env.LOCAL_HELPER_DOWNLOAD_BASE_URL || 'https://erp.henghuacheng.cn/downloads').replace(/\/+$/, '');
 const LOCAL_HELPER_PORTABLE_SHA256 = process.env.LOCAL_HELPER_PORTABLE_SHA256 || '';
 const LOCAL_HELPER_INSTALLER_SHA256 = process.env.LOCAL_HELPER_INSTALLER_SHA256 || '';
 const LOCAL_HELPER_INSTALLER_AVAILABLE = process.env.LOCAL_HELPER_INSTALLER_AVAILABLE !== '0';
+const LOCAL_HELPER_RELEASE_MANIFEST_URL = process.env.LOCAL_HELPER_RELEASE_MANIFEST_URL || '';
+const LOCAL_HELPER_RELEASE_MANIFEST_CACHE_MS = Number(process.env.LOCAL_HELPER_RELEASE_MANIFEST_CACHE_MS || 5 * 60 * 1000);
+
+let releaseManifestCache = {
+  url: '',
+  expiresAt: 0,
+  value: null,
+};
 
 const shanghaiIso = (date = new Date()) => {
   const offsetMs = 8 * 60 * 60 * 1000;
@@ -44,20 +52,94 @@ export const buildLocalHelperReleaseInfo = ({
   latestVersion = LOCAL_HELPER_LATEST_VERSION,
   minSupportedVersion = LOCAL_HELPER_MIN_SUPPORTED_VERSION,
   downloadBaseUrl = LOCAL_HELPER_DOWNLOAD_BASE_URL,
+  portableSha256 = LOCAL_HELPER_PORTABLE_SHA256,
+  installerSha256 = LOCAL_HELPER_INSTALLER_SHA256,
+  installerAvailable = LOCAL_HELPER_INSTALLER_AVAILABLE,
 } = {}) => ({
   latestVersion,
   minSupportedVersion,
   portableUrl: `${downloadBaseUrl}/hcz-local-helper-app.zip`,
-  installerUrl: LOCAL_HELPER_INSTALLER_AVAILABLE || LOCAL_HELPER_INSTALLER_SHA256
+  installerUrl: installerAvailable || installerSha256
     ? `${downloadBaseUrl}/hcz-local-helper-setup.exe`
     : '',
   sha256Url: `${downloadBaseUrl}/SHA256SUMS.txt`,
-  portableSha256: LOCAL_HELPER_PORTABLE_SHA256,
-  installerSha256: LOCAL_HELPER_INSTALLER_SHA256,
+  portableSha256,
+  installerSha256,
   updateAvailable: currentVersion ? compareVersions(latestVersion, currentVersion) > 0 : false,
   updateRequired: currentVersion ? compareVersions(minSupportedVersion, currentVersion) > 0 : false,
   notes: '建议使用最新本地助手；若提示必须升级，请先下载新版本再继续采集。',
 });
+
+const shaFromManifest = (manifest, fileKey) => {
+  const value = manifest?.files?.[fileKey]?.sha256;
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const fetchReleaseManifest = async ({
+  manifestUrl = LOCAL_HELPER_RELEASE_MANIFEST_URL,
+  fetchImpl = fetch,
+  now = () => new Date(),
+} = {}) => {
+  if (!manifestUrl) return null;
+  const cacheKey = String(manifestUrl);
+  const timestamp = now().getTime();
+  if (
+    releaseManifestCache.url === cacheKey &&
+    releaseManifestCache.value &&
+    releaseManifestCache.expiresAt > timestamp
+  ) {
+    return releaseManifestCache.value;
+  }
+  try {
+    const response = await fetchImpl(cacheKey, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return null;
+    const manifest = await response.json();
+    if (!manifest || typeof manifest !== 'object') return null;
+    releaseManifestCache = {
+      url: cacheKey,
+      expiresAt: timestamp + LOCAL_HELPER_RELEASE_MANIFEST_CACHE_MS,
+      value: manifest,
+    };
+    return manifest;
+  } catch {
+    return null;
+  }
+};
+
+export const resolveLocalHelperReleaseInfo = async ({
+  currentVersion = '',
+  latestVersion = LOCAL_HELPER_LATEST_VERSION,
+  minSupportedVersion = LOCAL_HELPER_MIN_SUPPORTED_VERSION,
+  downloadBaseUrl = LOCAL_HELPER_DOWNLOAD_BASE_URL,
+  portableSha256 = LOCAL_HELPER_PORTABLE_SHA256,
+  installerSha256 = LOCAL_HELPER_INSTALLER_SHA256,
+  manifestUrl = LOCAL_HELPER_RELEASE_MANIFEST_URL,
+  fetchImpl = fetch,
+  now = () => new Date(),
+} = {}) => {
+  if (portableSha256 && installerSha256) {
+    return buildLocalHelperReleaseInfo({
+      currentVersion,
+      latestVersion,
+      minSupportedVersion,
+      downloadBaseUrl,
+      portableSha256,
+      installerSha256,
+    });
+  }
+  const manifest = await fetchReleaseManifest({ manifestUrl, fetchImpl, now });
+  const resolvedLatestVersion = typeof manifest?.version === 'string' && manifest.version.trim()
+    ? manifest.version.trim()
+    : latestVersion;
+  return buildLocalHelperReleaseInfo({
+    currentVersion,
+    latestVersion: resolvedLatestVersion,
+    minSupportedVersion,
+    downloadBaseUrl,
+    portableSha256: portableSha256 || shaFromManifest(manifest, 'portable'),
+    installerSha256: installerSha256 || shaFromManifest(manifest, 'installer'),
+  });
+};
 
 const normalizeTask = (task = {}) => ({
   id: task.id || '',
@@ -75,10 +157,34 @@ const normalizeTask = (task = {}) => ({
   updatedAt: task.updated || task.updatedAt || '',
 });
 
+const normalizeArtifact = (artifact = {}, task = {}, run = {}) => ({
+  artifactType: artifact.artifact_type || artifact.artifactType || '',
+  title: artifact.title || `${task.sourceName || task.source_name || '本地助手'} 采集证据`,
+  url: artifact.url || '',
+  content: typeof artifact.content === 'string'
+    ? artifact.content
+    : JSON.stringify(artifact.content ?? ''),
+  mimeType: artifact.mime_type || artifact.mimeType || 'text/plain',
+  taskId: task.id || '',
+  runId: run?.id || '',
+});
+
+const supportedArtifactTypes = new Set([
+  'candidate_bundle',
+  'dom_snapshot',
+  'network_response',
+  'screenshot',
+  'attachment',
+  'manual_text',
+  'log',
+]);
+
 export const createInMemoryLocalHelperStore = ({
   now = () => new Date(),
   tokenFactory = generateDeviceToken,
   ingestCandidateBundle = async () => null,
+  releaseFetchImpl = fetch,
+  releaseManifestUrl = LOCAL_HELPER_RELEASE_MANIFEST_URL,
 } = {}) => {
   const devices = new Map();
   const pairCodes = new Map();
@@ -185,7 +291,7 @@ export const createInMemoryLocalHelperStore = ({
       };
     },
 
-    heartbeat(token, payload = {}) {
+    async heartbeat(token, payload = {}) {
       const device = authenticate(token);
       const updated = {
         ...device,
@@ -197,12 +303,22 @@ export const createInMemoryLocalHelperStore = ({
       return {
         ok: true,
         device: normalizeDevice(updated),
-        release: buildLocalHelperReleaseInfo({ currentVersion: updated.helper_version }),
+        release: await resolveLocalHelperReleaseInfo({
+          currentVersion: updated.helper_version,
+          manifestUrl: releaseManifestUrl,
+          fetchImpl: releaseFetchImpl,
+          now,
+        }),
       };
     },
 
-    releaseInfo({ currentVersion = '' } = {}) {
-      return buildLocalHelperReleaseInfo({ currentVersion });
+    async releaseInfo({ currentVersion = '' } = {}) {
+      return resolveLocalHelperReleaseInfo({
+        currentVersion,
+        manifestUrl: releaseManifestUrl,
+        fetchImpl: releaseFetchImpl,
+        now,
+      });
     },
 
     listTasks(token) {
@@ -286,6 +402,20 @@ export const createInMemoryLocalHelperStore = ({
           content: payload.log || payload.observation || '',
         });
       }
+      for (const rawArtifact of payload.artifacts || []) {
+        const artifact = normalizeArtifact(rawArtifact, task, run);
+        if (!supportedArtifactTypes.has(artifact.artifactType)) continue;
+        artifacts.push({
+          id: `artifact-${artifacts.length + 1}`,
+          taskId,
+          runId: run?.id || '',
+          artifactType: artifact.artifactType,
+          title: artifact.title,
+          url: artifact.url,
+          content: artifact.content,
+          mimeType: artifact.mimeType,
+        });
+      }
       const ingestion = payload.candidateBundle
         ? await ingestCandidateBundle({
           task,
@@ -293,10 +423,11 @@ export const createInMemoryLocalHelperStore = ({
           candidateBundle: payload.candidateBundle,
         })
         : null;
+      const finalStatus = ingestion?.status || status;
       if (run) {
         runs.set(run.id, {
           ...run,
-          status,
+          status: finalStatus,
           currentUrl: payload.currentUrl || run.currentUrl || '',
           lastObservation: payload.observation || run.lastObservation || '',
         });
@@ -304,18 +435,21 @@ export const createInMemoryLocalHelperStore = ({
       if (ingestion && status === 'completed') {
         tasks.set(taskId, {
           ...task,
-          status: 'completed',
-          resultSummary: `本地助手回灌完成：候选 ${ingestion.processedCount} 条，入库 ${ingestion.createdCount} 条。`,
+          status: finalStatus,
+          resultSummary: ingestion.resultSummary ||
+            (finalStatus === 'completed'
+              ? `本地助手回灌完成：候选 ${ingestion.processedCount} 条，入库 ${ingestion.createdCount} 条。`
+              : `本地助手已采集候选 ${ingestion.processedCount} 条，但没有生成可入库商机。请继续人工处理。`),
           updatedAt: now().toISOString(),
         });
       }
       return {
-        status,
+        status: finalStatus,
         step,
         run: run ? runs.get(run.id) : null,
         ingestion,
-        nextAction: payload.requestHuman
-          ? { type: 'request_human', reason: payload.humanReason || '需要员工人工接管' }
+        nextAction: payload.requestHuman || finalStatus === 'request_human'
+          ? { type: 'request_human', reason: payload.humanReason || ingestion?.resultSummary || '需要员工人工接管' }
           : { type: 'wait_cloud_agent' },
       };
     },
@@ -344,6 +478,8 @@ export const createPocketBaseLocalHelperStore = ({
   superuserEmail = SUPERUSER_EMAIL,
   superuserPassword = SUPERUSER_PASSWORD,
   fetchImpl = fetch,
+  releaseFetchImpl = fetch,
+  releaseManifestUrl = LOCAL_HELPER_RELEASE_MANIFEST_URL,
   now = () => new Date(),
   ingestCandidateBundle = ingestCandidateBundleArtifact,
 } = {}) => {
@@ -487,12 +623,22 @@ export const createPocketBaseLocalHelperStore = ({
       return {
         ok: true,
         device: updated,
-        release: buildLocalHelperReleaseInfo({ currentVersion: updated.helper_version }),
+        release: await resolveLocalHelperReleaseInfo({
+          currentVersion: updated.helper_version,
+          manifestUrl: releaseManifestUrl,
+          fetchImpl: releaseFetchImpl,
+          now,
+        }),
       };
     },
 
     async releaseInfo({ currentVersion = '' } = {}) {
-      return buildLocalHelperReleaseInfo({ currentVersion });
+      return resolveLocalHelperReleaseInfo({
+        currentVersion,
+        manifestUrl: releaseManifestUrl,
+        fetchImpl: releaseFetchImpl,
+        now,
+      });
     },
 
     async listTasks(rawToken) {
@@ -587,6 +733,19 @@ export const createPocketBaseLocalHelperStore = ({
           mime_type: 'text/plain',
         });
       }
+      for (const rawArtifact of payload.artifacts || []) {
+        const artifact = normalizeArtifact(rawArtifact, task, updatedRun);
+        if (!supportedArtifactTypes.has(artifact.artifactType)) continue;
+        await createRecord('agent_artifacts', {
+          local_helper_run: updatedRun.id,
+          agent_task: taskId,
+          artifact_type: artifact.artifactType,
+          title: artifact.title,
+          url: artifact.url || payload.currentUrl || '',
+          content: artifact.content,
+          mime_type: artifact.mimeType,
+        });
+      }
       const ingestion = payload.candidateBundle
         ? await ingestCandidateBundle({
           token: await login(),
@@ -598,13 +757,22 @@ export const createPocketBaseLocalHelperStore = ({
           updateRecordFn: (collection, id, _token, data) => updateRecord(collection, id, data),
         })
         : null;
+      const finalStatus = ingestion?.status || status;
+      const finalRun = finalStatus !== status
+        ? await updateRecord('local_helper_runs', updatedRun.id, {
+          status: finalStatus,
+          current_url: payload.currentUrl || '',
+          last_observation: payload.observation || '',
+          error_message: payload.error || '',
+        })
+        : updatedRun;
       return {
-        status,
+        status: finalStatus,
         step,
-        run: updatedRun,
+        run: finalRun,
         ingestion,
-        nextAction: payload.requestHuman
-          ? { type: 'request_human', reason: payload.humanReason || '需要员工人工接管' }
+        nextAction: payload.requestHuman || finalStatus === 'request_human'
+          ? { type: 'request_human', reason: payload.humanReason || ingestion?.resultSummary || '需要员工人工接管' }
           : { type: 'wait_cloud_agent' },
       };
     },

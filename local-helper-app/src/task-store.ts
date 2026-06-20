@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
+import type { CandidateBundle, LocalHelperArtifact } from './site-harness.ts';
+import { entryUrlForSourceName } from './site-profiles.ts';
+
 export type HelperTaskStatus = 'pending' | 'running' | 'waiting_agent' | 'cancelled' | 'completed' | 'failed';
 
 export type HelperTask = {
@@ -11,6 +16,10 @@ export type HelperTask = {
   lastObservation?: string;
   lastScreenshotPath?: string;
   lastLog?: string;
+  lastCandidateBundle?: CandidateBundle | null;
+  lastArtifacts?: LocalHelperArtifact[];
+  lastResultSummary?: string;
+  mode?: 'local' | 'cloud';
   updatedAt?: string;
 };
 
@@ -67,6 +76,14 @@ export type CloudTask = {
   updated?: string;
 };
 
+export type CreateLocalTaskInput = {
+  sourceName: string;
+  ownerName?: string;
+  entryUrl?: string;
+  searchTerms?: string;
+  actionSteps?: string;
+};
+
 export type TaskStoreConfigStore = {
   readCloudPairing(): CloudPairing | null;
   writeCloudPairing(pairing: CloudPairing): void;
@@ -82,7 +99,7 @@ const mapCloudStatus = (status = ''): HelperTaskStatus => {
 
 export const createTaskStore = ({
   configStore,
-  helperVersion = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.7',
+  helperVersion = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.14',
 }: {
   configStore?: TaskStoreConfigStore;
   helperVersion?: string;
@@ -180,20 +197,39 @@ export const createTaskStore = ({
       return next;
     },
 
+    createTask(input: CreateLocalTaskInput) {
+      const sourceName = String(input.sourceName || '').trim() || '本地采集站点';
+      return this.addTask({
+        id: `local-${Date.now()}-${randomUUID().slice(0, 8)}`,
+        sourceName,
+        ownerName: String(input.ownerName || '').trim(),
+        entryUrl: String(input.entryUrl || '').trim() || entryUrlForSourceName(sourceName),
+        searchTerms: String(input.searchTerms || '').trim(),
+        actionSteps: String(input.actionSteps || '').trim(),
+        status: 'pending',
+        mode: 'local',
+      });
+    },
+
     syncCloudTasks(cloudTasks: CloudTask[] = []) {
       return cloudTasks.map((task) => {
         const existing = tasks.get(task.id);
+        const sourceName = task.sourceName || task.source_name || '';
         return this.addTask({
           id: task.id,
-          sourceName: task.sourceName || task.source_name || '',
+          sourceName,
           ownerName: task.ownerName || task.owner_name || '',
-          entryUrl: task.entryUrl || task.entry_url || '',
+          entryUrl: task.entryUrl || task.entry_url || existing?.entryUrl || entryUrlForSourceName(sourceName),
           status: mapCloudStatus(task.status),
           searchTerms: task.searchTerms || task.search_terms || '',
           actionSteps: task.actionSteps || task.action_steps || '',
           lastObservation: task.lastObservation || task.last_observation || existing?.lastObservation || '',
           lastScreenshotPath: task.lastScreenshotPath || task.last_screenshot_path || existing?.lastScreenshotPath || '',
           lastLog: task.lastLog || task.last_log || existing?.lastLog || '',
+          lastCandidateBundle: existing?.lastCandidateBundle || null,
+          lastArtifacts: existing?.lastArtifacts || [],
+          lastResultSummary: existing?.lastResultSummary || '',
+          mode: 'cloud',
           updatedAt: task.updatedAt || task.updated || '',
         });
       });
@@ -221,18 +257,28 @@ export const createTaskStore = ({
       screenshotPath = '',
       log = '',
       status = 'waiting_agent',
+      candidateBundle = undefined,
+      artifacts = undefined,
+      resultSummary = '',
     }: {
       observation?: string;
       screenshotPath?: string;
       log?: string;
       status?: HelperTaskStatus;
+      candidateBundle?: CandidateBundle | null;
+      artifacts?: LocalHelperArtifact[];
+      resultSummary?: string;
     } = {}) {
+      const current = getTask(id);
       const task = touch({
-        ...getTask(id),
+        ...current,
         status,
         lastObservation: observation,
         lastScreenshotPath: screenshotPath,
         lastLog: log,
+        lastCandidateBundle: candidateBundle === undefined ? current.lastCandidateBundle : candidateBundle,
+        lastArtifacts: artifacts === undefined ? current.lastArtifacts : artifacts,
+        lastResultSummary: resultSummary || current.lastResultSummary || '',
       });
       tasks.set(id, task);
       return task;
