@@ -64,6 +64,10 @@ export type SiteHarnessProfile = {
   sourceName: string;
   // 任务未携带入口 URL 时，本地助手用 profile 入口兜底，避免打开空白 URL。
   entryUrl?: string;
+  // 创建本地任务时默认带入的站内搜索词。
+  defaultSearchTerms?: string;
+  // 创建本地任务时默认带入的人工操作提示。
+  defaultActionSteps?: string;
   // 出现登录/验证码/CA/短信等时暂停交人；默认覆盖大多数登录站点。
   humanRequiredPattern?: RegExp;
   // 空白页/加载失败时也交人确认。
@@ -417,7 +421,25 @@ export const createSiteHarness = ({
       };
     }
 
-    const observation = await browser.open(entryUrl);
+    let observation: BrowserObservation;
+    try {
+      observation = await browser.open(entryUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const dnsHint = /ERR_NAME_NOT_RESOLVED/i.test(message)
+        ? '检测到 DNS 解析失败。请确认本机普通 Chrome/Edge 能打开该网址；如果公司网络必须走代理/VPN，请先连接代理/VPN 后重试。'
+        : '采集浏览器打开站点失败。请确认本机网络、代理/VPN、杀毒软件或站点访问权限。';
+      return {
+        status: 'request_human',
+        observation: {
+          title: `${profile.sourceName} 打开失败`,
+          url: entryUrl,
+          visibleText: `${dnsHint}\n\n入口 URL：${entryUrl}\n\n错误信息：${message}`,
+        },
+        humanReason: dnsHint,
+        candidateBundle: null,
+      };
+    }
     const analysis = analyzeObservation(observation, profile);
     if (analysis.status === 'request_human') {
       return {

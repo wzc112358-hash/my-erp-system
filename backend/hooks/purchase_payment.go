@@ -89,7 +89,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			newStatus := e.Record.GetString("manager_confirmed")
 
 			if oldStatus == "pending" && newStatus == "approved" {
-				creatorId := e.Record.GetString("creator")
+				creatorId := e.Record.GetString("creator_user")
 				amount := e.Record.GetFloat("amount")
 				contractNo := contract.GetString("no")
 				productName := contract.GetString("product_name")

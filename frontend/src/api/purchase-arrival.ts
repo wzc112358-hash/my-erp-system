@@ -77,6 +77,7 @@ export const PurchaseArrivalAPI = {
     if (data.remark) formData.append('remark', data.remark);
     if (data.tariff !== undefined) formData.append('tariff', String(data.tariff));
     if (data.value_added_tax !== undefined) formData.append('value_added_tax', String(data.value_added_tax));
+    formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<PurchaseArrival>('purchase_arrivals', formData, attachments);
   },
 

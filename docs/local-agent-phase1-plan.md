@@ -72,28 +72,53 @@
 
 ## 后续阶段
 
-### 阶段 1.1：ERP 上传
+### 阶段 1.1：工具层与受控 Agent
 
-- 增加 `result-sinks/erp-upload`。
-- 复用云端 `local-helper-ingestion` 的 CandidateBundle 入库逻辑。
-- 本地任务台显示上传成功/失败。
+- 增加 `agent-search-adapter.ts`，提供 Firecrawl/Search Adapter。
+- Firecrawl 通过本机 `FIRECRAWL_API_KEY` 或 `HCZ_FIRECRAWL_API_KEY` 启用；未配置时回退到任务入口 URL。
+- 增加 `cdp-mcp-adapter.ts`，先把现有 Playwright/CDP runtime 包成受控浏览器工具。
+- 增加 `controlled-local-agent.ts`，实现“搜索公开入口 -> 打开浏览器 -> 抽候选/暂停人工”的竖切。
+- 本地任务台新增“Agent 自动发现”，并展示 Agent 发现入口。
+- LLM 只作为摘要 Adapter 接入，不把 key 和模型写进安装包。
 
-### 阶段 1.2：微信摘要
+状态：已初始化。
 
-- 先生成可复制微信群摘要。
+### 阶段 2：产品研判与微信群增效
+
+详见 [`docs/local-agent-phase2-intelligence-plan.md`](local-agent-phase2-intelligence-plan.md)。
+
+下一阶段不再只追求“搜到更多公告”，而是围绕员工真实增效做：
+
+- 从 ERP 历史产品、库存、投标记录和群聊样本初始化产品知识库。
+- 把候选标题列表升级为商机卡片。
+- 接入可配置的 OpenAI-compatible LLM：`baseUrl + apiKey + model`，模型可自选。
+- LLM 输出结构化研判：能否做初判、硬性要求、风险、缺失信息、推荐动作。
+- 生成可复制微信群摘要，ERP 上传后置。
+- 增加员工反馈：有价值、不相关、待老板、已发群、已跟进。
+
+状态：已形成计划，待实现。
+
+### 阶段 2.1：微信摘要
+
+- 先生成可复制微信群摘要，作为招投标信息的主要流转形式。
 - 再考虑企业微信 webhook。
 
-### 阶段 1.3：搜索与 LLM
+状态：基础确定性摘要已在 `local-llm-agent.ts` 初始化；Phase 2 将升级为基于商机卡片的日报/单条请示。
 
-- 接入 Firecrawl/Search Adapter 做公开网页发现。
-- 接入 LLM Extractor Adapter 做公告详情归纳。
-- LLM key 走本地配置或云端代理，不写死在安装包。
-
-### 阶段 1.4：每日自动采集
+### 阶段 2.2：每日自动采集
 
 - 本地 Scheduler 保存每日站点计划。
 - 支持一键运行“今日采集”。
 - 登录态过期时只暂停对应站点。
+- 每日结果按“重点关注 / 待人工确认 / 无新增或低相关”生成微信群日报。
+
+### 阶段 2.3：ERP 上传
+
+- 增加 `result-sinks/erp-upload`。
+- 复用云端 `local-helper-ingestion` 的 CandidateBundle 入库逻辑。
+- 本地任务台显示上传成功/失败。
+- 把商机卡片映射到 `bid_opportunities`，把附件解析结果映射到 `bid_documents`，把员工/老板反馈映射到 `opportunity_reviews`。
+- ERP 上传作为后置能力，不阻塞微信群交流主流程。
 
 ## 验证命令
 

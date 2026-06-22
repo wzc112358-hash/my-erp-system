@@ -4,7 +4,9 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
-const releaseDir = path.join(root, 'release');
+let releaseDir = process.env.HCZ_RELEASE_DIR
+  ? path.resolve(process.env.HCZ_RELEASE_DIR)
+  : path.join(root, 'release');
 const downloadsDir = process.env.HCZ_DOWNLOADS_DIR
   ? path.resolve(process.env.HCZ_DOWNLOADS_DIR)
   : path.resolve(root, '..', 'frontend', 'public', 'downloads');
@@ -35,30 +37,60 @@ const newestFile = (predicate) => fs
   .filter(predicate)
   .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
 
-fs.rmSync(releaseDir, { recursive: true, force: true });
+const resetReleaseDir = () => {
+  try {
+    fs.rmSync(releaseDir, { recursive: true, force: true });
+  } catch (error) {
+    if (process.env.HCZ_RELEASE_DIR || error?.code !== 'EACCES') throw error;
+    const fallback = path.join(root, 'release-user');
+    console.warn(`Cannot clean ${releaseDir} because of permissions; using ${fallback} instead.`);
+    releaseDir = fallback;
+    fs.rmSync(releaseDir, { recursive: true, force: true });
+  }
+};
+
+const outputConfigArg = () => {
+  const relative = path.relative(root, releaseDir);
+  return `--config.directories.output=${relative && !relative.startsWith('..') ? relative : releaseDir}`;
+};
+
+const copyReplacing = (source, target) => {
+  fs.rmSync(target, { force: true });
+  fs.copyFileSync(source, target);
+};
+
+resetReleaseDir();
 run('npm', ['run', 'build']);
-run('npx', ['electron-builder', '--win', 'zip', 'dir', '--x64']);
-const canBuildInstaller = process.platform === 'win32' || commandExists('wine');
-if (canBuildInstaller) {
-  run('npx', ['electron-builder', '--win', 'nsis', '--x64']);
+run('npx', ['electron-builder', '--win', 'zip', 'dir', '--x64', outputConfigArg()]);
+const shouldBuildInstaller = process.env.HCZ_SKIP_NSIS !== '1';
+let installerBuilt = false;
+if (shouldBuildInstaller) {
+  try {
+    run('npx', ['electron-builder', '--win', 'nsis', '--x64', outputConfigArg()]);
+    installerBuilt = true;
+  } catch (error) {
+    console.warn(`Skipping NSIS installer after build failure: ${error instanceof Error ? error.message : String(error)}`);
+  }
 } else {
-  console.warn('Skipping NSIS installer: wine is not installed. Run this script on Windows or install wine to publish hcz-local-helper-setup.exe.');
+  console.warn('Skipping NSIS installer because HCZ_SKIP_NSIS=1.');
 }
 
 fs.mkdirSync(downloadsDir, { recursive: true });
 
 const portableSource = newestFile((filePath) => filePath.endsWith('.zip'));
-const installerSource = newestFile((filePath) => filePath.endsWith('.exe') && !filePath.includes('win-unpacked'));
+const installerSource = installerBuilt
+  ? newestFile((filePath) => filePath.endsWith('.exe') && !filePath.includes('win-unpacked') && fs.statSync(filePath).size > 1024 * 1024)
+  : null;
 if (!portableSource) throw new Error('portable zip was not generated');
 
 const portableTarget = path.join(downloadsDir, 'hcz-local-helper-app.zip');
 const installerTarget = path.join(downloadsDir, 'hcz-local-helper-setup.exe');
 const blockmapTarget = path.join(downloadsDir, 'hcz-local-helper-setup.exe.blockmap');
-fs.copyFileSync(portableSource, portableTarget);
+copyReplacing(portableSource, portableTarget);
 if (installerSource) {
-  fs.copyFileSync(installerSource, installerTarget);
+  copyReplacing(installerSource, installerTarget);
   const blockmapSource = `${installerSource}.blockmap`;
-  if (fs.existsSync(blockmapSource)) fs.copyFileSync(blockmapSource, blockmapTarget);
+  if (fs.existsSync(blockmapSource)) copyReplacing(blockmapSource, blockmapTarget);
 } else {
   if (fs.existsSync(installerTarget)) fs.rmSync(installerTarget);
   if (fs.existsSync(blockmapTarget)) fs.rmSync(blockmapTarget);

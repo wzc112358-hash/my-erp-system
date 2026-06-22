@@ -40,6 +40,31 @@ const monitorRunFrom = ({ task = {}, run = {} } = {}) => ({
   id: task.monitor_run || task.monitorRun || run.monitor_run || run.monitorRun || run.id || '',
 });
 
+const candidateKeyFor = (item = {}) => `${item.url || ''}|${item.title || ''}`;
+
+const reviewDraftFromCard = (card = {}) => {
+  const draft = card.erpReviewDraft || card.erp_review_draft || {};
+  const reviewType = draft.review_type || draft.reviewType || 'employee';
+  const decision = draft.decision || '';
+  const comment = draft.comment || '';
+  if (reviewType !== 'employee' || !decision || !comment) return null;
+  return {
+    review_type: 'employee',
+    decision,
+    comment,
+  };
+};
+
+export const buildOpportunityReviewDraftsByCandidateKey = (cards = []) => {
+  const drafts = new Map();
+  for (const card of cards || []) {
+    const draft = reviewDraftFromCard(card);
+    if (!draft) continue;
+    drafts.set(candidateKeyFor(card), draft);
+  }
+  return drafts;
+};
+
 const isRequestHumanStatusValidationError = (error) => /validation_invalid_value|Invalid value request_human/i.test(
   error instanceof Error ? error.message : String(error),
 );
@@ -84,6 +109,8 @@ export const ingestCandidateBundleArtifact = async ({
 
   try {
     const rawCandidates = buildRawCandidatesFromCandidateBundle({ bundle: candidateBundle, task });
+    const opportunityCards = candidateBundle.opportunityCards || candidateBundle.opportunity_cards || [];
+    const reviewDraftsByCandidateKey = buildOpportunityReviewDraftsByCandidateKey(opportunityCards);
     const processed = await processor(rawCandidates, { classifierEnhancer });
     const source = sourceFromTask(task);
     const monitorRun = monitorRunFrom({ task, run });
@@ -92,14 +119,25 @@ export const ingestCandidateBundleArtifact = async ({
     const existing = await listRecordsFn('bid_opportunities', token);
     const existingByFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
     const created = [];
+    const createdReviews = [];
 
     const persistable = processed.filter(shouldPersistOpportunity);
 
     for (const item of persistable) {
-      if (existingByFingerprint.has(item.fingerprint)) continue;
-      const record = await createRecordFn('bid_opportunities', token, buildOpportunityPayload(source, monitorRun, item));
-      existingByFingerprint.set(item.fingerprint, record);
-      created.push(record);
+      let record = existingByFingerprint.get(item.fingerprint);
+      if (!record) {
+        record = await createRecordFn('bid_opportunities', token, buildOpportunityPayload(source, monitorRun, item));
+        existingByFingerprint.set(item.fingerprint, record);
+        created.push(record);
+      }
+      const reviewDraft = reviewDraftsByCandidateKey.get(candidateKeyFor(item));
+      if (reviewDraft && record?.id) {
+        const review = await createRecordFn('opportunity_reviews', token, {
+          opportunity: record.id,
+          ...reviewDraft,
+        });
+        createdReviews.push(review);
+      }
     }
 
     const status = persistable.length > 0 ? 'completed' : 'request_human';
@@ -123,6 +161,7 @@ export const ingestCandidateBundleArtifact = async ({
       processedCount: processed.length,
       persistableCount: persistable.length,
       createdCount: created.length,
+      createdReviewCount: createdReviews.length,
       status,
       resultSummary,
     };

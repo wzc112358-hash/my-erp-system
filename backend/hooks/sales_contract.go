@@ -144,7 +144,7 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 			if receivableAmount > 0 {
 				receiptPercent = (receiptedAmount / receivableAmount) * 100
 				debtAmount = receivableAmount - receiptedAmount
-				debtPercent = (receiptedAmount / receivableAmount) * 100
+				debtPercent = 100 - receiptPercent
 			} else {
 				receiptPercent = 0
 				debtAmount = 0

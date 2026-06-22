@@ -37,6 +37,10 @@ export type PlaywrightRuntimeOptions = {
   screenshotDir?: string;
   headless?: boolean;
   navigationTimeoutMs?: number;
+  browserChannels?: string[];
+  proxyServer?: string;
+  env?: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
 };
 
 const ensureDir = (dir: string) => fs.mkdirSync(dir, { recursive: true });
@@ -44,6 +48,31 @@ const MAX_NETWORK_RESPONSES = 30;
 const MAX_RESPONSE_BODY = 40_000;
 const MAX_DOM_SNAPSHOT = 180_000;
 const RESPONSE_INTEREST_PATTERN = /招标|采购|询价|询比|竞价|谈判|公告|notice|bid|tender|bulletin|query|page|list/i;
+
+export const browserChannelCandidatesFor = ({
+  env = process.env,
+  platform = process.platform,
+}: {
+  env?: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+} = {}) => {
+  const configured = String(env.HCZ_LOCAL_HELPER_BROWSER_CHANNEL || '').trim();
+  if (configured) {
+    const normalized = configured.toLowerCase();
+    if (normalized === 'bundled' || normalized === 'chromium') return [''];
+    return [configured, ''];
+  }
+  return platform === 'win32' ? ['chrome', 'msedge', ''] : [''];
+};
+
+export const proxyServerFor = (env: Record<string, string | undefined> = process.env) => (
+  env.HCZ_LOCAL_HELPER_PROXY ||
+  env.HTTPS_PROXY ||
+  env.HTTP_PROXY ||
+  env.https_proxy ||
+  env.http_proxy ||
+  ''
+).trim();
 
 const loadChromium = async (): Promise<ChromiumLike> => {
   const playwright = await import('playwright');
@@ -76,6 +105,10 @@ export const createPlaywrightRuntime = ({
   screenshotDir = path.join(profileDir, 'artifacts'),
   headless = false,
   navigationTimeoutMs = 45000,
+  browserChannels,
+  proxyServer,
+  env = process.env,
+  platform = process.platform,
 }: PlaywrightRuntimeOptions): BrowserHarnessRuntime => {
   let contextPromise: Promise<ContextLike> | null = null;
   let activePage: PageLike | null = null;
@@ -135,12 +168,25 @@ export const createPlaywrightRuntime = ({
       ensureDir(screenshotDir);
       contextPromise = (async () => {
         const resolvedChromium = chromium || await loadChromium();
-        return resolvedChromium.launchPersistentContext(profileDir, {
-          headless,
-          viewport: { width: 1366, height: 900 },
-          acceptDownloads: true,
-          ignoreHTTPSErrors: true,
-        });
+        const channels = browserChannels || browserChannelCandidatesFor({ env, platform });
+        const proxy = proxyServer ?? proxyServerFor(env);
+        let lastError: unknown = null;
+        for (const channel of channels) {
+          try {
+            return await resolvedChromium.launchPersistentContext(profileDir, {
+              ...(channel ? { channel } : {}),
+              ...(proxy ? { proxy: { server: proxy } } : {}),
+              args: ['--disable-features=AsyncDns'],
+              headless,
+              viewport: { width: 1366, height: 900 },
+              acceptDownloads: true,
+              ignoreHTTPSErrors: true,
+            });
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError instanceof Error ? lastError : new Error(String(lastError || 'failed to launch browser'));
       })();
     }
     return contextPromise;

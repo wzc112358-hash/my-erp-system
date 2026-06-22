@@ -1,7 +1,37 @@
 import { randomUUID } from 'node:crypto';
 
+import type { DiscoveredLink } from './agent-search-adapter.ts';
+import {
+  applyFeedbackLearningToOpportunityCards,
+  applyFeedbackLearningToTerms,
+  createEmptyFeedbackLearning,
+  learnFromOpportunityFeedback,
+  normalizeFeedbackLearningState,
+  summarizeFeedbackLearning,
+  type FeedbackLearningState,
+} from './feedback-learning.ts';
+import {
+  dueSchedulesFor,
+  normalizeSchedule,
+  type DueSchedule,
+  type LocalSchedule,
+  type LocalScheduleInput,
+  type LocalScheduleRunStatus,
+} from './local-scheduler.ts';
+import type { LocalLLMConfig } from './local-llm-agent.ts';
+import {
+  applyOpportunityFeedback,
+  loadProductTerms,
+  type OpportunityCard,
+  type OpportunityFeedbackInput,
+  type ProductTerm,
+} from './product-knowledge.ts';
 import type { CandidateBundle, LocalHelperArtifact } from './site-harness.ts';
-import { entryUrlForSourceName } from './site-profiles.ts';
+import {
+  actionStepsForSourceName,
+  entryUrlForSourceName,
+  searchTermsForSourceName,
+} from './site-profiles.ts';
 
 export type HelperTaskStatus = 'pending' | 'running' | 'waiting_agent' | 'cancelled' | 'completed' | 'failed';
 
@@ -19,6 +49,8 @@ export type HelperTask = {
   lastCandidateBundle?: CandidateBundle | null;
   lastArtifacts?: LocalHelperArtifact[];
   lastResultSummary?: string;
+  lastDiscoveredLinks?: DiscoveredLink[];
+  lastOpportunityCards?: OpportunityCard[];
   mode?: 'local' | 'cloud';
   updatedAt?: string;
 };
@@ -88,6 +120,15 @@ export type TaskStoreConfigStore = {
   readCloudPairing(): CloudPairing | null;
   writeCloudPairing(pairing: CloudPairing): void;
   clearCloudPairing(): void;
+  readLLMConfig?(): LocalLLMConfig | null;
+  writeLLMConfig?(config: LocalLLMConfig): void;
+  clearLLMConfig?(): void;
+  readFeedbackLearning?(): FeedbackLearningState | null;
+  writeFeedbackLearning?(state: FeedbackLearningState): void;
+  clearFeedbackLearning?(): void;
+  readLocalSchedules?(): LocalSchedule[];
+  writeLocalSchedules?(schedules: LocalSchedule[]): void;
+  clearLocalSchedules?(): void;
 };
 
 const mapCloudStatus = (status = ''): HelperTaskStatus => {
@@ -95,6 +136,12 @@ const mapCloudStatus = (status = ''): HelperTaskStatus => {
   if (status === 'request_human') return 'waiting_agent';
   if (['completed', 'failed', 'cancelled'].includes(status)) return status as HelperTaskStatus;
   return 'pending';
+};
+
+const replaceAt = <T>(items: T[] = [], index: number, value: T) => {
+  const next = [...items];
+  next[index] = value;
+  return next;
 };
 
 export const createTaskStore = ({
@@ -106,6 +153,15 @@ export const createTaskStore = ({
 } = {}) => {
   let device: HelperDevice | null = null;
   let cloudPairing: CloudPairing | null = configStore?.readCloudPairing() || null;
+  let llmConfig: LocalLLMConfig | null = configStore?.readLLMConfig?.() || null;
+  let feedbackLearning: FeedbackLearningState = normalizeFeedbackLearningState(
+    configStore?.readFeedbackLearning?.() || createEmptyFeedbackLearning(),
+  );
+  const schedules = new Map<string, LocalSchedule>(
+    (configStore?.readLocalSchedules?.() || [])
+      .map((schedule) => normalizeSchedule(schedule))
+      .map((schedule) => [schedule.id, schedule]),
+  );
   const tasks = new Map<string, HelperTask>();
 
   const touch = (task: HelperTask): HelperTask => ({
@@ -117,6 +173,30 @@ export const createTaskStore = ({
     const task = tasks.get(id);
     if (!task) throw new Error(`task not found: ${id}`);
     return task;
+  };
+
+  const publicLLMConfig = () => ({
+    enabled: llmConfig?.enabled !== false && Boolean(llmConfig),
+    baseUrl: llmConfig?.baseUrl || '',
+    model: llmConfig?.model || '',
+    hasApiKey: Boolean(llmConfig?.apiKey),
+    updatedAt: llmConfig?.updatedAt || '',
+  });
+
+  const persistSchedules = () => {
+    configStore?.writeLocalSchedules?.([...schedules.values()]);
+  };
+
+  const scheduleWithDefaults = (input: LocalScheduleInput) => {
+    const sourceName = String(input.sourceName || '').trim() || '本地采集站点';
+    return normalizeSchedule({
+      ...input,
+      sourceName,
+      entryUrl: input.entryUrl || entryUrlForSourceName(sourceName),
+      searchTerms: input.searchTerms || searchTermsForSourceName(sourceName),
+      actionSteps: input.actionSteps || actionStepsForSourceName(sourceName),
+      updatedAt: new Date().toISOString(),
+    }, input.id || '');
   };
 
   return {
@@ -133,6 +213,7 @@ export const createTaskStore = ({
         cloudDeviceName: cloudPairing?.deviceName || '',
         lastHeartbeatAt: cloudPairing?.lastHeartbeatAt || '',
         latestRelease: cloudPairing?.latestRelease || null,
+        llm: publicLLMConfig(),
         taskCount: tasks.size,
       };
     },
@@ -175,6 +256,107 @@ export const createTaskStore = ({
       return cloudPairing;
     },
 
+    getLLMConfig({ includeApiKey = false }: { includeApiKey?: boolean } = {}) {
+      if (includeApiKey) return llmConfig;
+      return publicLLMConfig();
+    },
+
+    setLLMConfig(input: LocalLLMConfig = {}) {
+      const next = {
+        enabled: input.enabled !== false,
+        baseUrl: String(input.baseUrl || '').trim().replace(/\/+$/, ''),
+        apiKey: input.apiKey === undefined ? llmConfig?.apiKey || '' : String(input.apiKey || '').trim(),
+        model: String(input.model || '').trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      llmConfig = next;
+      configStore?.writeLLMConfig?.(next);
+      return publicLLMConfig();
+    },
+
+    clearLLMConfig() {
+      llmConfig = null;
+      configStore?.clearLLMConfig?.();
+      return publicLLMConfig();
+    },
+
+    getFeedbackLearning() {
+      return feedbackLearning;
+    },
+
+    getFeedbackLearningSummary() {
+      return summarizeFeedbackLearning(feedbackLearning);
+    },
+
+    clearFeedbackLearning() {
+      feedbackLearning = createEmptyFeedbackLearning();
+      configStore?.clearFeedbackLearning?.();
+      return summarizeFeedbackLearning(feedbackLearning);
+    },
+
+    getProductTerms(baseTerms: ProductTerm[] = loadProductTerms()) {
+      return applyFeedbackLearningToTerms(baseTerms, feedbackLearning);
+    },
+
+    applyLearningToOpportunityCards(cards: OpportunityCard[] = []) {
+      return applyFeedbackLearningToOpportunityCards(cards, feedbackLearning);
+    },
+
+    listSchedules() {
+      return [...schedules.values()]
+        .sort((left, right) => String(left.sourceName).localeCompare(String(right.sourceName), 'zh-Hans-CN'));
+    },
+
+    upsertSchedule(input: LocalScheduleInput) {
+      const schedule = scheduleWithDefaults(input);
+      if (!schedule.sourceName.trim()) throw new Error('schedule sourceName is required');
+      schedules.set(schedule.id, {
+        ...schedules.get(schedule.id),
+        ...schedule,
+      });
+      persistSchedules();
+      return schedules.get(schedule.id) as LocalSchedule;
+    },
+
+    deleteSchedule(id: string) {
+      if (!schedules.delete(id)) throw new Error(`schedule not found: ${id}`);
+      persistSchedules();
+      return { deleted: true };
+    },
+
+    dueSchedules({ now = new Date(), windowMinutes = 10 }: { now?: Date; windowMinutes?: number } = {}): DueSchedule[] {
+      return dueSchedulesFor([...schedules.values()], { now, windowMinutes });
+    },
+
+    markScheduleRun(
+      id: string,
+      {
+        runKey,
+        taskId = '',
+        status = 'created',
+        ranAt = new Date().toISOString(),
+      }: {
+        runKey: string;
+        taskId?: string;
+        status?: LocalScheduleRunStatus;
+        ranAt?: string;
+      },
+    ) {
+      const schedule = schedules.get(id);
+      if (!schedule) throw new Error(`schedule not found: ${id}`);
+      const updated = {
+        ...schedule,
+        lastRunKey: runKey,
+        lastRunAt: ranAt,
+        lastTaskId: taskId,
+        lastStatus: status,
+        updatedAt: ranAt,
+      };
+      schedules.set(id, updated);
+      persistSchedules();
+      return updated;
+    },
+
     getCloudPairing() {
       if (!cloudPairing?.paired) throw new Error('cloud is not paired');
       return cloudPairing;
@@ -204,8 +386,8 @@ export const createTaskStore = ({
         sourceName,
         ownerName: String(input.ownerName || '').trim(),
         entryUrl: String(input.entryUrl || '').trim() || entryUrlForSourceName(sourceName),
-        searchTerms: String(input.searchTerms || '').trim(),
-        actionSteps: String(input.actionSteps || '').trim(),
+        searchTerms: String(input.searchTerms || '').trim() || searchTermsForSourceName(sourceName),
+        actionSteps: String(input.actionSteps || '').trim() || actionStepsForSourceName(sourceName),
         status: 'pending',
         mode: 'local',
       });
@@ -229,6 +411,8 @@ export const createTaskStore = ({
           lastCandidateBundle: existing?.lastCandidateBundle || null,
           lastArtifacts: existing?.lastArtifacts || [],
           lastResultSummary: existing?.lastResultSummary || '',
+          lastDiscoveredLinks: existing?.lastDiscoveredLinks || [],
+          lastOpportunityCards: existing?.lastOpportunityCards || [],
           mode: 'cloud',
           updatedAt: task.updatedAt || task.updated || '',
         });
@@ -260,6 +444,8 @@ export const createTaskStore = ({
       candidateBundle = undefined,
       artifacts = undefined,
       resultSummary = '',
+      discoveredLinks = undefined,
+      opportunityCards = undefined,
     }: {
       observation?: string;
       screenshotPath?: string;
@@ -268,6 +454,8 @@ export const createTaskStore = ({
       candidateBundle?: CandidateBundle | null;
       artifacts?: LocalHelperArtifact[];
       resultSummary?: string;
+      discoveredLinks?: DiscoveredLink[];
+      opportunityCards?: OpportunityCard[];
     } = {}) {
       const current = getTask(id);
       const task = touch({
@@ -279,9 +467,39 @@ export const createTaskStore = ({
         lastCandidateBundle: candidateBundle === undefined ? current.lastCandidateBundle : candidateBundle,
         lastArtifacts: artifacts === undefined ? current.lastArtifacts : artifacts,
         lastResultSummary: resultSummary || current.lastResultSummary || '',
+        lastDiscoveredLinks: discoveredLinks === undefined ? current.lastDiscoveredLinks : discoveredLinks,
+        lastOpportunityCards: opportunityCards === undefined ? current.lastOpportunityCards : opportunityCards,
       });
       tasks.set(id, task);
       return task;
+    },
+
+    updateOpportunityFeedback(id: string, index: number, feedback: OpportunityFeedbackInput) {
+      const current = getTask(id);
+      if (!Number.isInteger(index) || index < 0) throw new Error('invalid opportunity index');
+      const card = current.lastOpportunityCards?.[index];
+      if (!card) throw new Error('opportunity card not found');
+      const feedbackWithTime = {
+        ...feedback,
+        updatedAt: feedback.updatedAt || new Date().toISOString(),
+      };
+      const updatedCard = applyOpportunityFeedback(card, feedbackWithTime);
+      feedbackLearning = learnFromOpportunityFeedback(feedbackLearning, updatedCard, feedbackWithTime);
+      configStore?.writeFeedbackLearning?.(feedbackLearning);
+      const task = touch({
+        ...current,
+        lastOpportunityCards: replaceAt(current.lastOpportunityCards || [], index, updatedCard),
+        lastLog: [
+          current.lastLog || '',
+          `员工反馈：${updatedCard.title} -> ${updatedCard.feedbackStatus}${updatedCard.feedbackNote ? `（${updatedCard.feedbackNote}）` : ''}`,
+        ].filter(Boolean).join('\n'),
+      });
+      tasks.set(id, task);
+      return {
+        task,
+        card: updatedCard,
+        learning: summarizeFeedbackLearning(feedbackLearning),
+      };
     },
 
     cancelTask(id: string) {

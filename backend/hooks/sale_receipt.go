@@ -50,7 +50,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			if receivableAmount > 0 {
 				receiptPercent = (totalAmount / receivableAmount) * 100
 				debtAmount = receivableAmount - totalAmount
-				debtPercent = (totalAmount / receivableAmount) * 100
+				debtPercent = 100 - receiptPercent
 			}
 
 			e.Record.Set("receipted_amount", totalAmount)
@@ -92,7 +92,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			if receivableAmount > 0 {
 				receiptPercent = (totalAmount / receivableAmount) * 100
 				debtAmount = receivableAmount - totalAmount
-				debtPercent = (totalAmount / receivableAmount) * 100
+				debtPercent = 100 - receiptPercent
 			}
 
 			contract.Set("receipted_amount", totalAmount)
@@ -153,7 +153,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			if totalContractAmount > 0 {
 				receiptPercent = (totalAmount / totalContractAmount) * 100
 				debtAmount = totalContractAmount - totalAmount
-				debtPercent = (totalAmount / totalContractAmount) * 100
+				debtPercent = 100 - receiptPercent
 			}
 
 			e.Record.Set("receipted_amount", totalAmount)
@@ -179,7 +179,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			newStatus := e.Record.GetString("manager_confirmed")
 
 			if oldStatus == "pending" && newStatus == "approved" {
-				creatorId := e.Record.GetString("creator")
+				creatorId := e.Record.GetString("creator_user")
 				amount := e.Record.GetFloat("amount")
 				contractNo := contract.GetString("no")
 				productName := contract.GetString("product_name")
@@ -224,7 +224,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			if receivableAmount > 0 {
 				receiptPercent = (totalAmount / receivableAmount) * 100
 				debtAmount = receivableAmount - totalAmount
-				debtPercent = (totalAmount / receivableAmount) * 100
+				debtPercent = 100 - receiptPercent
 			}
 
 			contract.Set("receipted_amount", totalAmount)

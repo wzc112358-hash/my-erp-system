@@ -53,6 +53,7 @@ export const SalesShipmentAPI = {
     formData.append('logistics_company', data.logistics_company);
     formData.append('delivery_address', data.delivery_address);
     if (data.remark) formData.append('remark', data.remark);
+    formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<SalesShipment>('sales_shipments', formData, attachments);
   },
 

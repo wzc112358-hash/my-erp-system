@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createPlaywrightRuntime } from './playwright-runtime.ts';
+import {
+  browserChannelCandidatesFor,
+  createPlaywrightRuntime,
+  proxyServerFor,
+} from './playwright-runtime.ts';
 
 test('playwright runtime opens urls in persistent profile and captures visible text', async () => {
   const calls: string[] = [];
@@ -95,4 +99,57 @@ test('playwright runtime reuses existing page for observe', async () => {
 
   assert.equal((await runtime.observe()).visibleText, '公告 1');
   assert.equal((await runtime.observe()).visibleText, '公告 2');
+});
+
+test('playwright runtime prefers system browsers on Windows before bundled Chromium', () => {
+  assert.deepEqual(browserChannelCandidatesFor({
+    platform: 'win32',
+    env: {},
+  }), ['chrome', 'msedge', '']);
+  assert.deepEqual(browserChannelCandidatesFor({
+    platform: 'win32',
+    env: { HCZ_LOCAL_HELPER_BROWSER_CHANNEL: 'msedge' },
+  }), ['msedge', '']);
+  assert.deepEqual(browserChannelCandidatesFor({
+    platform: 'win32',
+    env: { HCZ_LOCAL_HELPER_BROWSER_CHANNEL: 'bundled' },
+  }), ['']);
+});
+
+test('playwright runtime falls back when the preferred system browser is unavailable', async () => {
+  const launchOptions: Record<string, unknown>[] = [];
+  const fakePage = {
+    goto: async () => {},
+    title: async () => '询价交易',
+    url: () => 'https://example.com/list',
+    locator: () => ({ innerText: async () => '公告' }),
+  };
+  const chromium = {
+    launchPersistentContext: async (_profileDir: string, options: Record<string, unknown>) => {
+      launchOptions.push(options);
+      if (options.channel === 'chrome') throw new Error('chrome is not installed');
+      return {
+        pages: () => [fakePage],
+        newPage: async () => fakePage,
+      };
+    },
+  };
+
+  const runtime = createPlaywrightRuntime({
+    chromium,
+    profileDir: 'profiles/fallback',
+    browserChannels: ['chrome', 'msedge', ''],
+  });
+
+  assert.equal((await runtime.observe()).title, '询价交易');
+  assert.equal(launchOptions[0].channel, 'chrome');
+  assert.equal(launchOptions[1].channel, 'msedge');
+  assert.deepEqual(launchOptions[1].args, ['--disable-features=AsyncDns']);
+});
+
+test('playwright runtime resolves proxy server from local helper env first', () => {
+  assert.equal(proxyServerFor({
+    HCZ_LOCAL_HELPER_PROXY: 'http://127.0.0.1:7890',
+    HTTPS_PROXY: 'http://proxy.example',
+  }), 'http://127.0.0.1:7890');
 });

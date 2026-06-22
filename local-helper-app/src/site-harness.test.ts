@@ -354,3 +354,33 @@ test('createSiteHarness uses the site profile entry URL when the task entry is e
   assert.equal(openedUrl, 'https://www.cnpcbidding.com/#/tenders');
   assert.equal(result.status, 'request_human');
 });
+
+test('createSiteHarness converts browser DNS navigation failures into human-readable task state', async () => {
+  const browser = {
+    open: async () => {
+      throw new Error('page.goto: net::ERR_NAME_NOT_RESOLVED at https://www.cnpcbidding.com/#/tenders');
+    },
+    observe: async () => ({
+      title: '',
+      url: '',
+      visibleText: '',
+    }),
+  };
+  const harness = createSiteHarness({
+    browser,
+    profile: {
+      sourceName: '中石油招投标网',
+      entryUrl: 'https://www.cnpcbidding.com/#/tenders',
+    },
+  });
+
+  const result = await harness.openTask({
+    id: 'task-cnpc',
+    sourceName: '中石油招投标网',
+    entryUrl: '',
+  });
+
+  assert.equal(result.status, 'request_human');
+  assert.match(result.humanReason, /DNS/);
+  assert.match(result.observation.visibleText, /ERR_NAME_NOT_RESOLVED/);
+});

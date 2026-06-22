@@ -12,20 +12,57 @@ import {
   sendHeartbeat,
   startCloudTask,
 } from './cloud-client.ts';
+import { runControlledLocalAgentTask, type ControlledAgentOptions } from './controlled-local-agent.ts';
+import { createDefaultBidAssessor } from './bid-assessment.ts';
 import {
   buildLocalAgentLog,
   continueLocalAgentTaskAfterHuman,
   openLocalAgentTask,
   type LocalAgentRunResult,
 } from './local-agent-runner.ts';
+import {
+  createDefaultLLMAgent,
+  testOpenAICompatibleLLMConfig,
+  type LLMConnectionTestResult,
+  type LocalLLMConfig,
+} from './local-llm-agent.ts';
+import {
+  formatDocumentEvidence,
+  readDocumentsFromObservation,
+  type DocumentReadResult,
+} from './document-reader.ts';
+import {
+  buildOpportunityCards,
+  summarizeOpportunityCards,
+  type OpportunityCard,
+  type OpportunityDocumentSummary,
+  type OpportunityFeedbackStatus,
+} from './product-knowledge.ts';
+import {
+  buildDailyWechatDigest,
+  buildOpportunityWechatSummary,
+  buildTaskWechatReport,
+} from './wechat-summary.ts';
+import {
+  buildDailyPriorityBoard,
+  buildDailyPriorityReport,
+} from './priority-board.ts';
+import type { DueSchedule, LocalSchedule, LocalScheduleRunStatus } from './local-scheduler.ts';
 import { createPlaywrightRuntime } from './playwright-runtime.ts';
 import {
   continueLocalHelperTaskAfterHuman,
   runLocalHelperTask,
   type CloudTaskChannel,
 } from './task-runner.ts';
-import type { BrowserHarnessRuntime, LocalHelperTask } from './site-harness.ts';
-import { SITE_PROFILES } from './site-profiles.ts';
+import {
+  analyzeObservation,
+  buildObservationArtifacts,
+  type BrowserHarnessRuntime,
+  type CandidateBundle,
+  type LocalHelperArtifact,
+  type LocalHelperTask,
+} from './site-harness.ts';
+import { profileFor, SITE_PROFILES } from './site-profiles.ts';
 import type { createTaskStore } from './task-store.ts';
 
 type Store = ReturnType<typeof createTaskStore>;
@@ -37,10 +74,19 @@ type TaskRunner = (input: {
 type LocalAgentRunner = (input: {
   task: LocalHelperTask;
   browser: BrowserHarnessRuntime;
-}) => Promise<LocalAgentRunResult>;
+} & Partial<ControlledAgentOptions>) => Promise<LocalAgentRunResult>;
+type LLMConnectionTester = (input: { config: LocalLLMConfig | null }) => Promise<LLMConnectionTestResult>;
+type BrowserRuntimeFactory = (task: { sourceName?: string }) => BrowserHarnessRuntime;
 
 const DEFAULT_HELPER_VERSION = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.14';
 const DEFAULT_DATA_DIR_NAME = 'HengHuaChengLocalHelper';
+const VALID_FEEDBACK_STATUSES = new Set<OpportunityFeedbackStatus>([
+  'valuable',
+  'irrelevant',
+  'ask_boss',
+  'sent_to_group',
+  'followed_up',
+]);
 
 const UI_FILES: Record<string, string> = {
   '/ui/pair': 'pair.html',
@@ -103,8 +149,14 @@ export const createLocalApiServer = ({
   continueTaskAfterHuman = continueLocalHelperTaskAfterHuman,
   runLocalTask = openLocalAgentTask,
   continueLocalTaskAfterHuman = continueLocalAgentTaskAfterHuman,
+  runAgentTask = runControlledLocalAgentTask,
   helperVersion = DEFAULT_HELPER_VERSION,
   rendererDir = '',
+  testLLMConnection = ({ config }) => testOpenAICompatibleLLMConfig({ config }),
+  createBrowserRuntime,
+  enableScheduler = process.env.HCZ_LOCAL_SCHEDULER_DISABLED !== '1',
+  scheduleIntervalMs = Number(process.env.HCZ_LOCAL_SCHEDULER_INTERVAL_MS || 60_000),
+  scheduleWindowMinutes = Number(process.env.HCZ_LOCAL_SCHEDULER_WINDOW_MINUTES || 10),
 }: {
   store: Store;
   port?: number;
@@ -113,13 +165,22 @@ export const createLocalApiServer = ({
   continueTaskAfterHuman?: TaskRunner;
   runLocalTask?: LocalAgentRunner;
   continueLocalTaskAfterHuman?: LocalAgentRunner;
+  runAgentTask?: LocalAgentRunner;
   helperVersion?: string;
   rendererDir?: string;
+  testLLMConnection?: LLMConnectionTester;
+  createBrowserRuntime?: BrowserRuntimeFactory;
+  enableScheduler?: boolean;
+  scheduleIntervalMs?: number;
+  scheduleWindowMinutes?: number;
 }) => {
   const browserRuntimes = new Map<string, BrowserHarnessRuntime>();
   const taskBrowserKeys = new Map<string, string>();
+  const runningSchedules = new Set<string>();
+  let scheduleTimer: NodeJS.Timeout | null = null;
 
   const createBrowser = (task: { sourceName?: string }): BrowserHarnessRuntime => {
+    if (createBrowserRuntime) return createBrowserRuntime(task);
     const runtimeDirs = resolveRuntimeDirs(task);
     return createPlaywrightRuntime({
       ...runtimeDirs,
@@ -164,6 +225,7 @@ export const createLocalApiServer = ({
 
   const applyTaskRunResult = (taskId: string, result: any, defaultLog = '') => {
     if (!store.listTasks().some((task) => task.id === taskId)) return;
+    const task = store.getTask(taskId);
     const observation = String(result?.observation?.visibleText || result?.observation || '');
     const screenshotPath = String(result?.observation?.screenshotPath || result?.screenshotPath || '');
     const status = result?.status === 'completed'
@@ -178,6 +240,13 @@ export const createLocalApiServer = ({
         result?.humanReason ? `需要人工处理：${result.humanReason}` : '',
         result?.observation?.url ? `当前地址：${result.observation.url}` : '',
       ].filter(Boolean).join('\n');
+    const rawOpportunityCards = Array.isArray(result?.opportunityCards)
+      ? result.opportunityCards
+      : buildOpportunityCards({ bundle: result?.candidateBundle, task, terms: store.getProductTerms() });
+    const opportunityCards = store.applyLearningToOpportunityCards(rawOpportunityCards);
+    const learningApplied = opportunityCards.some((card: OpportunityCard, index: number) => (
+      card.feedbackSource === 'system' && rawOpportunityCards[index]?.feedbackSource !== 'system'
+    ));
     store.continueTask(taskId, {
       observation,
       screenshotPath,
@@ -185,7 +254,309 @@ export const createLocalApiServer = ({
       status,
       candidateBundle: result?.candidateBundle,
       artifacts: result?.artifacts,
-      resultSummary: String(result?.resultSummary || ''),
+      resultSummary: learningApplied
+        ? summarizeOpportunityCards(opportunityCards, String(result?.resultSummary || ''))
+        : String(result?.resultSummary || ''),
+      discoveredLinks: result?.discoveredLinks,
+      opportunityCards,
+    });
+  };
+
+  const llmConfigFromBody = (body: Record<string, unknown>, existing: LocalLLMConfig | null): LocalLLMConfig => ({
+    enabled: body.enabled === undefined ? existing?.enabled !== false : body.enabled !== false,
+    baseUrl: String(body.baseUrl ?? existing?.baseUrl ?? ''),
+    apiKey: Object.prototype.hasOwnProperty.call(body, 'apiKey')
+      ? String(body.apiKey || '')
+      : existing?.apiKey || '',
+    model: String(body.model ?? existing?.model ?? ''),
+  });
+
+  const documentSummariesFor = (documents: DocumentReadResult[]): OpportunityDocumentSummary[] => documents.map((document) => ({
+    title: document.title,
+    url: document.url,
+    filePath: document.filePath,
+    warning: document.warning,
+    textSnippet: document.text ? document.text.slice(0, 1200) : '',
+  }));
+
+  const documentArtifactsFor = (
+    documents: DocumentReadResult[],
+    task: LocalHelperTask,
+  ): LocalHelperArtifact[] => documents.map((document, index) => ({
+    artifact_type: 'manual_text',
+    title: `${task.sourceName || '本地助手'} 附件解析 ${index + 1}：${document.title}`,
+    url: document.url,
+    content: [
+      document.filePath ? `本地文件：${document.filePath}` : '',
+      document.warning ? `提示：${document.warning}` : '',
+      document.text || '',
+    ].filter(Boolean).join('\n'),
+    mime_type: 'text/plain',
+  }));
+
+  const replaceCandidateAt = (
+    bundle: CandidateBundle | null | undefined,
+    index: number,
+    candidate: CandidateBundle['candidates'][number],
+  ): CandidateBundle | null => {
+    if (!bundle) return null;
+    const candidates = [...(bundle.candidates || [])];
+    candidates[index] = candidate;
+    return {
+      ...bundle,
+      candidates,
+    };
+  };
+
+  const replaceCardAt = (
+    cards: OpportunityCard[] = [],
+    index: number,
+    card: OpportunityCard,
+  ) => {
+    const next = [...cards];
+    next[index] = card;
+    return next;
+  };
+
+  const deepReadOpportunity = async (taskId: string, cardIndexRaw = '') => {
+    const task = store.getTask(taskId);
+    const cardIndex = Number(cardIndexRaw);
+    if (!Number.isInteger(cardIndex) || cardIndex < 0) throw new Error('invalid opportunity index');
+    const currentCards = task.lastOpportunityCards || [];
+    const currentCard = currentCards[cardIndex];
+    const candidate = task.lastCandidateBundle?.candidates?.[cardIndex];
+    if (!currentCard || !candidate) throw new Error('opportunity card not found');
+    const targetUrl = currentCard.url || candidate.url || task.entryUrl;
+    if (!targetUrl) throw new Error('opportunity card has no detail url');
+
+    const browser = getBrowser(task);
+    const opened = await browser.open(targetUrl);
+    const screenshotPath = await browser.screenshot?.().catch(() => '') || opened.screenshotPath || '';
+    const observation = {
+      ...opened,
+      screenshotPath,
+    };
+    const profile = profileFor(task.sourceName);
+    const analysis = analyzeObservation(observation, profile);
+    const observationArtifacts = buildObservationArtifacts(observation, task);
+    if (analysis.status === 'request_human') {
+      const updated = store.continueTask(taskId, {
+        status: 'waiting_agent',
+        observation: observation.visibleText,
+        screenshotPath,
+        log: `查清楚需要人工处理：${analysis.reason}`,
+        artifacts: [...(task.lastArtifacts || []), ...observationArtifacts].slice(-60),
+      });
+      return {
+        status: 'request_human',
+        humanReason: analysis.reason,
+        observation,
+        task: updated,
+      };
+    }
+
+    const documents = await readDocumentsFromObservation({ observation });
+    const documentEvidence = formatDocumentEvidence(documents);
+    const attachmentUrls = [
+      ...(candidate.attachments || []),
+      ...documents.map((document) => document.url || document.filePath || '').filter(Boolean),
+    ].filter((item, index, all) => all.indexOf(item) === index);
+    const enrichedCandidate = {
+      ...candidate,
+      url: observation.url || candidate.url,
+      raw_text: [
+        candidate.raw_text,
+        observation.visibleText,
+        documentEvidence,
+      ].filter(Boolean).join('\n\n'),
+      attachments: attachmentUrls,
+    };
+    const refreshedCard = buildOpportunityCards({
+      bundle: {
+        source_name: task.lastCandidateBundle?.source_name || task.sourceName,
+        candidates: [enrichedCandidate],
+      },
+      task,
+      terms: store.getProductTerms(),
+    })[0] || currentCard;
+    const baseCard = {
+      ...currentCard,
+      ...refreshedCard,
+      id: currentCard.id,
+      deepReadAt: new Date().toISOString(),
+      detailUrl: observation.url || targetUrl,
+      detailScreenshotPath: screenshotPath,
+      documentSummaries: documentSummariesFor(documents),
+    };
+    const llmConfig = store.getLLMConfig({ includeApiKey: true });
+    const assessor = createDefaultBidAssessor({ config: llmConfig });
+    const assessedCard = await assessor.assess({
+      task,
+      candidate: enrichedCandidate,
+      baseCard,
+    }).catch(() => baseCard);
+    const finalCard = {
+      ...assessedCard,
+      deepReadAt: baseCard.deepReadAt,
+      detailUrl: baseCard.detailUrl,
+      detailScreenshotPath: baseCard.detailScreenshotPath,
+      documentSummaries: baseCard.documentSummaries,
+    };
+    const nextBundle = replaceCandidateAt(task.lastCandidateBundle, cardIndex, enrichedCandidate);
+    const nextCards = replaceCardAt(currentCards, cardIndex, finalCard);
+    const nextArtifacts = [
+      ...(task.lastArtifacts || []),
+      ...observationArtifacts,
+      ...documentArtifactsFor(documents, task),
+    ].slice(-80);
+    const resultSummary = [
+      `已查清楚：${finalCard.title}`,
+      finalCard.wechatSummary,
+    ].filter(Boolean).join('\n\n');
+    const updated = store.continueTask(taskId, {
+      status: 'completed',
+      observation: observation.visibleText,
+      screenshotPath,
+      log: resultSummary,
+      candidateBundle: nextBundle,
+      artifacts: nextArtifacts,
+      resultSummary,
+      opportunityCards: nextCards,
+    });
+    await closeBrowser(task);
+    return {
+      status: 'completed',
+      task: updated,
+      card: finalCard,
+      documents: documentSummariesFor(documents),
+      artifacts: [...observationArtifacts, ...documentArtifactsFor(documents, task)],
+      resultSummary,
+    };
+  };
+
+  const scheduleTaskInput = (schedule: LocalSchedule) => ({
+    sourceName: schedule.sourceName,
+    ownerName: '本地自动巡检',
+    entryUrl: schedule.entryUrl,
+    searchTerms: schedule.searchTerms,
+    actionSteps: schedule.actionSteps,
+  });
+
+  const scheduleStatusFor = (result: LocalAgentRunResult | null): LocalScheduleRunStatus => {
+    if (!result) return 'created';
+    if (result.status === 'request_human') return 'request_human';
+    if (result.status === 'completed') return 'completed';
+    if (result.status === 'failed') return 'failed';
+    return 'created';
+  };
+
+  const runSchedule = async ({
+    schedule,
+    runKey,
+    manual = false,
+  }: {
+    schedule: LocalSchedule;
+    runKey: string;
+    manual?: boolean;
+  }) => {
+    if (runningSchedules.has(schedule.id)) {
+      return {
+        schedule,
+        skipped: true,
+        reason: 'schedule already running',
+      };
+    }
+    runningSchedules.add(schedule.id);
+    const created = store.createTask(scheduleTaskInput(schedule));
+    let result: LocalAgentRunResult | null = null;
+    let status: LocalScheduleRunStatus = 'created';
+    try {
+      if (schedule.runMode === 'create_task_only') {
+        status = 'created';
+      } else {
+        const task = store.startTask(created.id);
+        if (schedule.runMode === 'open_browser') {
+          result = await runLocalTask({
+            task,
+            browser: getBrowser(task),
+          });
+          applyTaskRunResult(task.id, result, manual ? '已按计划打开采集浏览器。' : '每日计划已打开采集浏览器。');
+        } else {
+          const llmConfig = store.getLLMConfig({ includeApiKey: true });
+          result = await runAgentTask({
+            task,
+            browser: getBrowser(task),
+            llm: createDefaultLLMAgent({ config: llmConfig }),
+            assessor: createDefaultBidAssessor({ config: llmConfig }),
+            terms: store.getProductTerms(),
+          });
+          applyTaskRunResult(task.id, result, manual ? '已手动运行每日 Agent 计划。' : '每日 Agent 计划已启动。');
+        }
+        status = scheduleStatusFor(result);
+        if (result?.status === 'completed' || result?.status === 'failed') await closeBrowser(task);
+      }
+      const updatedSchedule = store.markScheduleRun(schedule.id, {
+        runKey,
+        taskId: created.id,
+        status,
+      });
+      return {
+        schedule: updatedSchedule,
+        task: store.getTask(created.id),
+        result,
+        skipped: false,
+      };
+    } catch (error) {
+      await closeBrowser(created);
+      store.failTask(created.id, {
+        observation: '本地自动巡检运行失败。',
+        log: error instanceof Error ? error.message : String(error),
+      });
+      const updatedSchedule = store.markScheduleRun(schedule.id, {
+        runKey,
+        taskId: created.id,
+        status: 'failed',
+      });
+      return {
+        schedule: updatedSchedule,
+        task: store.getTask(created.id),
+        error: error instanceof Error ? error.message : String(error),
+        skipped: false,
+      };
+    } finally {
+      runningSchedules.delete(schedule.id);
+    }
+  };
+
+  const runDueSchedules = async ({
+    now = new Date(),
+    windowMinutes = scheduleWindowMinutes,
+  }: {
+    now?: Date;
+    windowMinutes?: number;
+  } = {}) => {
+    const due = store.dueSchedules({ now, windowMinutes });
+    const runs = [];
+    for (const item of due) {
+      runs.push(await runSchedule({
+        schedule: item.schedule,
+        runKey: item.runKey,
+      }));
+    }
+    return {
+      checkedAt: now.toISOString(),
+      dueCount: due.length,
+      runs,
+    };
+  };
+
+  const runScheduleById = async (id: string) => {
+    const schedule = store.listSchedules().find((item) => item.id === id);
+    if (!schedule) throw new Error(`schedule not found: ${id}`);
+    return runSchedule({
+      schedule,
+      runKey: `manual ${new Date().toISOString()}`,
+      manual: true,
     });
   };
 
@@ -228,8 +599,78 @@ export const createLocalApiServer = ({
             sourceName: profile.sourceName,
             entryUrl: profile.entryUrl || '',
             buyerName: profile.buyerName || '',
+            defaultSearchTerms: profile.defaultSearchTerms || '',
+            defaultActionSteps: profile.defaultActionSteps || '',
           })),
         });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/schedules') {
+        sendJson(response, 200, { schedules: store.listSchedules() });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/schedules') {
+        const body = await readBody(request);
+        sendJson(response, 200, { schedule: store.upsertSchedule({
+          id: String(body.id || ''),
+          sourceName: String(body.sourceName || ''),
+          searchTerms: String(body.searchTerms || ''),
+          entryUrl: String(body.entryUrl || ''),
+          actionSteps: String(body.actionSteps || ''),
+          times: String(body.times || ''),
+          enabled: body.enabled !== false,
+          runMode: body.runMode as LocalSchedule['runMode'],
+        }) });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/schedules/run-due') {
+        const body = await readBody(request);
+        sendJson(response, 200, await runDueSchedules({
+          now: body.now ? new Date(String(body.now)) : new Date(),
+          windowMinutes: body.windowMinutes === undefined ? scheduleWindowMinutes : Number(body.windowMinutes),
+        }));
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'schedules' && parts[2] === 'run-now') {
+        sendJson(response, 200, await runScheduleById(parts[1]));
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'schedules' && parts[2] === 'delete') {
+        sendJson(response, 200, store.deleteSchedule(parts[1]));
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/settings/llm') {
+        sendJson(response, 200, store.getLLMConfig());
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/settings/llm') {
+        const body = await readBody(request);
+        const config = llmConfigFromBody(body, store.getLLMConfig({ includeApiKey: true }));
+        sendJson(response, 200, store.setLLMConfig(config));
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/settings/llm/test') {
+        const body = await readBody(request);
+        const config = llmConfigFromBody(body, store.getLLMConfig({ includeApiKey: true }));
+        sendJson(response, 200, await testLLMConnection({ config }));
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/settings/feedback-learning') {
+        sendJson(response, 200, store.getFeedbackLearningSummary());
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/settings/feedback-learning/clear') {
+        sendJson(response, 200, store.clearFeedbackLearning());
         return;
       }
 
@@ -388,6 +829,30 @@ export const createLocalApiServer = ({
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/wechat/daily-report') {
+        sendJson(response, 200, {
+          text: buildDailyWechatDigest(store.listTasks()),
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/opportunities/priority-board') {
+        sendJson(response, 200, buildDailyPriorityBoard(store.listTasks(), {
+          limit: Number(url.searchParams.get('limit') || 20),
+          includeLow: url.searchParams.get('includeLow') === '1',
+        }));
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/wechat/priority-report') {
+        sendJson(response, 200, {
+          text: buildDailyPriorityReport(store.listTasks(), {
+            limit: Number(url.searchParams.get('limit') || 20),
+          }),
+        });
+        return;
+      }
+
       if (request.method === 'POST' && url.pathname === '/tasks') {
         const body = await readBody(request);
         const task = store.createTask({
@@ -421,11 +886,14 @@ export const createLocalApiServer = ({
 
       if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'continue-run') {
         const task = store.getTask(parts[1]);
+        const llmConfig = store.getLLMConfig({ includeApiKey: true });
         let result;
         try {
           result = await continueLocalTaskAfterHuman({
             task,
             browser: getBrowser(task),
+            assessor: createDefaultBidAssessor({ config: llmConfig }),
+            terms: store.getProductTerms(),
           });
         } catch (error) {
           await closeBrowser(task);
@@ -434,6 +902,71 @@ export const createLocalApiServer = ({
         applyTaskRunResult(parts[1], result, '已继续本地采集。');
         if (result?.status === 'completed' || result?.status === 'failed') await closeBrowser(task);
         sendJson(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'agent-run') {
+        const task = store.startTask(parts[1]);
+        const llmConfig = store.getLLMConfig({ includeApiKey: true });
+        const assessor = createDefaultBidAssessor({ config: llmConfig });
+        let result;
+        try {
+          result = await runAgentTask({
+            task,
+            browser: getBrowser(task),
+            llm: createDefaultLLMAgent({ config: llmConfig }),
+            assessor,
+            terms: store.getProductTerms(),
+          });
+        } catch (error) {
+          await closeBrowser(task);
+          throw error;
+        }
+        applyTaskRunResult(parts[1], result, 'Agent 已开始搜索公开入口并打开浏览器。');
+        if (result?.status === 'completed' || result?.status === 'failed') await closeBrowser(task);
+        sendJson(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'opportunities' && parts[4] === 'deep-read') {
+        sendJson(response, 200, await deepReadOpportunity(parts[1], parts[3]));
+        return;
+      }
+
+      if (request.method === 'GET' && parts[0] === 'tasks' && parts[2] === 'wechat-report') {
+        sendJson(response, 200, {
+          text: buildTaskWechatReport(store.getTask(parts[1])),
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && parts[0] === 'tasks' && parts[2] === 'opportunities' && parts[4] === 'wechat-summary') {
+        const task = store.getTask(parts[1]);
+        const cardIndex = Number(parts[3]);
+        if (!Number.isInteger(cardIndex) || cardIndex < 0) throw new Error('invalid opportunity index');
+        const card = task.lastOpportunityCards?.[cardIndex];
+        if (!card) throw new Error('opportunity card not found');
+        sendJson(response, 200, {
+          text: buildOpportunityWechatSummary(card),
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'opportunities' && parts[4] === 'feedback') {
+        const body = await readBody(request);
+        const status = String(body.status || '') as OpportunityFeedbackStatus;
+        if (!VALID_FEEDBACK_STATUSES.has(status)) throw new Error('invalid feedback status');
+        const cardIndex = Number(parts[3]);
+        const result = store.updateOpportunityFeedback(parts[1], cardIndex, {
+          status,
+          note: String(body.note || ''),
+          source: 'employee',
+        });
+        sendJson(response, 200, {
+          ...result,
+          reviewDraft: result.card.erpReviewDraft || null,
+          learning: result.learning,
+        });
         return;
       }
 
@@ -472,12 +1005,21 @@ export const createLocalApiServer = ({
       };
       const onListening = () => {
         server.off('error', onError);
+        if (enableScheduler && scheduleIntervalMs > 0 && !scheduleTimer) {
+          scheduleTimer = setInterval(() => {
+            void runDueSchedules().catch(() => undefined);
+          }, scheduleIntervalMs);
+        }
         resolve();
       };
       server.once('error', onError);
       server.listen(port, host, onListening);
     }),
     stop: () => new Promise<void>((resolve, reject) => {
+      if (scheduleTimer) {
+        clearInterval(scheduleTimer);
+        scheduleTimer = null;
+      }
       server.close(async (error) => {
         await Promise.all([...browserRuntimes.values()].map((browser) => browser.close?.().catch(() => undefined)));
         browserRuntimes.clear();

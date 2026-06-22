@@ -169,6 +169,7 @@ export const PaymentAPI = {
     formData.append('pay_date', data.pay_date);
     if (data.method) formData.append('method', data.method);
     if (data.remark) formData.append('remark', data.remark);
+    formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<PurchasePayment>('purchase_payments', formData, attachments);
   },
 

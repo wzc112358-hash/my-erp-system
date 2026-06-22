@@ -11,6 +11,7 @@ Current local-agent phase:
   - `GET /site-profiles`
   - `GET /tasks`
   - `POST /tasks`
+  - `POST /tasks/:id/agent-run`
   - `POST /tasks/:id/run`
   - `POST /tasks/:id/continue-run`
   - `POST /tasks/:id/cancel`
@@ -41,6 +42,39 @@ Current local-agent phase:
   - Uses a persistent Chrome profile directory for login/cookie reuse.
   - Captures visible text and screenshots for local-helper observations.
   - `/tasks/:id/run` opens a local task; `/tasks/:id/continue-run` extracts candidates after employee takeover.
+- Controlled local Agent tool layer:
+  - `/tasks/:id/agent-run` runs public link discovery, opens the best local browser entry, and extracts candidates when possible.
+  - Firecrawl/Search is optional; configure `FIRECRAWL_API_KEY` or `HCZ_FIRECRAWL_API_KEY` to enable Firecrawl `/v2/search`.
+  - Without a Firecrawl key, the Agent falls back to the task entry URL and still works as the existing local browser flow.
+  - LLM summary is optional; configure `HCZ_LOCAL_AGENT_LLM_BASE_URL`, `HCZ_LOCAL_AGENT_LLM_API_KEY`, and `HCZ_LOCAL_AGENT_LLM_MODEL` to enable it.
+  - The task desk also exposes local model settings (`baseUrl`, API key, and model). Saved local settings take precedence for `/tasks/:id/agent-run`.
+  - No Firecrawl or LLM key is bundled into the installer.
+- Product-intelligence layer:
+  - Seed product knowledge lives in `src/data/product-terms.seed.json`.
+  - Candidate bundles are converted into local opportunity cards with product hits,
+    relevance score, evidence, missing information, and a WeChat-ready summary.
+  - Without an LLM key, opportunity cards still use deterministic product matching.
+  - Each card can run a local "查清楚" deep-read pass that opens the detail URL,
+    captures visible text/screenshot, attempts PDF/DOCX/text attachment extraction,
+    and refreshes only that card's assessment.
+  - WeChat copy helpers are available for one opportunity, one site task report,
+    and the whole daily digest. The generated text is grouped into focus,
+    pending manual check, and low-relevance/no-new sections.
+  - Opportunity feedback buttons mark cards as valuable, irrelevant, ask boss,
+    sent to group, or followed up. Feedback is stored on the local card, adjusts
+    the card grouping score, and prepares an ERP `opportunity_reviews` draft for
+    later upload.
+  - Feedback learning is persisted locally. Positive feedback raises learned
+    product-term weight, irrelevant feedback lowers it, and repeated notices can
+    automatically reuse prior employee judgment. The task desk shows a compact
+    learning summary and can clear the local learning data for testing.
+  - The daily priority board combines relevance score, recommended action,
+    employee feedback, learned weights, and deadline urgency. The task desk
+    shows the top opportunities for the day and can copy a WeChat-ready priority
+    checklist.
+  - Local daily schedules can create or run recurring collection tasks by site
+    and time. Each schedule can run the controlled Agent, open the browser for
+    human login/verification, or only create a pending task.
 
 Run locally:
 
@@ -72,6 +106,10 @@ This writes the ERP download artifacts to `../frontend/public/downloads/`:
 - `hcz-local-helper-setup.exe` when NSIS can run
 - `hcz-local-helper-release.json`
 - `SHA256SUMS.txt`
+
+For local Windows testing, you can use the generated installer directly from
+`release/恒化成本地采集助手 Setup <version>.exe`. Do not deploy to the ERP frontend
+until the local collection loop is accepted.
 
 Build only the unpacked app directory:
 

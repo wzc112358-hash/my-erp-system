@@ -1,4 +1,18 @@
 import {
+  type DiscoveredLink,
+} from './agent-search-adapter.ts';
+import {
+  assessOpportunityCards,
+  createDeterministicBidAssessor,
+  type BidAssessor,
+} from './bid-assessment.ts';
+import {
+  buildOpportunityCards,
+  summarizeOpportunityCards,
+  type OpportunityCard,
+  type ProductTerm,
+} from './product-knowledge.ts';
+import {
   buildObservationArtifacts,
   createSiteHarness,
   type BrowserHarnessRuntime,
@@ -20,6 +34,8 @@ export type LocalAgentRunResult = {
   candidateBundle: CandidateBundle | null;
   artifacts: LocalHelperArtifact[];
   resultSummary: string;
+  discoveredLinks?: DiscoveredLink[];
+  opportunityCards?: OpportunityCard[];
 };
 
 const observationText = (result: {
@@ -85,9 +101,13 @@ export const openLocalAgentTask = async ({
 export const continueLocalAgentTaskAfterHuman = async ({
   task,
   browser,
+  assessor = createDeterministicBidAssessor(),
+  terms,
 }: {
   task: LocalHelperTask;
   browser: BrowserHarnessRuntime;
+  assessor?: BidAssessor;
+  terms?: ProductTerm[];
 }): Promise<LocalAgentRunResult> => {
   const harness = createSiteHarness({ browser, profile: profileFor(task.sourceName) });
   const result = await withScreenshot(await harness.continueTask(task), browser);
@@ -104,13 +124,24 @@ export const continueLocalAgentTaskAfterHuman = async ({
     };
   }
 
+  const opportunityCards = await assessOpportunityCards({
+    task,
+    bundle: result.candidateBundle,
+    cards: buildOpportunityCards({ bundle: result.candidateBundle, task, terms }),
+    assessor,
+  });
+
   return {
     status: 'completed',
     humanReason: '',
     observation: result.observation,
     candidateBundle: result.candidateBundle,
     artifacts,
-    resultSummary: summarizeCandidateBundle(result.candidateBundle),
+    resultSummary: summarizeOpportunityCards(
+      opportunityCards,
+      summarizeCandidateBundle(result.candidateBundle),
+    ),
+    opportunityCards,
   };
 };
 
@@ -118,6 +149,9 @@ export const buildLocalAgentLog = (result: LocalAgentRunResult, defaultLog = '')
   defaultLog,
   result.humanReason ? `需要人工处理：${result.humanReason}` : '',
   result.observation?.url ? `当前地址：${result.observation.url}` : '',
+  result.discoveredLinks?.length
+    ? `发现入口：\n${result.discoveredLinks.slice(0, 8).map((link, index) => `${index + 1}. ${link.title || link.url}\n${link.url}`).join('\n')}`
+    : '',
   result.resultSummary ? `结果摘要：${result.resultSummary}` : '',
   observationText(result) ? `页面观察：${observationText(result)}` : '',
 ].filter(Boolean).join('\n');

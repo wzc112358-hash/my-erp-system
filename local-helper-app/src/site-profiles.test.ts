@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SITE_PROFILES, entryUrlForSourceName, profileFor } from './site-profiles.ts';
+import {
+  SITE_PROFILES,
+  actionStepsForSourceName,
+  entryUrlForSourceName,
+  profileFor,
+  searchTermsForSourceName,
+} from './site-profiles.ts';
 
 test('profileFor returns the registered profile for second-batch sites', () => {
   assert.equal(profileFor('华锦兵器网').buyerName, '华锦兵器网');
@@ -23,8 +29,17 @@ test('profileFor returns a usable default when given an empty name', () => {
 test('known local-helper sites expose fallback entry URLs', () => {
   assert.equal(entryUrlForSourceName('中石油招投标网'), 'https://www.cnpcbidding.com/#/tenders');
   assert.equal(entryUrlForSourceName('华锦兵器网'), 'https://www.norincogroup-ebuy.com/');
+  assert.equal(entryUrlForSourceName('能源一号（兰州恒化成）'), 'https://www.energyahead.com/');
   assert.equal(entryUrlForSourceName('裕龙招投标网'), 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96');
   assert.equal(entryUrlForSourceName('某个未注册的招标网'), '');
+});
+
+test('known local-helper sites expose default search terms and action steps', () => {
+  assert.match(searchTermsForSourceName('裕龙招投标网'), /裕龙石化/);
+  assert.match(searchTermsForSourceName('中石油招投标网'), /缓蚀阻垢剂/);
+  assert.match(searchTermsForSourceName('某个未注册的招标网'), /阻垢剂/);
+  assert.match(actionStepsForSourceName('裕龙招投标网'), /安全验证/);
+  assert.match(actionStepsForSourceName('某个未注册的招标网'), /继续采集/);
 });
 
 test('all second-batch login sites are registered', () => {

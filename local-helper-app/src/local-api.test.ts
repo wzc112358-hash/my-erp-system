@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createLocalApiServer, resolveRuntimeDirs } from './local-api.ts';
+import { buildOpportunityCards } from './product-knowledge.ts';
 import { createTaskStore } from './task-store.ts';
 
 const requestJson = async (baseUrl: string, path: string, options: RequestInit = {}) => {
@@ -175,6 +176,42 @@ test('local API creates and runs local agent tasks without cloud pairing', async
       }],
       resultSummary: '本次采集识别到 1 条候选公告，请确认后上传 ERP 或生成群摘要。',
     }),
+    runAgentTask: async ({ task }) => ({
+      status: 'completed',
+      humanReason: '',
+      observation: {
+        title: task.sourceName,
+        url: `${task.entryUrl}#/agent-detail`,
+        visibleText: '2026-06-20 中石油缓蚀剂采购询价公告 截止 2026-06-25',
+        screenshotPath: '/tmp/hcz/agent.png',
+      },
+      candidateBundle: {
+        source_name: task.sourceName,
+        candidates: [{
+          title: '中石油缓蚀剂采购询价公告',
+          url: `${task.entryUrl}#/agent-detail`,
+          published_at: '2026-06-20',
+          deadline_at: '2026-06-25',
+          buyer_name: '中石油',
+          raw_text: '2026-06-20 中石油缓蚀剂采购询价公告 截止 2026-06-25',
+          attachments: [],
+        }],
+      },
+      artifacts: [{
+        artifact_type: 'log',
+        title: '链接发现',
+        url: task.entryUrl,
+        content: '1. 中石油缓蚀剂采购询价公告',
+        mime_type: 'text/plain',
+      }],
+      resultSummary: '发现 1 条招投标候选。',
+      discoveredLinks: [{
+        title: '中石油缓蚀剂采购询价公告',
+        url: `${task.entryUrl}#/agent-detail`,
+        source: 'mock-search',
+        score: 99,
+      }],
+    }),
   });
   await server.start();
   try {
@@ -189,19 +226,455 @@ test('local API creates and runs local agent tasks without cloud pairing', async
       }),
     });
     const taskId = created.body.task.id;
+    const agentRun = await requestJson(baseUrl, `/tasks/${taskId}/agent-run`, { method: 'POST' });
     const opened = await requestJson(baseUrl, `/tasks/${taskId}/run`, { method: 'POST' });
     const continued = await requestJson(baseUrl, `/tasks/${taskId}/continue-run`, { method: 'POST' });
     const tasks = await requestJson(baseUrl, '/tasks');
 
-    assert.ok(profiles.body.profiles.some((profile: { sourceName: string }) => profile.sourceName === '中石油招投标网'));
+    const cnpcProfile = profiles.body.profiles.find((profile: { sourceName: string }) => profile.sourceName === '中石油招投标网');
+    assert.ok(cnpcProfile);
+    assert.match(cnpcProfile.defaultSearchTerms, /缓蚀阻垢剂/);
     assert.equal(created.status, 201);
     assert.match(created.body.task.id, /^local-/);
     assert.equal(created.body.task.entryUrl, 'https://www.cnpcbidding.com/#/tenders');
+    assert.equal(agentRun.body.status, 'completed');
+    assert.equal(agentRun.body.discoveredLinks[0].source, 'mock-search');
     assert.equal(opened.body.status, 'request_human');
     assert.equal(continued.body.candidateBundle.candidates.length, 1);
     assert.equal(tasks.body.tasks[0].status, 'completed');
     assert.equal(tasks.body.tasks[0].lastCandidateBundle.candidates[0].title, '中石油缓蚀剂采购询价公告');
     assert.equal(tasks.body.tasks[0].lastArtifacts[0].artifact_type, 'dom_snapshot');
+    assert.equal(tasks.body.tasks[0].lastDiscoveredLinks[0].source, 'mock-search');
+    assert.ok(Array.isArray(tasks.body.tasks[0].lastOpportunityCards));
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API stores LLM settings, hides key, and tests with saved config', async () => {
+  const store = createTaskStore();
+  const testedConfigs: unknown[] = [];
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    testLLMConnection: async ({ config }) => {
+      testedConfigs.push(config);
+      return {
+        ok: true,
+        baseUrl: config?.baseUrl || '',
+        model: config?.model || '',
+        message: 'LLM 连接成功。',
+      };
+    },
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+
+    const saved = await requestJson(baseUrl, '/settings/llm', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: true,
+        baseUrl: 'https://llm.example/v1/',
+        apiKey: 'sk-local',
+        model: 'demo-model',
+      }),
+    });
+    const settings = await requestJson(baseUrl, '/settings/llm');
+    const tested = await requestJson(baseUrl, '/settings/llm/test', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(saved.body.baseUrl, 'https://llm.example/v1');
+    assert.equal(saved.body.hasApiKey, true);
+    assert.equal('apiKey' in saved.body, false);
+    assert.equal(settings.body.model, 'demo-model');
+    assert.equal(tested.body.ok, true);
+    assert.equal((testedConfigs[0] as { apiKey: string }).apiKey, 'sk-local');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API deep-reads one opportunity card and updates the task card', async () => {
+  const documentServer = http.createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('附件要求：第三方检测报告、供货业绩，允许代理商提供厂家授权。');
+  });
+  await new Promise<void>((resolve) => documentServer.listen(0, '127.0.0.1', resolve));
+  const documentAddress = documentServer.address();
+  if (!documentAddress || typeof documentAddress === 'string') throw new Error('document server not listening');
+  const documentUrl = `http://127.0.0.1:${documentAddress.port}/tender.txt`;
+
+  const store = createTaskStore();
+  const task = store.createTask({
+    sourceName: '能源一号',
+    entryUrl: 'https://example.com/list',
+    searchTerms: '阻聚剂',
+  });
+  const candidateBundle = {
+    source_name: '能源一号',
+    candidates: [{
+      title: '阻聚剂采购询源公告',
+      url: 'https://example.com/detail/1',
+      published_at: '2026-06-20',
+      deadline_at: '2026-06-25',
+      buyer_name: '中化',
+      raw_text: '阻聚剂采购询源公告',
+      attachments: [],
+    }],
+  };
+  store.continueTask(task.id, {
+    status: 'completed',
+    candidateBundle,
+    opportunityCards: buildOpportunityCards({ bundle: candidateBundle, task }),
+  });
+
+  let closed = false;
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    createBrowserRuntime: () => ({
+      open: async (url: string) => ({
+        title: '阻聚剂采购询源公告',
+        url,
+        visibleText: '详情页：阻聚剂 20 吨，报价截止 2026-06-25，代理商需厂家授权。',
+        links: [{
+          text: '下载采购文件',
+          href: documentUrl,
+        }],
+      }),
+      observe: async () => ({
+        title: '阻聚剂采购询源公告',
+        url: 'https://example.com/detail/1',
+        visibleText: '详情页',
+      }),
+      screenshot: async () => '/tmp/hcz/deep-read.png',
+      close: async () => {
+        closed = true;
+      },
+    }),
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const result = await requestJson(baseUrl, `/tasks/${task.id}/opportunities/0/deep-read`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const tasks = await requestJson(baseUrl, '/tasks');
+    const updated = tasks.body.tasks[0];
+
+    assert.equal(result.body.status, 'completed');
+    assert.equal(closed, true);
+    assert.match(result.body.resultSummary, /已查清楚/);
+    assert.ok(updated.lastOpportunityCards[0].deepReadAt);
+    assert.equal(updated.lastOpportunityCards[0].detailScreenshotPath, '/tmp/hcz/deep-read.png');
+    assert.match(updated.lastOpportunityCards[0].documentSummaries[0].textSnippet, /第三方检测报告/);
+    assert.match(updated.lastCandidateBundle.candidates[0].raw_text, /代理商需厂家授权/);
+    assert.ok(updated.lastArtifacts.some((artifact: { artifact_type: string }) => artifact.artifact_type === 'manual_text'));
+  } finally {
+    await server.stop();
+    await new Promise<void>((resolve, reject) => documentServer.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('local API exposes copy-ready WeChat summaries', async () => {
+  const store = createTaskStore();
+  const task = store.createTask({
+    sourceName: '能源一号',
+    entryUrl: 'https://example.com/list',
+    searchTerms: '阻聚剂',
+  });
+  const candidateBundle = {
+    source_name: '能源一号',
+    candidates: [{
+      title: '阻聚剂采购询源公告',
+      url: 'https://example.com/detail/1',
+      published_at: '2026-06-20',
+      deadline_at: '2026-06-25',
+      buyer_name: '中化',
+      raw_text: '阻聚剂采购询源公告，需要确认具体装置。',
+      attachments: [],
+    }],
+  };
+  store.continueTask(task.id, {
+    status: 'completed',
+    candidateBundle,
+    opportunityCards: buildOpportunityCards({ bundle: candidateBundle, task }),
+  });
+  const server = createLocalApiServer({ store, port: 0 });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const single = await requestJson(baseUrl, `/tasks/${task.id}/opportunities/0/wechat-summary`);
+    const report = await requestJson(baseUrl, `/tasks/${task.id}/wechat-report`);
+    const daily = await requestJson(baseUrl, '/wechat/daily-report');
+    const priorityBoard = await requestJson(baseUrl, '/opportunities/priority-board');
+    const priorityReport = await requestJson(baseUrl, '/wechat/priority-report');
+
+    assert.match(single.body.text, /【待确认】能源一号/);
+    assert.match(single.body.text, /阻聚剂/);
+    assert.match(report.body.text, /【站点日报】能源一号/);
+    assert.match(report.body.text, /建议重点关注/);
+    assert.match(daily.body.text, /今日招投标信息汇总/);
+    assert.match(daily.body.text, /阻聚剂采购询源公告/);
+    assert.equal(priorityBoard.body.actionableCount, 1);
+    assert.equal(priorityBoard.body.items[0].card.title, '阻聚剂采购询源公告');
+    assert.match(priorityReport.body.text, /今日招投标重点清单/);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API records opportunity feedback and returns ERP review draft', async () => {
+  const store = createTaskStore();
+  const task = store.createTask({
+    sourceName: '能源一号',
+    entryUrl: 'https://example.com/list',
+    searchTerms: '阻聚剂',
+  });
+  const candidateBundle = {
+    source_name: '能源一号',
+    candidates: [{
+      title: '阻聚剂采购询源公告',
+      url: 'https://example.com/detail/1',
+      published_at: '2026-06-20',
+      deadline_at: '2026-06-25',
+      buyer_name: '中化',
+      raw_text: '阻聚剂采购询源公告',
+      attachments: [],
+    }],
+  };
+  store.continueTask(task.id, {
+    status: 'completed',
+    candidateBundle,
+    opportunityCards: buildOpportunityCards({ bundle: candidateBundle, task }),
+  });
+  const server = createLocalApiServer({ store, port: 0 });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const feedback = await requestJson(baseUrl, `/tasks/${task.id}/opportunities/0/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({
+        status: 'irrelevant',
+        note: '不是我们产品',
+      }),
+    });
+    const tasks = await requestJson(baseUrl, '/tasks');
+    const learning = await requestJson(baseUrl, '/settings/feedback-learning');
+    const cleared = await requestJson(baseUrl, '/settings/feedback-learning/clear', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(feedback.body.card.feedbackStatus, 'irrelevant');
+    assert.equal(feedback.body.card.recommendedAction, 'ignore');
+    assert.equal(feedback.body.reviewDraft.decision, 'irrelevant');
+    assert.equal(feedback.body.learning.negativeCount, 1);
+    assert.match(feedback.body.reviewDraft.comment, /不是我们产品/);
+    assert.equal(tasks.body.tasks[0].lastOpportunityCards[0].feedbackStatus, 'irrelevant');
+    assert.equal(learning.body.negativeCount, 1);
+    assert.equal(cleared.body.noticeCount, 0);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API manages daily schedules and runs due local tasks', async () => {
+  const store = createTaskStore();
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    enableScheduler: false,
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    const saved = await requestJson(baseUrl, '/schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: 'schedule-1',
+        sourceName: '能源一号（兰州恒化成）',
+        times: '09:00',
+        runMode: 'create_task_only',
+      }),
+    });
+    const due = await requestJson(baseUrl, '/schedules/run-due', {
+      method: 'POST',
+      body: JSON.stringify({
+        now: '2026-06-22T09:05:00+08:00',
+        windowMinutes: 10,
+      }),
+    });
+    const repeated = await requestJson(baseUrl, '/schedules/run-due', {
+      method: 'POST',
+      body: JSON.stringify({
+        now: '2026-06-22T09:06:00+08:00',
+        windowMinutes: 10,
+      }),
+    });
+    const schedules = await requestJson(baseUrl, '/schedules');
+    const tasks = await requestJson(baseUrl, '/tasks');
+
+    assert.equal(saved.body.schedule.searchTerms.includes('恒化成'), true);
+    assert.equal(due.body.dueCount, 1);
+    assert.equal(due.body.runs[0].task.status, 'pending');
+    assert.equal(repeated.body.dueCount, 0);
+    assert.equal(schedules.body.schedules[0].lastTaskId, tasks.body.tasks[0].id);
+    assert.equal(tasks.body.tasks[0].ownerName, '本地自动巡检');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API can run a schedule immediately through the agent path', async () => {
+  const store = createTaskStore();
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    enableScheduler: false,
+    createBrowserRuntime: () => ({
+      open: async () => ({ visibleText: '', url: 'https://example.com/list' }),
+      close: async () => undefined,
+    }),
+    runAgentTask: async ({ task }) => ({
+      status: 'completed',
+      humanReason: '',
+      observation: {
+        title: task.sourceName,
+        url: task.entryUrl,
+        visibleText: '阻聚剂采购询源公告',
+      },
+      candidateBundle: {
+        source_name: task.sourceName,
+        candidates: [{
+          title: '阻聚剂采购询源公告',
+          url: 'https://example.com/detail/1',
+          published_at: '2026-06-22',
+          deadline_at: '2026-06-25',
+          buyer_name: '中化',
+          raw_text: '阻聚剂采购询源公告',
+          attachments: [],
+        }],
+      },
+      artifacts: [],
+      resultSummary: '',
+      opportunityCards: [],
+    }),
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    await requestJson(baseUrl, '/schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: 'schedule-agent',
+        sourceName: '能源一号',
+        entryUrl: 'https://example.com/list',
+        searchTerms: '阻聚剂',
+        times: '09:00',
+        runMode: 'agent',
+      }),
+    });
+    const run = await requestJson(baseUrl, '/schedules/schedule-agent/run-now', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const tasks = await requestJson(baseUrl, '/tasks');
+
+    assert.equal(run.body.schedule.lastStatus, 'completed');
+    assert.equal(tasks.body.tasks[0].status, 'completed');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('local API uses feedback learning when generating future opportunity cards', async () => {
+  const store = createTaskStore();
+  const firstTask = store.createTask({
+    sourceName: '能源一号',
+    entryUrl: 'https://example.com/list',
+    searchTerms: '宽泛化工',
+  });
+  store.continueTask(firstTask.id, {
+    status: 'completed',
+    opportunityCards: [{
+      id: 'card-1',
+      title: '宽泛化工服务采购公告',
+      sourceName: '能源一号',
+      url: 'https://example.com/detail/old',
+      buyerName: '中化',
+      publishedAt: '2026-06-20',
+      deadlineAt: '2026-06-25',
+      matchedTerms: ['宽泛化工'],
+      matchedSources: ['curated'],
+      relevanceScore: 50,
+      bidability: 'needs_manual_check',
+      hardRequirements: [],
+      riskFlags: [],
+      missingInfo: [],
+      recommendedAction: 'ask_boss',
+      evidenceText: '宽泛化工服务采购公告',
+      wechatSummary: '【待确认】能源一号 - 宽泛化工服务采购公告',
+      confidence: 0.5,
+    }],
+  });
+  store.updateOpportunityFeedback(firstTask.id, 0, {
+    status: 'irrelevant',
+    updatedAt: '2026-06-22T10:00:00.000Z',
+  });
+  const secondTask = store.createTask({
+    sourceName: '能源一号',
+    entryUrl: 'https://example.com/list',
+    searchTerms: '宽泛化工',
+  });
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    createBrowserRuntime: () => ({
+      open: async () => ({ visibleText: '', url: 'https://example.com/list' }),
+      close: async () => undefined,
+    }),
+    continueLocalTaskAfterHuman: async ({ task }) => ({
+      status: 'completed',
+      humanReason: '',
+      observation: {
+        title: task.sourceName,
+        url: `${task.entryUrl}#/list`,
+        visibleText: '宽泛化工服务采购公告',
+      },
+      candidateBundle: {
+        source_name: task.sourceName,
+        candidates: [{
+          title: '宽泛化工服务采购公告',
+          url: 'https://example.com/detail/new',
+          published_at: '2026-06-22',
+          deadline_at: '2026-06-30',
+          buyer_name: '中化',
+          raw_text: '宽泛化工服务采购公告',
+          attachments: [],
+        }],
+      },
+      artifacts: [],
+      resultSummary: '',
+    }),
+  });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    await requestJson(baseUrl, `/tasks/${secondTask.id}/continue-run`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const tasks = await requestJson(baseUrl, '/tasks');
+    const updated = tasks.body.tasks.find((task: any) => task.id === secondTask.id);
+
+    assert.equal(updated.lastOpportunityCards[0].relevanceScore, 0);
+    assert.equal(updated.lastOpportunityCards[0].recommendedAction, 'ignore');
+    assert.deepEqual(updated.lastOpportunityCards[0].matchedTerms, []);
   } finally {
     await server.stop();
   }

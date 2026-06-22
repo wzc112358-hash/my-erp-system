@@ -43,6 +43,7 @@ export const ReceiptAPI = {
     if (data.method) formData.append('method', data.method);
     if (data.account) formData.append('account', data.account);
     if (data.remark) formData.append('remark', data.remark);
+    formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<SaleReceipt>('sale_receipts', formData, attachments);
   },
 

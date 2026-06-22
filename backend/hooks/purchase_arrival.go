@@ -97,7 +97,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 			newStatus := e.Record.GetString("manager_confirmed")
 
 			if oldStatus == "pending" && newStatus == "approved" {
-				creatorId := e.Record.GetString("creator")
+				creatorId := e.Record.GetString("creator_user")
 				trackingNo := e.Record.GetString("tracking_contract_no")
 				title := "采购发货已确认"
 				message := fmt.Sprintf("经理已确认您的采购发货信息，发货批次：%s", trackingNo)

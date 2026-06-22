@@ -1,0 +1,15 @@
+# 临时 Dockerfile：用本地预编译的新二进制（pocketbase_newbin），
+# 绕开 root 所有的旧 pocketbase 文件无法覆盖的问题
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+# 用新编译的二进制（含 debt_percent 修复 + creator_user hook 改动）
+COPY pocketbase_newbin ./pocketbase
+COPY pb_migrations ./pb_migrations
+
+EXPOSE 8090
+
+CMD ["./pocketbase", "serve", "--http=0.0.0.0:8090"]

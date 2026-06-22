@@ -14,7 +14,10 @@ func RegisterServiceContractHooks(app *pocketbase.PocketBase) {
 			if !e.Record.GetBool("is_cross_border") {
 				e.Record.Set("is_cross_border", false)
 			}
-			creatorId := e.Record.GetString("creator")
+			creatorId := e.Record.GetString("creator_user")
+			if creatorId == "" {
+				creatorId = e.Record.GetString("creator")
+			}
 			if creatorId != "" {
 				e.Record.Set("creator_user", creatorId)
 			}

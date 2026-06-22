@@ -175,7 +175,7 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			newStatus := e.Record.GetString("manager_confirmed")
 
 			if oldStatus == "pending" && newStatus == "approved" {
-				creatorId := e.Record.GetString("creator")
+				creatorId := e.Record.GetString("creator_user")
 				invoiceNo := e.Record.GetString("no")
 				contractNo := contract.GetString("no")
 				productName := contract.GetString("product_name")

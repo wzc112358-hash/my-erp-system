@@ -42,6 +42,7 @@ export const SaleInvoiceAPI = {
     formData.append('amount', String(data.amount));
     formData.append('issue_date', data.issue_date);
     if (data.remark) formData.append('remark', data.remark);
+    formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<SaleInvoice>('sale_invoices', formData, attachments);
   },
 

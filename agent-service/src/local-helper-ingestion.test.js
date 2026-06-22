@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildOpportunityReviewDraftsByCandidateKey,
   buildRawCandidatesFromCandidateBundle,
   ingestCandidateBundleArtifact,
 } from './local-helper-ingestion.js';
@@ -40,6 +41,28 @@ test('buildRawCandidatesFromCandidateBundle maps local helper candidate bundle i
     attachmentUrls: ['https://example.com/a.pdf'],
     sourceKeywords: '',
   }]);
+});
+
+test('buildOpportunityReviewDraftsByCandidateKey maps local feedback drafts by candidate URL and title', () => {
+  const drafts = buildOpportunityReviewDraftsByCandidateKey([{
+    title: '阻聚剂采购询源公告',
+    url: 'https://example.com/notices/1',
+    erpReviewDraft: {
+      review_type: 'employee',
+      decision: 'follow',
+      comment: '员工反馈：有价值',
+    },
+  }, {
+    title: '无反馈公告',
+    url: 'https://example.com/notices/2',
+  }]);
+
+  assert.equal(drafts.size, 1);
+  assert.deepEqual(drafts.get('https://example.com/notices/1|阻聚剂采购询源公告'), {
+    review_type: 'employee',
+    decision: 'follow',
+    comment: '员工反馈：有价值',
+  });
 });
 
 test('ingestCandidateBundleArtifact upserts related opportunities and marks the agent task completed', async () => {
@@ -132,6 +155,86 @@ test('ingestCandidateBundleArtifact upserts related opportunities and marks the 
       uploaded_artifacts: 'local-run-1',
     },
   }]);
+});
+
+test('ingestCandidateBundleArtifact creates employee reviews from local opportunity feedback drafts', async () => {
+  const createdRecords = [];
+  const result = await ingestCandidateBundleArtifact({
+    token: 'pb-token',
+    task: {
+      id: 'task-energy',
+      source: 'source-energy',
+      monitor_run: 'run-energy',
+      source_name: '能源一号',
+      owner_name: '小魏',
+    },
+    run: { id: 'local-run-1' },
+    candidateBundle: {
+      source_name: '能源一号',
+      candidates: [{
+        title: '阻聚剂采购询源公告',
+        url: 'https://example.com/notices/1',
+        published_at: '2026-06-01',
+        deadline_at: '2026-06-10',
+        buyer_name: '中化',
+        raw_text: '采购阻聚剂，截止 2026-06-10。',
+        attachments: [],
+      }],
+      opportunityCards: [{
+        title: '阻聚剂采购询源公告',
+        url: 'https://example.com/notices/1',
+        erpReviewDraft: {
+          review_type: 'employee',
+          decision: 'needs_boss',
+          comment: '员工反馈：待老板确认',
+        },
+      }],
+    },
+    listRecordsFn: async () => [],
+    createRecordFn: async (collection, token, data) => {
+      assert.equal(token, 'pb-token');
+      const record = { id: `${collection}-${createdRecords.length + 1}`, collection, ...data };
+      createdRecords.push(record);
+      return record;
+    },
+    updateRecordFn: async (_collection, id, _token, data) => ({ id, ...data }),
+    processor: async (rawCandidates) => rawCandidates.map((candidate) => ({
+      sourceName: candidate.sourceName,
+      ownerName: candidate.ownerName,
+      title: candidate.title,
+      url: candidate.url,
+      fingerprint: 'fp-energy-1',
+      publishDate: candidate.publishDate,
+      deadlineDate: candidate.deadlineDate,
+      buyerName: candidate.buyerName,
+      productKeywords: ['阻聚剂'],
+      sourceKeywords: '',
+      attachmentUrls: [],
+      rawText: candidate.content,
+      classification: {
+        relevance: 'likely_related',
+        relevanceScore: 0.9,
+        matchedTerms: ['阻聚剂'],
+        matchedSources: ['local_helper'],
+        evidenceText: candidate.content,
+        negativeTerms: [],
+        classificationVersion: 'test-classifier-v1',
+        needsHumanCheck: true,
+        productKeywords: ['阻聚剂'],
+        summary: '疑似产品：阻聚剂',
+        hardRequirements: [],
+        riskFlags: [],
+      },
+    })),
+  });
+
+  const review = createdRecords.find((record) => record.collection === 'opportunity_reviews');
+  const opportunity = createdRecords.find((record) => record.collection === 'bid_opportunities');
+  assert.equal(result.createdReviewCount, 1);
+  assert.equal(review.opportunity, opportunity.id);
+  assert.equal(review.review_type, 'employee');
+  assert.equal(review.decision, 'needs_boss');
+  assert.match(review.comment, /待老板确认/);
 });
 
 test('ingestCandidateBundleArtifact keeps the agent task open when no opportunity can be persisted', async () => {

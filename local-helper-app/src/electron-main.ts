@@ -102,6 +102,8 @@ const server = createLocalApiServer({
   helperVersion,
   rendererDir,
 });
+let serverStopped = false;
+let gracefulQuitStarted = false;
 
 const loadRendererWindow = async (
   window: InstanceType<typeof BrowserWindow>,
@@ -434,10 +436,20 @@ setTimeout(() => {
 }, 30000);
 
 app.on('window-all-closed', (event) => {
-  event.preventDefault();
+  appendStartupLog('window-all-closed; quitting helper process');
+  if (!gracefulQuitStarted) app.quit();
 });
 
-app.on('before-quit', async () => {
+app.on('before-quit', (event) => {
   appendStartupLog('before quit');
-  await server.stop().catch(() => null);
+  if (serverStopped) return;
+  event.preventDefault();
+  gracefulQuitStarted = true;
+  void (async () => {
+    serverStopped = true;
+    tray?.destroy();
+    tray = null;
+    await server.stop().catch((error) => appendStartupLog('local api stop failed during quit', error));
+    app.quit();
+  })();
 });
