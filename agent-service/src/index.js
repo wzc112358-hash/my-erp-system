@@ -10,16 +10,10 @@ import { buildConfirmationPackage } from './domain/confirmation-package.js';
 import { extractDocumentInsight } from './domain/document-ingestion.js';
 import { classifyWithLlm } from './domain/llm-classifier.js';
 import {
-  buildLocalHelperTaskShape,
-  buildManualAssistTask,
-  entryUrlForSource,
-  sessionStatusForSource,
-} from './domain/manual-assist.js';
-import {
   buildOpportunityPayload,
   shouldPersistOpportunity,
 } from './opportunity-persistence.js';
-import { CRAWL_STRATEGIES, resolveSourceStrategy } from './source-strategies.js';
+import { isCloudManagedSource, resolveSourceStrategy } from './source-strategies.js';
 
 export {
   buildOpportunityPayload,
@@ -31,9 +25,6 @@ const SUPERUSER_EMAIL = process.env.POCKETBASE_SUPERUSER_EMAIL || process.env.PO
 const SUPERUSER_PASSWORD = process.env.POCKETBASE_SUPERUSER_PASSWORD || process.env.POCKETBASE_ADMIN_PASSWORD;
 const SAMPLE_MODE = process.env.OPPORTUNITY_AGENT_SAMPLE_MODE === '1';
 const SCHEDULE_TIME_ZONE = process.env.OPPORTUNITY_AGENT_TIME_ZONE || 'Asia/Shanghai';
-const BROWSER_WORKER_URL = process.env.BROWSER_WORKER_URL || '';
-const BROWSER_PUBLIC_BASE_URL = process.env.BROWSER_PUBLIC_BASE_URL || '';
-const BROWSER_INTERNAL_API_TOKEN = process.env.BROWSER_INTERNAL_API_TOKEN || '';
 const COLLECTOR_SERVICE_URL = process.env.COLLECTOR_SERVICE_URL || '';
 
 const request = async (path, options = {}) => {
@@ -98,74 +89,54 @@ const auditLog = async (token, data) => {
 };
 
 const sampleCandidatesFor = (source) => {
-  if (!SAMPLE_MODE) return [];
-  if (!source.source_name.includes('裕龙') && !source.source_name.includes('云梦泽')) return [];
+  if (!SAMPLE_MODE || !isCloudManagedSource(source)) return [];
   return [
     {
       sourceId: source.id,
       sourceName: source.source_name,
       ownerName: source.owner_name,
-      title: `${source.source_name} 缓蚀阻垢剂采购公告`,
-      url: source.source_url || `https://example.com/${encodeURIComponent(source.source_name)}/notice`,
-      content: '采购单位：示例采购单位。投标截止日期：2099-01-02。允许代理商投标，需第三方检测报告，需中石油8位码。',
+      title: '国能化工三剂亚硫酸氢钠询价采购公告',
+      url: source.source_url || 'https://www.chnenergybidding.com.cn/',
+      content: '采购单位：示例采购单位。投标截止日期：2099-01-02。采购亚硫酸氢钠、水处理剂。',
     },
   ];
 };
 
-const COLLECTOR_MODES = new Set(['http_html', 'http_json', 'crawl4ai_markdown', 'scrapling_fetch']);
+const COLLECTOR_MODES = new Set(['http_html', 'http_json']);
 
 const shouldUseCollectorService = (strategy, collectorServiceUrl) => (
   Boolean(collectorServiceUrl) &&
-  !strategy.requiresManualAssist &&
-  ['cloud_auto', 'cloud_then_local'].includes(strategy.collectionPath) &&
+  strategy.collectionPath === 'cloud_auto' &&
   COLLECTOR_MODES.has(strategy.crawlStrategy)
 );
-
-export const shouldFallbackToLocalHelper = ({
-  strategy = {},
-  rawCandidates = [],
-  error = null,
-} = {}) => (
-  strategy.collectionPath === 'cloud_then_local' &&
-  strategy.fallbackPath === 'local_helper' &&
-  (Boolean(error) || rawCandidates.length === 0)
-);
-
-export const buildLocalHelperFallbackStrategy = (strategy = {}, error = null) => {
-  const reason = error
-    ? `云端采集失败，已转本地助手：${error.message}`
-    : '云端采集无候选公告，已转本地助手，避免误记 no_new。';
-  return {
-    ...strategy,
-    crawlStrategy: CRAWL_STRATEGIES.LOCAL_HELPER,
-    manualAssistReason: reason,
-  };
-};
 
 export const collectCandidates = async (source, {
   collectorServiceUrl = COLLECTOR_SERVICE_URL,
 } = {}) => {
   if (SAMPLE_MODE) return sampleCandidatesFor(source);
+  if (!isCloudManagedSource(source)) return [];
+
   const strategy = resolveSourceStrategy(source);
-  if (strategy.requiresManualAssist) return [];
+  const sourceForCollection = {
+    ...source,
+    category_names: strategy.categoryNames.join(','),
+    category_urls: strategy.categoryUrls.join(','),
+    crawl_strategy: strategy.crawlStrategy,
+  };
   if (shouldUseCollectorService(strategy, collectorServiceUrl)) {
     return collectSourceWithCollector({
       collectorUrl: collectorServiceUrl,
-      source,
+      source: sourceForCollection,
       mode: strategy.crawlStrategy,
     });
   }
-  if (strategy.crawlStrategy === 'http_html') return collectHttpHtmlCandidates(source, {
-    enrichDetails: process.env.OPPORTUNITY_AGENT_ENRICH_DETAILS !== '0',
-  });
+  if (strategy.crawlStrategy === 'http_html') {
+    return collectHttpHtmlCandidates(sourceForCollection, {
+      enrichDetails: process.env.OPPORTUNITY_AGENT_ENRICH_DETAILS !== '0',
+    });
+  }
   return [];
 };
-
-export const needsManualRun = (source) => (
-  source.status === 'manual_required' ||
-  (!SAMPLE_MODE && !source.source_url) ||
-  (!SAMPLE_MODE && resolveSourceStrategy(source).requiresManualAssist)
-);
 
 const parsePocketBaseDate = (value) => {
   if (!value) return null;
@@ -177,7 +148,7 @@ const parsePocketBaseDate = (value) => {
 };
 
 export const shouldRunSource = (source, now = new Date()) => {
-  if (source.status !== 'active' && source.status !== 'manual_required') return false;
+  if (!isCloudManagedSource(source) || source.status !== 'active') return false;
   const times = String(source.schedule_times || '09:00,12:00,15:00,17:30')
     .split(',')
     .map((value) => value.trim())
@@ -215,153 +186,13 @@ const upsertOpportunity = async (
   return record;
 };
 
-export const shouldCreateLoginSession = (source = {}) => (
-  source.requires_login === true ||
-  source.may_have_captcha === true ||
-  source.login_type === 'account' ||
-  ['playwright_dom', 'playwright_network'].includes(source.crawl_strategy)
-);
-
-const normalizeServiceUrl = (value = '') => String(value || '').replace(/\/+$/, '');
-
-export const requestBrowserSession = async (source, {
-  browserWorkerUrl = BROWSER_WORKER_URL,
-  browserPublicBaseUrl = BROWSER_PUBLIC_BASE_URL,
-  browserWorkerToken = BROWSER_INTERNAL_API_TOKEN,
-  fetchImpl = fetch,
-} = {}) => {
-  const baseUrl = normalizeServiceUrl(browserWorkerUrl);
-  if (!baseUrl) return null;
-  const body = {
-    sourceId: source.id || '',
-    sourceName: source.source_name || '',
-    ownerName: source.owner_name || '',
-    loginUrl: entryUrlForSource(source),
-  };
-  if (browserPublicBaseUrl) {
-    body.publicBaseUrl = browserPublicBaseUrl;
-  }
-  const response = await fetchImpl(`${baseUrl}/sessions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(browserWorkerToken ? { Authorization: `Bearer ${browserWorkerToken}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`browser-worker ${response.status} ${response.statusText}: ${text}`);
-  }
-  return response.json();
-};
-
-export const buildLoginSessionPayload = (source, browserSession = null) => {
-  const fallbackStatus = sessionStatusForSource(source) || 'login_required';
-  return {
-    source: source.id || '',
-    source_name: source.source_name || '',
-    owner_name: source.owner_name || '',
-    status: browserSession?.status || fallbackStatus,
-    login_url: browserSession?.login_url || entryUrlForSource(source),
-    browser_url: browserSession?.browser_url || '',
-    profile_ref: browserSession?.profile_ref || '',
-    expires_at: browserSession?.expires_at || '',
-    last_error: browserSession?.last_error || '',
-    security_note: '员工只在远程浏览器中完成登录；Agent 复用服务器侧会话，不在 ERP 页面展示密码。',
-  };
-};
-
-export const ensureLoginSession = async ({
-  token,
-  source,
-  createRecordFn = createRecord,
-  browserWorkerFn = requestBrowserSession,
-} = {}) => {
-  let browserSession = null;
-  try {
-    browserSession = await browserWorkerFn(source);
-  } catch (error) {
-    browserSession = {
-      status: 'login_required',
-      last_error: error.message,
-    };
-  }
-  return createRecordFn('agent_login_sessions', token, buildLoginSessionPayload(source, browserSession));
-};
-
-export const buildManualTaskPayload = ({
-  source,
-  run,
-  strategy = {},
-  session = null,
-  now,
-} = {}) => {
-  const taskSource = {
-    ...source,
-    source_url: source.source_url || strategy.categoryUrls?.[0] || '',
-    category_urls: source.category_urls || strategy.categoryUrls?.join(',') || '',
-    crawl_strategy: strategy.crawlStrategy || source.crawl_strategy,
-  };
-  const payload = buildManualAssistTask({
-    source: taskSource,
-    run,
-    reason: strategy.manualAssistReason,
-    now,
-  });
-  if (!session) return payload;
-  return {
-    ...payload,
-    session: session.id || '',
-    session_status: session.status || payload.session_status,
-    browser_url: session.browser_url || payload.browser_url,
-  };
-};
-
-const createManualTask = async (token, source, run, strategy) => {
-  try {
-    let session = null;
-    if (shouldCreateLoginSession(source)) {
-      try {
-        session = await ensureLoginSession({ token, source });
-      } catch (error) {
-        await auditLog(token, {
-          action: 'create_login_session',
-          target_collection: 'agent_login_sessions',
-          target_id: source.id,
-          input_summary: `${source.owner_name} ${source.source_name}`,
-          output_summary: 'failed',
-          status: 'failed',
-          error_message: error.message,
-        });
-      }
-    }
-    return await createRecord('agent_tasks', token, buildManualTaskPayload({
-      source,
-      run,
-      strategy,
-      session,
-    }));
-  } catch (error) {
-    await auditLog(token, {
-      action: 'create_manual_task',
-      target_collection: 'agent_tasks',
-      target_id: source.id,
-      input_summary: `${source.owner_name} ${source.source_name}`,
-      output_summary: 'failed',
-      status: 'failed',
-      error_message: error.message,
-    });
-    return null;
-  }
-};
-
 const dryRunSources = [
   {
     id: 'dry-source-1',
-    source_name: '群聊历史样本',
+    source_name: '国能网',
     owner_name: '小杨',
-    source_url: 'https://example.com/notices',
+    source_url: 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html',
+    category_urls: 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html',
     status: 'active',
     login_type: 'none',
     requires_login: false,
@@ -372,7 +203,7 @@ const dryRunSources = [
 const dryRunCandidates = [
   {
     sourceId: 'dry-source-1',
-    sourceName: '群聊历史样本',
+    sourceName: '国能网',
     ownerName: '小杨',
     title: '炼油四部用塑料用抗静电剂（2026-2027）框架采购询比采购公告',
     url: 'https://example.com/notices/anti-static',
@@ -380,7 +211,7 @@ const dryRunCandidates = [
   },
   {
     sourceId: 'dry-source-1',
-    sourceName: '群聊历史样本',
+    sourceName: '国能网',
     ownerName: '小杨',
     title: '办公用品采购公告',
     url: 'https://example.com/notices/office',
@@ -500,40 +331,12 @@ export const runDocumentTextDryRun = ({
   };
 };
 
-export const runManualTaskDryRun = () => {
-  const manualSource = {
-    id: 'manual-src-1',
-    source_name: '云梦泽询价网',
-    owner_name: '小陈',
-    source_url: 'https://example.com/manual',
-    crawl_strategy: 'manual_assist',
-    manual_assist_reason: '账号登录后搜索询价',
-  };
-  const localSource = {
-    id: 'local-src-1',
-    source_name: '中石油招投标网',
-    owner_name: '小陈',
-    source_url: 'https://example.com/local',
-    crawl_strategy: 'local_helper',
-    credential_ref: 'secret:cnpc:xiaochen',
-  };
-  const run = { id: 'manual-run-1' };
-  const tasks = [
-    buildManualAssistTask({ source: manualSource, run, now: new Date('2026-05-25T09:00:00+08:00') }),
-    buildManualAssistTask({ source: localSource, run, now: new Date('2026-05-25T09:00:00+08:00') }),
-  ];
-  return {
-    tasks,
-    local_helper_contract: buildLocalHelperTaskShape({ source: localSource, task: tasks[1] }),
-  };
-};
-
 export const runConfirmationPackageDryRun = () => buildConfirmationPackage({
   opportunity: {
-    title: '裕龙石化缓蚀阻垢剂采购公告',
-    source_name: '裕龙招投标网',
-    owner_name: '小白',
-    buyer_name: '裕龙石化有限公司',
+    title: '国能网缓蚀阻垢剂采购公告',
+    source_name: '国能网',
+    owner_name: '小杨',
+    buyer_name: '国家能源集团',
     deadline_date: '2099-01-02',
     product_keywords: '缓蚀阻垢剂,阻垢剂',
     evidence_text: '命中缓蚀阻垢剂，需第三方检测报告。',
@@ -558,42 +361,25 @@ export const runOnce = async ({
   processCandidatesFn = processCandidatesWithEnhancement,
   createRecordFn = createRecord,
   updateRecordFn = updateRecord,
-  createManualTaskFn = createManualTask,
   auditLogFn = auditLog,
   classifierEnhancer = classifyWithLlm,
 } = {}) => {
   const token = await loginFn();
   const sources = await listAllFn('monitor_sources', token, '&sort=owner_name,source_name');
+  const cloudSources = sources.filter(isCloudManagedSource);
   const existing = await listAllFn('bid_opportunities', token);
   const existingByFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
   const allProcessed = [];
   const runIds = [];
 
-  for (const source of sources.filter((item) => shouldRunSourceFn(item))) {
+  for (const source of cloudSources.filter((item) => shouldRunSourceFn(item))) {
     try {
-      const strategy = resolveSourceStrategy(source);
-      let rawCandidates = [];
-      let collectionError = null;
-      try {
-        rawCandidates = await collectCandidatesFn(source);
-      } catch (error) {
-        if (!shouldFallbackToLocalHelper({ strategy, error })) throw error;
-        collectionError = error;
-      }
+      const rawCandidates = await collectCandidatesFn(source);
       const processed = await processCandidatesFn(rawCandidates, {
         classifierEnhancer,
       });
       const relatedCount = processed.filter((item) => ['likely_related', 'needs_manual_review'].includes(item.classification.relevance)).length;
-      const fallbackToLocalHelper = shouldFallbackToLocalHelper({
-        strategy,
-        rawCandidates,
-        error: collectionError,
-      });
-      const taskStrategy = fallbackToLocalHelper
-        ? buildLocalHelperFallbackStrategy(strategy, collectionError)
-        : strategy;
-      const manual = needsManualRun(source) || fallbackToLocalHelper;
-      const status = manual ? 'manual_required' : processed.length > 0 ? 'success' : 'no_new';
+      const status = processed.length > 0 ? 'success' : 'no_new';
       const run = await createRecordFn('monitor_runs', token, {
         source: source.id,
         source_name: source.source_name,
@@ -602,12 +388,9 @@ export const runOnce = async ({
         status,
         found_count: processed.length,
         related_count: relatedCount,
-        error_message: manual ? taskStrategy.manualAssistReason || '该网站第一版需要人工处理或补充登录/验证码方案' : '',
+        error_message: '',
       });
       runIds.push(run.id);
-      if (manual) {
-        await createManualTaskFn(token, source, run, taskStrategy);
-      }
       for (const item of processed.filter(shouldPersistOpportunity)) {
         const record = await upsertOpportunity(token, source, run, item, existingByFingerprint, createRecordFn);
         if (record) allProcessed.push(item);
@@ -720,8 +503,6 @@ if (process.argv[1]?.endsWith('/index.js')) {
       ownerName: argValue('--owner-name') || '未分配',
       url: argValue('--document-url') || '',
     }), null, 2));
-  } else if (process.argv.includes('--manual-task-dry-run')) {
-    console.log(JSON.stringify(runManualTaskDryRun(), null, 2));
   } else if (process.argv.includes('--confirmation-package-json')) {
     console.log(JSON.stringify(runConfirmationPackageDryRun(), null, 2));
   } else if (command === 'serve' || command === 'start' || command === 'scheduler') {

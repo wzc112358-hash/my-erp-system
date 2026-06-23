@@ -10,7 +10,6 @@ import {
   Modal,
   Select,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
@@ -20,26 +19,18 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined,
   CopyOutlined,
-  EditOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
   ReloadOutlined,
   SearchOutlined,
-  ApiOutlined,
 } from '@ant-design/icons';
 import { OpportunityAPI } from '@/api/opportunity';
 import type {
-  AgentTask,
-  AgentArtifact,
   BidDocument,
   BidOpportunity,
-  LocalHelperDevice,
   MonitorRun,
-  MonitorSource,
-  MonitorSourceFormData,
   OpportunityReviewDecision,
   OpportunityStatus,
-  LocalHelperHealth,
 } from '@/types/opportunity';
 import { useAuthStore } from '@/stores/auth';
 
@@ -74,68 +65,11 @@ const urgencyMap: Record<string, { label: string; color: string }> = {
   unknown: { label: '未知', color: 'default' },
 };
 
-const crawlStrategyMap: Record<string, { label: string; color: string }> = {
-  http_html: { label: 'HTML', color: 'green' },
-  http_json: { label: 'API', color: 'cyan' },
-  playwright_dom: { label: '浏览器DOM', color: 'blue' },
-  playwright_network: { label: '浏览器网络', color: 'purple' },
-  manual_assist: { label: '人工协助', color: 'orange' },
-  local_helper: { label: '本地助手', color: 'magenta' },
-};
-
-const searchBehaviorMap: Record<string, { label: string; color: string }> = {
-  none: { label: '不用站内搜索', color: 'default' },
-  supplemental: { label: '搜索作补充', color: 'blue' },
-  primary: { label: '搜索为主', color: 'purple' },
-};
-
 const documentStatusMap: Record<string, { label: string; color: string }> = {
   pending: { label: '待解析', color: 'orange' },
   parsed: { label: '已解析', color: 'green' },
   empty: { label: '无文本', color: 'default' },
   failed: { label: '解析失败', color: 'red' },
-};
-
-const agentTaskTypeMap: Record<string, { label: string; color: string }> = {
-  manual_assist: { label: '人工协助', color: 'orange' },
-  local_helper: { label: '本地助手', color: 'magenta' },
-  document_upload: { label: '补资料', color: 'blue' },
-  captcha: { label: '验证码', color: 'red' },
-  purchase_document: { label: '买标书', color: 'purple' },
-};
-
-const agentTaskStatusMap: Record<string, { label: string; color: string }> = {
-  pending: { label: '待处理', color: 'orange' },
-  in_progress: { label: '处理中', color: 'blue' },
-  request_human: { label: '需人工继续', color: 'purple' },
-  completed: { label: '已完成', color: 'green' },
-  failed: { label: '失败', color: 'red' },
-  cancelled: { label: '已取消', color: 'default' },
-};
-
-const localHelperDeviceStatusMap: Record<string, { label: string; color: string }> = {
-  pending_pair: { label: '待配对', color: 'orange' },
-  active: { label: '已配对', color: 'green' },
-  revoked: { label: '已撤销', color: 'default' },
-};
-
-const artifactTypeMap: Record<string, { label: string; color: string }> = {
-  candidate_bundle: { label: '候选包', color: 'green' },
-  screenshot: { label: '截图', color: 'blue' },
-  log: { label: '日志', color: 'orange' },
-  dom_snapshot: { label: 'DOM', color: 'purple' },
-  network_response: { label: '网络响应', color: 'cyan' },
-  attachment: { label: '附件', color: 'geekblue' },
-  manual_text: { label: '人工文本', color: 'gold' },
-};
-
-const loginSessionStatusMap: Record<string, { label: string; color: string }> = {
-  not_started: { label: '未开始', color: 'default' },
-  login_required: { label: '需登录', color: 'orange' },
-  active: { label: '已登录', color: 'green' },
-  expired: { label: '已过期', color: 'red' },
-  failed: { label: '失败', color: 'red' },
-  revoked: { label: '已撤销', color: 'default' },
 };
 
 const fmtDate = (value?: string) => value?.split(' ')[0] || '-';
@@ -162,29 +96,6 @@ const BOSS_DECISIONS: Array<{ label: string; value: OpportunityReviewDecision }>
   { label: '需补资料', value: 'needs_documents' },
 ];
 
-const errorMessageOf = (error: unknown, fallback: string) => {
-  const maybeResponse = error as { response?: { data?: { message?: string; data?: Record<string, { message?: string }> } } };
-  const fieldMessages = maybeResponse.response?.data?.data
-    ? Object.entries(maybeResponse.response.data.data)
-      .map(([field, detail]) => `${field}: ${detail.message || '字段校验失败'}`)
-      .join('；')
-    : '';
-  if (fieldMessages) return fieldMessages;
-  if (maybeResponse.response?.data?.message) return maybeResponse.response.data.message;
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-};
-
-const copyTextSafely = async (text: string) => {
-  if (!navigator.clipboard?.writeText) return false;
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const decisionToStatus = (decision: OpportunityReviewDecision): OpportunityStatus => {
   if (decision === 'approved') return 'converted';
   if (decision === 'rejected') return 'irrelevant';
@@ -206,29 +117,19 @@ const buildConfirmationPackageText = (opportunity: BidOpportunity, decisionComme
 ].join('\n');
 
 const OpportunityMonitorPage: React.FC = () => {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const [opportunities, setOpportunities] = useState<BidOpportunity[]>([]);
-  const [sources, setSources] = useState<MonitorSource[]>([]);
   const [runs, setRuns] = useState<MonitorRun[]>([]);
-  const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
-  const [localHelperDevices, setLocalHelperDevices] = useState<LocalHelperDevice[]>([]);
-  const [agentArtifacts, setAgentArtifacts] = useState<AgentArtifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>();
   const [reviewing, setReviewing] = useState<BidOpportunity | null>(null);
   const [reviewMode, setReviewMode] = useState<'employee' | 'boss'>('employee');
-  const [sourceEditing, setSourceEditing] = useState<MonitorSource | null>(null);
-  const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [detail, setDetail] = useState<BidOpportunity | null>(null);
   const [documents, setDocuments] = useState<BidDocument[]>([]);
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
-  const [localHelperHealth, setLocalHelperHealth] = useState<LocalHelperHealth | null>(null);
-  const [localHelperChecking, setLocalHelperChecking] = useState(false);
-  const [pairCodeCreating, setPairCodeCreating] = useState(false);
   const [reviewForm] = Form.useForm<{ decision: OpportunityReviewDecision; comment?: string }>();
-  const [sourceForm] = Form.useForm<MonitorSourceFormData>();
   const [documentForm] = Form.useForm<{
     title: string;
     document_type?: string;
@@ -240,27 +141,18 @@ const OpportunityMonitorPage: React.FC = () => {
   const isManager = user?.type === 'manager';
 
   const fetchAll = useCallback(async () => {
-    await Promise.resolve();
     setLoading(true);
     try {
-      const [opportunityRes, sourceRes, runRes, taskRes, deviceRes, artifactRes] = await Promise.all([
+      const [opportunityRes, runRes] = await Promise.all([
         OpportunityAPI.listOpportunities({
           per_page: 500,
           search: search || undefined,
           status: statusFilter as OpportunityStatus | undefined,
         }),
-        OpportunityAPI.listSources(),
         OpportunityAPI.listRuns(),
-        OpportunityAPI.listAgentTasks(),
-        OpportunityAPI.listLocalHelperDevices(),
-        OpportunityAPI.listAgentArtifacts(),
       ]);
       setOpportunities(opportunityRes.items);
-      setSources(sourceRes.items);
       setRuns(newestFirst(runRes.items));
-      setAgentTasks(newestFirst(taskRes.items));
-      setLocalHelperDevices(newestFirst(deviceRes.items));
-      setAgentArtifacts(newestFirst(artifactRes.items));
     } catch (error) {
       console.error('Fetch opportunities error:', error);
       message.error('加载商机监测数据失败');
@@ -276,22 +168,6 @@ const OpportunityMonitorPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [fetchAll]);
 
-  const checkLocalHelper = useCallback(async () => {
-    setLocalHelperChecking(true);
-    try {
-      const health = await OpportunityAPI.checkLocalHelper();
-      setLocalHelperHealth(health);
-    } catch {
-      setLocalHelperHealth(null);
-    } finally {
-      setLocalHelperChecking(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void checkLocalHelper();
-  }, [checkLocalHelper]);
-
   const myPending = useMemo(() => {
     if (!user) return [];
     return opportunities.filter((item) => (
@@ -301,13 +177,6 @@ const OpportunityMonitorPage: React.FC = () => {
   }, [opportunities, user]);
 
   const bossQueue = useMemo(() => opportunities.filter((item) => item.status === 'needs_boss' || item.status === 'follow'), [opportunities]);
-
-  const pendingAgentTasks = useMemo(() => agentTasks.filter((item) => ['pending', 'in_progress', 'request_human'].includes(item.status)), [agentTasks]);
-  const offlineLocalHelperDevices = useMemo(() => localHelperDevices.filter((item) => {
-    if (item.status !== 'active') return false;
-    if (!item.last_seen_at) return true;
-    return Date.now() - new Date(item.last_seen_at).getTime() > 10 * 60 * 1000;
-  }), [localHelperDevices]);
 
   const openDetail = async (record: BidOpportunity) => {
     setDetail(record);
@@ -351,38 +220,7 @@ const OpportunityMonitorPage: React.FC = () => {
     });
     message.success('判断已保存');
     setReviewing(null);
-    fetchAll();
-  };
-
-  const openSourceModal = (source?: MonitorSource) => {
-    setSourceEditing(source || null);
-    if (source) {
-      sourceForm.setFieldsValue(source);
-    } else {
-      sourceForm.setFieldsValue({
-        login_type: 'none',
-        requires_login: false,
-        may_have_captcha: false,
-        schedule_times: '09:00,12:00,15:00,17:30',
-        status: 'active',
-        crawl_strategy: 'http_html',
-        site_search_behavior: 'supplemental',
-      });
-    }
-    setSourceModalOpen(true);
-  };
-
-  const submitSource = async () => {
-    const values = await sourceForm.validateFields();
-    if (sourceEditing) {
-      await OpportunityAPI.updateSource(sourceEditing.id, values);
-      message.success('监测源已更新');
-    } else {
-      await OpportunityAPI.createSource(values);
-      message.success('监测源已创建');
-    }
-    setSourceModalOpen(false);
-    fetchAll();
+    void fetchAll();
   };
 
   const copyGroupSummary = async () => {
@@ -419,78 +257,6 @@ const OpportunityMonitorPage: React.FC = () => {
     message.success('补充资料已保存');
   };
 
-  const updateAgentTaskStatus = async (task: AgentTask, status: AgentTask['status']) => {
-    await OpportunityAPI.updateAgentTask(task.id, {
-      status,
-      result_summary: status === 'completed' ? '员工已完成处理，等待 Agent 读取补充资料。' : task.result_summary,
-    });
-    message.success('任务状态已更新');
-    fetchAll();
-  };
-
-  const startLocalHelperTask = async (task: AgentTask) => {
-    try {
-      await OpportunityAPI.startLocalHelperTask(task);
-      await OpportunityAPI.updateAgentTask(task.id, {
-        status: 'in_progress',
-        result_summary: '已交给本地助手处理。',
-      });
-      message.success('已启动本地助手任务');
-      fetchAll();
-    } catch (error) {
-      console.error('Start local helper task error:', error);
-      message.warning('未检测到本地助手，请先安装并启动');
-      setLocalHelperHealth(null);
-    }
-  };
-
-  const createPairCode = async () => {
-    if (!user?.id || !user.name) {
-      message.warning('当前账号缺少姓名，无法生成配对码');
-      return;
-    }
-    setPairCodeCreating(true);
-    try {
-      const result = await OpportunityAPI.createLocalHelperPairCode({
-        ownerUser: user.id,
-        ownerName: user.name,
-        deviceName: `${user.name} 的 Windows 助手`,
-      });
-      const copyText = `${result.pairCode}\n${result.deepLink}`;
-      const copied = await copyTextSafely(copyText);
-      modal.success({
-        title: copied ? '配对码已生成并复制' : '配对码已生成',
-        content: (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Text>10 分钟内有效。请在本地助手配对窗口中输入配对码，或使用下方深链。</Text>
-            <Input addonBefore="配对码" value={result.pairCode} readOnly />
-            <Input.TextArea value={result.deepLink} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
-            {!copied && <Text type="secondary">浏览器未允许自动复制，请手动复制上面的配对码。</Text>}
-          </Space>
-        ),
-      });
-      message.success(copied ? `配对码 ${result.pairCode} 已复制` : `配对码 ${result.pairCode} 已生成`);
-      fetchAll();
-    } catch (error) {
-      console.error('Create local helper pair code error:', error);
-      message.error(errorMessageOf(error, '生成配对码失败'));
-    } finally {
-      setPairCodeCreating(false);
-    }
-  };
-
-  const revokeDevice = async (device: LocalHelperDevice) => {
-    await OpportunityAPI.revokeLocalHelperDevice(device.id);
-    message.success('设备已撤销');
-    fetchAll();
-  };
-
-  const deleteArtifact = async (artifact: AgentArtifact) => {
-    await OpportunityAPI.deleteAgentArtifact(artifact.id);
-    message.success('artifact 已删除');
-    fetchAll();
-  };
-
   const opportunityColumns: ColumnsType<BidOpportunity> = [
     {
       title: '商机标题',
@@ -504,13 +270,12 @@ const OpportunityMonitorPage: React.FC = () => {
         </Button>
       ),
     },
-    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 150, ellipsis: true },
+    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 120, ellipsis: true },
     { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 80 },
     { title: '采购单位', dataIndex: 'buyer_name', key: 'buyer_name', width: 150, ellipsis: true, render: (v: string) => v || '-' },
     { title: '产品关键词', dataIndex: 'product_keywords', key: 'product_keywords', width: 150, render: (v: string) => v || '-' },
     { title: '相关性', dataIndex: 'relevance', key: 'relevance', width: 110, render: (v: string) => tag(relevanceMap, v) },
     { title: '分数', dataIndex: 'relevance_score', key: 'relevance_score', width: 80, render: fmtScore },
-    { title: '匹配来源', dataIndex: 'matched_sources', key: 'matched_sources', width: 120, ellipsis: true, render: (v: string) => v || '-' },
     { title: '截止', dataIndex: 'deadline_date', key: 'deadline_date', width: 105, render: fmtDate },
     { title: '紧急度', dataIndex: 'urgency', key: 'urgency', width: 110, render: (v: string) => tag(urgencyMap, v) },
     { title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (v: string) => tag(statusMap, v) },
@@ -524,36 +289,15 @@ const OpportunityMonitorPage: React.FC = () => {
           {record.url && (
             <Button type="text" icon={<LinkOutlined />} href={record.url} target="_blank" />
           )}
-            <Button type="text" icon={<CheckCircleOutlined />} onClick={() => openReview(record)}>
-              判断
+          <Button type="text" icon={<CheckCircleOutlined />} onClick={() => openReview(record)}>
+            判断
+          </Button>
+          {isManager && (record.status === 'needs_boss' || record.status === 'follow') && (
+            <Button type="text" icon={<ExclamationCircleOutlined />} onClick={() => openReview(record, true)}>
+              王总
             </Button>
-            {isManager && (record.status === 'needs_boss' || record.status === 'follow') && (
-              <Button type="text" icon={<ExclamationCircleOutlined />} onClick={() => openReview(record, true)}>
-                王总
-              </Button>
-            )}
+          )}
         </Space>
-      ),
-    },
-  ];
-
-  const sourceColumns: ColumnsType<MonitorSource> = [
-    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 180 },
-    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
-    { title: '登录', dataIndex: 'login_type', key: 'login_type', width: 90 },
-    { title: '采集策略', dataIndex: 'crawl_strategy', key: 'crawl_strategy', width: 120, render: (v: string) => tag(crawlStrategyMap, v) },
-    { title: '站内搜索', dataIndex: 'site_search_behavior', key: 'site_search_behavior', width: 120, render: (v: string) => tag(searchBehaviorMap, v) },
-    { title: '验证码', dataIndex: 'may_have_captcha', key: 'may_have_captcha', width: 90, render: (v: boolean) => v ? <Tag color="orange">可能</Tag> : '-' },
-    { title: '巡检时间', dataIndex: 'schedule_times', key: 'schedule_times', width: 160 },
-    { title: '关键词', dataIndex: 'keywords', key: 'keywords', ellipsis: true },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 110, render: (v: string) => tag(statusMap, v) },
-    { title: '最近结果', dataIndex: 'last_result', key: 'last_result', width: 160, ellipsis: true, render: (v: string) => v || '-' },
-    {
-      title: '操作',
-      key: 'action',
-      width: 90,
-      render: (_, record) => (
-        isManager ? <Button type="text" icon={<EditOutlined />} onClick={() => openSourceModal(record)} /> : null
       ),
     },
   ];
@@ -567,142 +311,12 @@ const OpportunityMonitorPage: React.FC = () => {
       defaultSortOrder: 'descend',
       sorter: (a, b) => String(a.created || '').localeCompare(String(b.created || '')),
     },
-    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 180 },
+    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 160 },
     { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
     { title: '结果', dataIndex: 'status', key: 'status', width: 110, render: (v: string) => tag(statusMap, v) },
     { title: '新增', dataIndex: 'found_count', key: 'found_count', width: 80 },
     { title: '疑似相关', dataIndex: 'related_count', key: 'related_count', width: 90 },
     { title: '错误/说明', dataIndex: 'error_message', key: 'error_message', ellipsis: true, render: (v: string) => v || '-' },
-  ];
-
-  const agentTaskColumns: ColumnsType<AgentTask> = [
-    {
-      title: '生成时间',
-      dataIndex: 'created',
-      key: 'created',
-      width: 160,
-      defaultSortOrder: 'descend',
-      sorter: (a, b) => String(a.created || '').localeCompare(String(b.created || '')),
-    },
-    { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 180, ellipsis: true },
-    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
-    { title: '类型', dataIndex: 'task_type', key: 'task_type', width: 110, render: (v: string) => tag(agentTaskTypeMap, v) },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 100, render: (v: string) => tag(agentTaskStatusMap, v) },
-    {
-      title: '登录态',
-      key: 'session_status',
-      width: 100,
-      render: (_, record) => tag(loginSessionStatusMap, record.expand?.session?.status || record.session_status),
-    },
-    { title: '搜索词', dataIndex: 'search_terms', key: 'search_terms', width: 180, ellipsis: true, render: (v: string) => v || '-' },
-    {
-      title: '操作步骤',
-      dataIndex: 'action_steps',
-      key: 'action_steps',
-      width: 320,
-      render: (v: string) => v ? (
-        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.45 }}>{v}</pre>
-      ) : '-',
-    },
-    { title: '原因', dataIndex: 'reason', key: 'reason', width: 220, ellipsis: true, render: (v: string) => v || '-' },
-    { title: '需要材料', dataIndex: 'required_artifact', key: 'required_artifact', width: 180, ellipsis: true, render: (v: string) => v || '-' },
-    { title: '截止', dataIndex: 'due_at', key: 'due_at', width: 150, render: fmtDate },
-    {
-      title: '入口',
-      dataIndex: 'entry_url',
-      key: 'entry_url',
-      width: 80,
-      render: (v: string) => v ? <Button type="text" icon={<LinkOutlined />} href={v} target="_blank" /> : '-',
-    },
-    {
-      title: '远程浏览器',
-      key: 'browser_url',
-      width: 110,
-      render: (_, record) => {
-        const url = record.expand?.session?.browser_url || record.browser_url;
-        return url ? <Button type="text" icon={<LinkOutlined />} href={url} target="_blank" /> : <Tag>待创建</Tag>;
-      },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 210,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          {record.task_type === 'local_helper' && (
-            <Button type="text" icon={<ApiOutlined />} onClick={() => startLocalHelperTask(record)}>
-              本地
-            </Button>
-          )}
-          {record.status !== 'completed' && (
-            <Button type="text" onClick={() => updateAgentTaskStatus(record, 'completed')}>完成</Button>
-          )}
-          {record.status !== 'failed' && (
-            <Button type="text" danger onClick={() => updateAgentTaskStatus(record, 'failed')}>失败</Button>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
-  const localHelperDeviceColumns: ColumnsType<LocalHelperDevice> = [
-    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
-    { title: '设备名', dataIndex: 'device_name', key: 'device_name', width: 180, ellipsis: true, render: (v: string) => v || '-' },
-    { title: '版本', dataIndex: 'helper_version', key: 'helper_version', width: 90, render: (v: string) => v || '-' },
-    { title: '平台', dataIndex: 'platform', key: 'platform', width: 90, render: (v: string) => v || '-' },
-    {
-      title: '状态',
-      key: 'status',
-      width: 130,
-      render: (_, record) => {
-        const offline = record.status === 'active' && (
-          !record.last_seen_at ||
-          Date.now() - new Date(record.last_seen_at).getTime() > 10 * 60 * 1000
-        );
-        return offline ? <Tag color="red">离线</Tag> : tag(localHelperDeviceStatusMap, record.status);
-      },
-    },
-    { title: '最近心跳', dataIndex: 'last_seen_at', key: 'last_seen_at', width: 170, render: fmtDate },
-    { title: '配对过期', dataIndex: 'pair_code_expires_at', key: 'pair_code_expires_at', width: 170, render: fmtDate },
-    {
-      title: '操作',
-      key: 'action',
-      width: 100,
-      render: (_, record) => (
-        record.status !== 'revoked' && isManager
-          ? <Button type="text" danger onClick={() => revokeDevice(record)}>撤销</Button>
-          : null
-      ),
-    },
-  ];
-
-  const agentArtifactColumns: ColumnsType<AgentArtifact> = [
-    { title: '时间', dataIndex: 'created', key: 'created', width: 160, render: fmtDate },
-    { title: '类型', dataIndex: 'artifact_type', key: 'artifact_type', width: 110, render: (v: string) => tag(artifactTypeMap, v) },
-    { title: '标题', dataIndex: 'title', key: 'title', width: 220, ellipsis: true, render: (v: string) => v || '-' },
-    {
-      title: '内容',
-      dataIndex: 'content',
-      key: 'content',
-      ellipsis: true,
-      render: (v: string) => v ? <Text copyable={{ text: v }}>{v.slice(0, 140)}</Text> : '-',
-    },
-    {
-      title: '来源 URL',
-      dataIndex: 'url',
-      key: 'url',
-      width: 90,
-      render: (v: string) => v ? <Button type="text" icon={<LinkOutlined />} href={v} target="_blank" /> : '-',
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 90,
-      render: (_, record) => (
-        isManager ? <Button type="text" danger onClick={() => deleteArtifact(record)}>删除</Button> : null
-      ),
-    },
   ];
 
   const toolbar = (
@@ -727,7 +341,7 @@ const OpportunityMonitorPage: React.FC = () => {
             label: item.label,
           }))}
         />
-        <Button icon={<ReloadOutlined />} onClick={fetchAll}>刷新</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => void fetchAll()}>刷新</Button>
       </Space>
       <Button icon={<CopyOutlined />} onClick={copyGroupSummary}>复制群摘要</Button>
     </Flex>
@@ -738,16 +352,8 @@ const OpportunityMonitorPage: React.FC = () => {
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <div>
           <Title level={4} style={{ marginBottom: 4 }}>商机监测</Title>
-          <Text type="secondary">自动巡检招投标网站，员工在 ERP 判断，群里只发摘要。</Text>
+          <Text type="secondary">云端仅保留国能网自动巡检；其他网站由本地助手独立采集。</Text>
         </div>
-        <Space>
-          <Tag color={localHelperHealth?.ok ? 'green' : 'default'}>
-            本地助手{localHelperHealth?.ok ? '在线' : '离线'}
-          </Tag>
-          <Button loading={localHelperChecking} onClick={checkLocalHelper}>检测助手</Button>
-          {!localHelperHealth?.ok && <Button type="primary" href="/downloads/hcz-local-helper-setup.exe" target="_blank">下载本地助手安装包</Button>}
-          {isManager && <Button type="primary" onClick={() => openSourceModal()}>新增监测源</Button>}
-        </Space>
       </Flex>
 
       <Card>
@@ -759,70 +365,24 @@ const OpportunityMonitorPage: React.FC = () => {
               children: (
                 <>
                   {toolbar}
-                  <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={opportunities} scroll={{ x: 1300 }} />
+                  <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={opportunities} scroll={{ x: 1200 }} />
                 </>
               ),
             },
             {
               key: 'mine',
               label: `我的待判断(${myPending.length})`,
-              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={myPending} scroll={{ x: 1300 }} />,
+              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={myPending} scroll={{ x: 1200 }} />,
             },
             {
               key: 'boss',
               label: '王总确认台',
-              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={bossQueue} scroll={{ x: 1300 }} />,
+              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={bossQueue} scroll={{ x: 1200 }} />,
             },
             {
               key: 'runs',
               label: '每日巡检记录',
               children: <Table rowKey="id" loading={loading} columns={runColumns} dataSource={runs} />,
-            },
-            {
-              key: 'tasks',
-              label: `人工协助(${pendingAgentTasks.length})`,
-              children: <Table rowKey="id" loading={loading} columns={agentTaskColumns} dataSource={agentTasks} scroll={{ x: 1700 }} />,
-            },
-            {
-              key: 'local-helper-ops',
-              label: `本地助手运维(${offlineLocalHelperDevices.length})`,
-              children: (
-                <>
-                  <Flex justify="space-between" align="center" wrap="wrap" gap="small" style={{ marginBottom: 16 }}>
-                    <Space wrap>
-                      <Tag color={offlineLocalHelperDevices.length > 0 ? 'red' : 'green'}>
-                        离线设备 {offlineLocalHelperDevices.length}
-                      </Tag>
-                      <Button type="primary" href="/downloads/hcz-local-helper-setup.exe" target="_blank">安装包</Button>
-                      <Button href="/downloads/hcz-local-helper-app.zip" target="_blank">免安装包备用</Button>
-                      <Button href="/downloads/hcz-local-helper-release.json" target="_blank">版本清单</Button>
-                    </Space>
-                    <Button type="primary" loading={pairCodeCreating} onClick={createPairCode}>生成我的配对码</Button>
-                  </Flex>
-                  <Table
-                    rowKey="id"
-                    size="small"
-                    loading={loading}
-                    columns={localHelperDeviceColumns}
-                    dataSource={localHelperDevices}
-                    pagination={{ pageSize: 8 }}
-                  />
-                  <Title level={5} style={{ marginTop: 20 }}>日志 / 截图 / 候选包</Title>
-                  <Table
-                    rowKey="id"
-                    size="small"
-                    loading={loading}
-                    columns={agentArtifactColumns}
-                    dataSource={agentArtifacts}
-                    pagination={{ pageSize: 8 }}
-                  />
-                </>
-              ),
-            },
-            {
-              key: 'sources',
-              label: '监测源管理',
-              children: <Table rowKey="id" loading={loading} columns={sourceColumns} dataSource={sources} scroll={{ x: 1350 }} />,
             },
           ]}
         />
@@ -841,94 +401,6 @@ const OpportunityMonitorPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="comment" label="判断说明">
             <TextArea rows={4} placeholder="写明能否操作、缺哪些资料、需王总确认的问题等" />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title={sourceEditing ? '编辑监测源' : '新增监测源'}
-        open={sourceModalOpen}
-        onCancel={() => setSourceModalOpen(false)}
-        onOk={submitSource}
-        okText="保存"
-        width={720}
-      >
-        <Form form={sourceForm} layout="vertical">
-          <Flex gap={12}>
-            <Form.Item name="source_name" label="网站名称" rules={[{ required: true, message: '请输入网站名称' }]} style={{ flex: 1 }}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="owner_name" label="负责人" rules={[{ required: true, message: '请输入负责人' }]} style={{ width: 160 }}>
-              <Input placeholder="如：小白" />
-            </Form.Item>
-          </Flex>
-          <Form.Item name="source_url" label="入口网址">
-            <Input placeholder="https://..." />
-          </Form.Item>
-          <Flex gap={12} wrap="wrap">
-            <Form.Item name="login_type" label="登录方式" style={{ width: 160 }}>
-              <Select options={[
-                { label: '无需登录', value: 'none' },
-                { label: '账号密码', value: 'account' },
-                { label: '人工处理', value: 'manual' },
-              ]} />
-            </Form.Item>
-            <Form.Item name="requires_login" label="需要登录" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="may_have_captcha" label="可能有验证码" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="status" label="状态" style={{ width: 150 }}>
-              <Select options={[
-                { label: '启用', value: 'active' },
-                { label: '暂停', value: 'paused' },
-                { label: '需人工处理', value: 'manual_required' },
-              ]} />
-            </Form.Item>
-          </Flex>
-          <Form.Item name="schedule_times" label="每日巡检时间">
-            <Input placeholder="09:00,12:00,15:00,17:30" />
-          </Form.Item>
-          <Flex gap={12}>
-            <Form.Item name="crawl_strategy" label="采集策略" style={{ width: 200 }}>
-              <Select options={[
-                { label: 'HTTP/HTML', value: 'http_html' },
-                { label: 'HTTP/API JSON', value: 'http_json' },
-                { label: '浏览器 DOM', value: 'playwright_dom' },
-                { label: '浏览器网络', value: 'playwright_network' },
-                { label: '人工协助', value: 'manual_assist' },
-                { label: '本地助手', value: 'local_helper' },
-              ]} />
-            </Form.Item>
-            <Form.Item name="site_search_behavior" label="站内搜索方式" style={{ width: 200 }}>
-              <Select options={[
-                { label: '不用站内搜索', value: 'none' },
-                { label: '搜索作补充', value: 'supplemental' },
-                { label: '搜索为主', value: 'primary' },
-              ]} />
-            </Form.Item>
-            <Form.Item name="credential_ref" label="凭据引用" style={{ flex: 1 }}>
-              <Input placeholder="如：secret:yipaike:xiaofeng" />
-            </Form.Item>
-          </Flex>
-          <Form.Item name="category_names" label="监测栏目">
-            <TextArea rows={2} placeholder="招标公告、采购公告、询价公告..." />
-          </Form.Item>
-          <Form.Item name="category_urls" label="栏目 URL">
-            <TextArea rows={2} placeholder="多个 URL 可用逗号或换行分隔" />
-          </Form.Item>
-          <Form.Item name="keywords" label="关键词">
-            <TextArea rows={2} placeholder="缓蚀剂、阻垢剂、聚丙烯酰胺..." />
-          </Form.Item>
-          <Form.Item name="manual_assist_reason" label="人工协助原因">
-            <TextArea rows={2} placeholder="登录、验证码、买标书、附件下载等原因" />
-          </Form.Item>
-          <Form.Item name="product_scope" label="产品范围">
-            <TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="remark" label="备注">
-            <TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>

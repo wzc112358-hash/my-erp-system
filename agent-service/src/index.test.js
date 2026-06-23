@@ -2,38 +2,36 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildLoginSessionPayload,
-  buildManualTaskPayload,
-  needsManualRun,
-  ensureLoginSession,
-  shouldCreateLoginSession,
-  runManualTaskDryRun,
-  runDocumentTextDryRun,
+  collectCandidates,
   runConfirmationPackageDryRun,
+  runDocumentTextDryRun,
   runDryRunJson,
-  requestBrowserSession,
-  startScheduler,
+  runOnce,
+  runPublicUrlDryRun,
   shouldPersistOpportunity,
   shouldRunSource,
-  collectCandidates,
-  runOnce,
-  buildLocalHelperFallbackStrategy,
-  shouldFallbackToLocalHelper,
+  startScheduler,
 } from './index.js';
-import { buildOpportunityPayload, runPublicUrlDryRun } from './index.js';
-import { resolveSourceStrategy } from './source-strategies.js';
+import { buildOpportunityPayload } from './index.js';
+import { isCloudManagedSource, resolveSourceStrategy } from './source-strategies.js';
 
-test('shouldRunSource runs inside a configured schedule window', () => {
-  const source = {
+test('shouldRunSource only schedules active 国能源 records inside a configured window', () => {
+  assert.equal(shouldRunSource({
+    source_name: '国能网',
     status: 'active',
     schedule_times: '09:00,12:00',
-  };
+  }, new Date('2026-05-23T09:05:00+08:00')), true);
 
-  assert.equal(shouldRunSource(source, new Date('2026-05-23T09:05:00+08:00')), true);
+  assert.equal(shouldRunSource({
+    source_name: '华锦兵器网',
+    status: 'active',
+    schedule_times: '09:00,12:00',
+  }, new Date('2026-05-23T09:05:00+08:00')), false);
 });
 
 test('shouldRunSource skips repeated runs inside the same schedule window', () => {
   const source = {
+    source_name: '国能网',
     status: 'active',
     schedule_times: '09:00,12:00',
     last_run_at: '2026-05-23 01:02:00.000Z',
@@ -42,26 +40,30 @@ test('shouldRunSource skips repeated runs inside the same schedule window', () =
   assert.equal(shouldRunSource(source, new Date('2026-05-23T09:05:00+08:00')), false);
 });
 
-test('needsManualRun marks sources without an entry url as manual work', () => {
-  const source = {
+test('resolveSourceStrategy keeps only 国能 as cloud-managed source', () => {
+  const strategy = resolveSourceStrategy({
+    source_name: '国能网',
     status: 'active',
-    login_type: 'none',
-    requires_login: false,
-    may_have_captcha: false,
-  };
+  });
 
-  assert.equal(needsManualRun(source), true);
+  assert.equal(isCloudManagedSource({ source_name: '国能网' }), true);
+  assert.equal(isCloudManagedSource({ source_name: '中石油招投标网' }), false);
+  assert.equal(strategy.crawlStrategy, 'http_html');
+  assert.equal(strategy.collectionPath, 'cloud_auto');
+  assert.ok(strategy.categoryNames.includes('国能E招-招标公告'));
+  assert.ok(strategy.categoryUrls.some((url) => url.endsWith('/inquireOne/index.json')));
+  assert.equal(strategy.requiresManualAssist, false);
 });
 
 test('buildOpportunityPayload includes relevance evidence fields', () => {
   const source = {
     id: 'source1',
-    source_name: '历史群聊样本',
+    source_name: '国能网',
     owner_name: '小杨',
   };
   const run = { id: 'run1' };
   const item = {
-    sourceName: '历史群聊样本',
+    sourceName: '国能网',
     ownerName: '小杨',
     title: '炼油四部用塑料用抗静电剂框架采购询比采购公告',
     url: 'https://example.com/notice/1',
@@ -101,92 +103,6 @@ test('shouldPersistOpportunity only keeps related or manual-review opportunities
   assert.equal(shouldPersistOpportunity({ classification: { relevance: 'likely_related' } }), true);
   assert.equal(shouldPersistOpportunity({ classification: { relevance: 'needs_manual_review' } }), true);
   assert.equal(shouldPersistOpportunity({ classification: { relevance: 'irrelevant' } }), false);
-});
-
-test('resolveSourceStrategy returns PRD site strategy for 国能网', () => {
-  const strategy = resolveSourceStrategy({
-    source_name: '国能网',
-    login_type: 'none',
-    requires_login: false,
-    may_have_captcha: false,
-    status: 'active',
-  });
-
-  assert.equal(strategy.crawlStrategy, 'http_html');
-  assert.equal(strategy.siteSearchBehavior, 'supplemental');
-  assert.ok(strategy.categoryNames.includes('国能E招-招标公告'));
-  assert.equal(strategy.requiresManualAssist, false);
-  assert.equal(strategy.collectionPath, 'cloud_auto');
-});
-
-test('resolveSourceStrategy treats login sources as local-helper work in phase 3', () => {
-  const strategy = resolveSourceStrategy({
-    source_name: '云梦泽询价网',
-    login_type: 'account',
-    requires_login: true,
-    may_have_captcha: false,
-    status: 'active',
-  });
-
-  assert.equal(strategy.crawlStrategy, 'local_helper');
-  assert.equal(strategy.collectionPath, 'local_helper');
-  assert.equal(strategy.requiresManualAssist, true);
-  assert.match(strategy.manualAssistReason, /账号登录/);
-});
-
-test('resolveSourceStrategy routes phase 3 local-helper sites to local helper', () => {
-  const strategy = resolveSourceStrategy({
-    source_name: '华锦兵器网',
-    login_type: 'none',
-    requires_login: false,
-    may_have_captcha: false,
-    status: 'active',
-  });
-
-  assert.equal(strategy.crawlStrategy, 'local_helper');
-  assert.equal(strategy.collectionPath, 'local_helper');
-  assert.equal(strategy.firstTool, 'local_playwright_cdp');
-  assert.equal(strategy.requiresManualAssist, true);
-});
-
-test('resolveSourceStrategy lets phase 3 local-helper matrix override stale stored crawl strategy for Huajin', () => {
-  const strategy = resolveSourceStrategy({
-    source_name: '华锦兵器网',
-    login_type: 'manual',
-    requires_login: true,
-    may_have_captcha: true,
-    crawl_strategy: 'playwright_network',
-    status: 'active',
-  });
-
-  assert.equal(strategy.crawlStrategy, 'local_helper');
-  assert.equal(strategy.collectionPath, 'local_helper');
-});
-
-test('buildManualTaskPayload creates a local-helper task for Huajin pilot even with stale source crawl strategy', () => {
-  const source = {
-    id: 'source-huajin',
-    source_name: '华锦兵器网',
-    owner_name: '小魏',
-    source_url: 'https://www.norincogroup-ebuy.com/',
-    crawl_strategy: 'playwright_network',
-    requires_login: true,
-    may_have_captcha: true,
-    keywords: '消泡剂,液氮',
-  };
-  const task = buildManualTaskPayload({
-    source,
-    run: { id: 'run-huajin' },
-    strategy: resolveSourceStrategy(source),
-    now: new Date('2026-06-12T09:00:00+08:00'),
-  });
-
-  assert.equal(task.task_type, 'local_helper');
-  assert.equal(task.source, 'source-huajin');
-  assert.equal(task.monitor_run, 'run-huajin');
-  assert.equal(task.entry_url, 'https://www.norincogroup-ebuy.com/');
-  assert.equal(task.search_terms, '消泡剂,液氮');
-  assert.match(task.action_steps, /打开本地助手任务窗口/);
 });
 
 test('runPublicUrlDryRun fetches a public page without PocketBase', async () => {
@@ -248,48 +164,7 @@ test('runPublicUrlDryRun can use an injected classifier enhancer', async () => {
   }
 });
 
-test('runPublicUrlDryRun can collect through collector-service when configured', async () => {
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url, options) => {
-    requests.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({
-        candidates: [
-          {
-            title: '聚丙烯酰胺采购询价公告 截止时间：2099年01月02日',
-            url: 'https://example.com/nitrogen.html',
-            source_name: '测试公开源',
-            owner_name: '小杨',
-            raw_text: '聚丙烯酰胺采购询价公告 截止时间：2099年01月02日',
-            metadata: { source_id: 'collector-source' },
-          },
-        ],
-      }),
-    };
-  };
-  try {
-    const result = await runPublicUrlDryRun({
-      url: 'https://example.com/list.html',
-      sourceName: '测试公开源',
-      ownerName: '小杨',
-      collectorServiceUrl: 'http://collector-service:8096',
-    });
-
-    assert.equal(requests[0].url, 'http://collector-service:8096/collect/url');
-    assert.equal(JSON.parse(requests[0].options.body).url, 'https://example.com/list.html');
-    assert.equal(result.candidate_count, 1);
-    assert.equal(result.retained_count, 1);
-    assert.match(result.opportunities[0].product_keywords, /聚丙烯酰胺/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test('collectCandidates uses collector-service for cloud auto http_html sources', async () => {
+test('collectCandidates uses collector-service for 国能 and ignores non-cloud sources', async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (url, options) => {
@@ -317,7 +192,6 @@ test('collectCandidates uses collector-service for cloud auto http_html sources'
       source_name: '国能网',
       owner_name: '小杨',
       source_url: 'https://example.com/list.html',
-      category_urls: 'https://example.com/list.html',
       status: 'active',
       login_type: 'none',
       requires_login: false,
@@ -327,109 +201,81 @@ test('collectCandidates uses collector-service for cloud auto http_html sources'
     });
 
     assert.equal(requests[0].url, 'http://collector-service:8096/collect/source');
+    assert.match(JSON.parse(requests[0].options.body).source.category_urls, /inquireOne\/index\.json/);
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].title, '活性氧化铝采购公告');
-    assert.equal(candidates[0].sourceId, 'source-gn');
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
 
-test('collectCandidates uses collector-service for 国能E购 http_json source', async () => {
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url, options) => {
-    requests.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({
-        candidates: [
-          {
-            title: '煤制油公司化工三剂2026年亚硫酸氢钠询价采购',
-            url: 'https://example.com/neep/1.html',
-            raw_text: '煤制油公司化工三剂2026年亚硫酸氢钠询价采购',
-            published_at: '2026-05-27',
-            deadline_at: '2026-05-31',
-          },
-        ],
-      }),
-    };
-  };
-  try {
-    const candidates = await collectCandidates({
-      id: 'source-egou',
-      source_name: '国能E购',
-      owner_name: '小杨',
+    const ignored = await collectCandidates({
+      id: 'source-huajin',
+      source_name: '华锦兵器网',
+      owner_name: '小魏',
       status: 'active',
-      login_type: 'none',
-      requires_login: false,
-      may_have_captcha: false,
     }, {
       collectorServiceUrl: 'http://collector-service:8096',
     });
-
-    assert.equal(requests[0].url, 'http://collector-service:8096/collect/source');
-    assert.equal(JSON.parse(requests[0].options.body).mode, 'http_json');
-    assert.equal(candidates.length, 1);
-    assert.equal(candidates[0].deadlineDate, '2026-05-31');
+    assert.deepEqual(ignored, []);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('shouldFallbackToLocalHelper only catches cloud_then_local empty or failed runs', () => {
-  assert.equal(shouldFallbackToLocalHelper({
-    strategy: {
-      collectionPath: 'cloud_then_local',
-      fallbackPath: 'local_helper',
+test('runOnce only processes 国能源 and does not create manual tasks', async () => {
+  const sources = [
+    {
+      id: 'source-gn',
+      source_name: '国能网',
+      owner_name: '小杨',
+      status: 'active',
+      schedule_times: '09:00',
     },
-    rawCandidates: [],
-  }), true);
-  assert.equal(shouldFallbackToLocalHelper({
-    strategy: {
-      collectionPath: 'cloud_then_local',
-      fallbackPath: 'local_helper',
+    {
+      id: 'source-cnpc',
+      source_name: '中石油招投标网',
+      owner_name: '小陈',
+      status: 'active',
+      schedule_times: '09:00',
     },
-    rawCandidates: [{ title: '公告' }],
-  }), false);
-  assert.equal(shouldFallbackToLocalHelper({
-    strategy: {
-      collectionPath: 'cloud_auto',
-      fallbackPath: 'local_helper',
-    },
-    error: new Error('blocked'),
-  }), false);
-});
-
-test('runOnce creates local-helper task when cloud_then_local source returns no candidates', async () => {
-  const source = {
-    id: 'source-yulong',
-    source_name: '裕龙招投标网',
-    owner_name: '小白',
-    source_url: 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99',
-    status: 'active',
-    crawl_strategy: 'playwright_network',
-    login_type: 'none',
-    requires_login: false,
-    may_have_captcha: false,
-  };
+  ];
   const createdRecords = [];
-  const manualTasks = [];
   const updatedRecords = [];
   const auditLogs = [];
 
   await runOnce({
     loginFn: async () => 'token1',
     listAllFn: async (collection) => {
-      if (collection === 'monitor_sources') return [source];
+      if (collection === 'monitor_sources') return sources;
       if (collection === 'bid_opportunities') return [];
       return [];
     },
     shouldRunSourceFn: () => true,
-    collectCandidatesFn: async () => [],
-    processCandidatesFn: async () => [],
+    collectCandidatesFn: async (source) => [{
+      sourceId: source.id,
+      sourceName: source.source_name,
+      ownerName: source.owner_name,
+      title: '国能水处理剂询价采购公告',
+      url: 'https://example.com/notice',
+      content: '水处理剂询价采购公告。投标截止日期：2099-01-02。',
+      attachmentUrls: [],
+      fingerprint: 'fp-guoneng',
+    }],
+    processCandidatesFn: async (items) => items.map((item) => ({
+      ...item,
+      fingerprint: item.fingerprint,
+      classification: {
+        relevance: 'likely_related',
+        relevanceScore: 0.8,
+        matchedTerms: ['水处理剂'],
+        matchedSources: ['erp_history'],
+        evidenceText: item.content,
+        negativeTerms: [],
+        classificationVersion: 'chemical-relevance-v1',
+        needsHumanCheck: false,
+        productKeywords: ['水处理剂'],
+        summary: '疑似水处理剂',
+        hardRequirements: [],
+        riskFlags: [],
+      },
+    })),
     createRecordFn: async (collection, token, data) => {
       createdRecords.push({ collection, token, data });
       return { id: `${collection}-1`, ...data };
@@ -438,87 +284,16 @@ test('runOnce creates local-helper task when cloud_then_local source returns no 
       updatedRecords.push({ collection, id, token, data });
       return { id, ...data };
     },
-    createManualTaskFn: async (token, taskSource, run, strategy) => {
-      manualTasks.push({ token, taskSource, run, strategy });
-      return { id: 'task-1', task_type: strategy.crawlStrategy };
-    },
     auditLogFn: async (token, data) => {
       auditLogs.push({ token, data });
     },
   });
 
-  const run = createdRecords.find((item) => item.collection === 'monitor_runs');
-  assert.equal(run.data.status, 'manual_required');
-  assert.equal(run.data.found_count, 0);
-  assert.match(run.data.error_message, /本地助手/);
-  assert.equal(manualTasks.length, 1);
-  assert.equal(manualTasks[0].strategy.crawlStrategy, 'local_helper');
-  assert.match(manualTasks[0].strategy.manualAssistReason, /云端采集无候选公告/);
-  assert.deepEqual(updatedRecords[0].data.last_result, 'manual_required');
-  assert.match(auditLogs[0].data.output_summary, /manual_required/);
-});
-
-test('buildManualTaskPayload carries configured fallback category URLs into local-helper tasks', () => {
-  const source = {
-    id: 'source-yulong',
-    source_name: '裕龙招投标网',
-    owner_name: '小白',
-    source_url: '',
-    category_urls: '',
-    crawl_strategy: 'http_html',
-  };
-  const task = buildManualTaskPayload({
-    source,
-    run: { id: 'run-yulong' },
-    strategy: buildLocalHelperFallbackStrategy(resolveSourceStrategy(source)),
-    now: new Date('2026-06-18T09:00:00+08:00'),
-  });
-
-  assert.equal(task.task_type, 'local_helper');
-  assert.equal(task.entry_url, 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96');
-  assert.match(task.action_steps, /ctbpsp\.com/);
-});
-
-test('runOnce creates local-helper task when cloud_then_local collection throws', async () => {
-  const source = {
-    id: 'source-yanchang',
-    source_name: '延长石油',
-    owner_name: '小杨',
-    source_url: 'https://zc.sxycpc.com/ebidPortal/menu0002.html',
-    status: 'active',
-    crawl_strategy: 'playwright_dom',
-    login_type: 'none',
-    requires_login: false,
-    may_have_captcha: false,
-  };
-  const createdRecords = [];
-  const manualTasks = [];
-
-  await runOnce({
-    loginFn: async () => 'token1',
-    listAllFn: async (collection) => (collection === 'monitor_sources' ? [source] : []),
-    shouldRunSourceFn: () => true,
-    collectCandidatesFn: async () => {
-      throw new Error('cloud playwright blocked');
-    },
-    processCandidatesFn: async () => [],
-    createRecordFn: async (collection, token, data) => {
-      createdRecords.push({ collection, token, data });
-      return { id: `${collection}-1`, ...data };
-    },
-    updateRecordFn: async () => ({}),
-    createManualTaskFn: async (token, taskSource, run, strategy) => {
-      manualTasks.push({ token, taskSource, run, strategy });
-      return { id: 'task-1', task_type: strategy.crawlStrategy };
-    },
-    auditLogFn: async () => {},
-  });
-
-  const run = createdRecords.find((item) => item.collection === 'monitor_runs');
-  assert.equal(run.data.status, 'manual_required');
-  assert.match(run.data.error_message, /cloud playwright blocked/);
-  assert.equal(manualTasks.length, 1);
-  assert.equal(manualTasks[0].strategy.crawlStrategy, 'local_helper');
+  assert.equal(createdRecords.filter((item) => item.collection === 'monitor_runs').length, 1);
+  assert.equal(createdRecords.filter((item) => item.collection === 'bid_opportunities').length, 1);
+  assert.equal(createdRecords.some((item) => item.collection === 'agent_tasks'), false);
+  assert.equal(updatedRecords[0].id, 'source-gn');
+  assert.match(auditLogs[0].data.output_summary, /success/);
 });
 
 test('runDocumentTextDryRun parses pasted tender text without PocketBase', () => {
@@ -533,15 +308,6 @@ test('runDocumentTextDryRun parses pasted tender text without PocketBase', () =>
   assert.match(result.opportunity.product_keywords, /缓蚀阻垢剂/);
   assert.equal(result.opportunity.relevance, 'likely_related');
   assert.match(result.opportunity.hard_requirements, /第三方检测/);
-});
-
-test('runManualTaskDryRun returns manual and local helper task samples', () => {
-  const result = runManualTaskDryRun();
-
-  assert.equal(result.tasks.length, 2);
-  assert.equal(result.tasks[0].task_type, 'manual_assist');
-  assert.equal(result.tasks[0].status, 'pending');
-  assert.equal(result.local_helper_contract.upload_slots.includes('manual_text'), true);
 });
 
 test('runConfirmationPackageDryRun returns package text and recommended action', () => {
@@ -570,128 +336,6 @@ test('runDryRunJson can use an injected classifier enhancer', async () => {
   assert.equal(result.retained_count, 1);
   assert.equal(result.opportunities[0].classification_version, 'chemical-relevance-v1+llm');
   assert.match(result.opportunities[0].matched_sources, /llm/);
-});
-
-test('requestBrowserSession posts source login context to browser worker', async () => {
-  const requests = [];
-  const response = await requestBrowserSession({
-    id: 'source1',
-    source_name: '云梦泽询价网',
-    owner_name: '小陈',
-    source_url: 'https://ymz.example.com/login',
-    category_urls: 'https://ymz.example.com/notices',
-  }, {
-    browserWorkerUrl: 'https://browser-worker.example.com/',
-    browserWorkerToken: 'internal-secret',
-    fetchImpl: async (url, options) => {
-      requests.push({ url, options });
-      return {
-        ok: true,
-        status: 201,
-        statusText: 'Created',
-        json: async () => ({
-          id: 'session_abc',
-          status: 'login_required',
-          browser_url: 'https://browser.example.com/sessions/session_abc',
-          profile_ref: 'profiles/session_abc',
-          expires_at: '2026-06-02T01:00:00.000Z',
-        }),
-      };
-    },
-  });
-
-  assert.equal(requests[0].url, 'https://browser-worker.example.com/sessions');
-  assert.equal(requests[0].options.headers.Authorization, 'Bearer internal-secret');
-  assert.deepEqual(JSON.parse(requests[0].options.body), {
-    sourceId: 'source1',
-    sourceName: '云梦泽询价网',
-    ownerName: '小陈',
-    loginUrl: 'https://ymz.example.com/notices',
-  });
-  assert.equal(response.browser_url, 'https://browser.example.com/sessions/session_abc');
-});
-
-test('buildLoginSessionPayload maps browser worker session into PocketBase fields', () => {
-  const payload = buildLoginSessionPayload({
-    id: 'source1',
-    source_name: '云梦泽询价网',
-    owner_name: '小陈',
-    source_url: 'https://ymz.example.com/login',
-  }, {
-    status: 'login_required',
-    login_url: 'https://ymz.example.com/login',
-    browser_url: 'https://browser.example.com/sessions/session_abc',
-    profile_ref: 'profiles/session_abc',
-    expires_at: '2026-06-02T01:00:00.000Z',
-  });
-
-  assert.equal(payload.source, 'source1');
-  assert.equal(payload.status, 'login_required');
-  assert.equal(payload.browser_url, 'https://browser.example.com/sessions/session_abc');
-  assert.equal(payload.profile_ref, 'profiles/session_abc');
-  assert.match(payload.security_note, /员工只在远程浏览器中完成登录/);
-});
-
-test('ensureLoginSession creates a PocketBase session and buildManualTaskPayload attaches it to the task', async () => {
-  const source = {
-    id: 'source1',
-    source_name: '云梦泽询价网',
-    owner_name: '小陈',
-    source_url: 'https://ymz.example.com/login',
-    requires_login: true,
-    may_have_captcha: true,
-    login_type: 'account',
-  };
-  const createdRecords = [];
-  const session = await ensureLoginSession({
-    token: 'token1',
-    source,
-    createRecordFn: async (collection, token, data) => {
-      createdRecords.push({ collection, token, data });
-      return {
-        id: 'pb_session_1',
-        ...data,
-      };
-    },
-    browserWorkerFn: async () => ({
-      status: 'login_required',
-      browser_url: 'https://browser.example.com/sessions/session_abc',
-      profile_ref: 'profiles/session_abc',
-      expires_at: '2026-06-02T01:00:00.000Z',
-    }),
-  });
-
-  const task = buildManualTaskPayload({
-    source,
-    run: { id: 'run1' },
-    strategy: { manualAssistReason: '账号登录后搜索询价' },
-    session,
-    now: new Date('2026-05-26T01:00:00.000Z'),
-  });
-
-  assert.equal(createdRecords[0].collection, 'agent_login_sessions');
-  assert.equal(createdRecords[0].token, 'token1');
-  assert.equal(createdRecords[0].data.browser_url, 'https://browser.example.com/sessions/session_abc');
-  assert.equal(task.session, 'pb_session_1');
-  assert.equal(task.session_status, 'login_required');
-  assert.equal(task.browser_url, 'https://browser.example.com/sessions/session_abc');
-});
-
-test('shouldCreateLoginSession only targets sources that benefit from remote browser login state', () => {
-  assert.equal(shouldCreateLoginSession({
-    login_type: 'account',
-    requires_login: true,
-  }), true);
-  assert.equal(shouldCreateLoginSession({
-    may_have_captcha: true,
-  }), true);
-  assert.equal(shouldCreateLoginSession({
-    crawl_strategy: 'playwright_dom',
-  }), true);
-  assert.equal(shouldCreateLoginSession({
-    status: 'manual_required',
-    manual_assist_reason: '缺少栏目入口，需要人工补充链接',
-  }), false);
 });
 
 test('startScheduler keeps the service alive and triggers an immediate run when requested', async () => {

@@ -1,11 +1,8 @@
 export type MonitorLoginType = 'none' | 'account' | 'manual';
 export type MonitorSourceStatus = 'active' | 'paused' | 'manual_required';
-export type MonitorCrawlStrategy = 'http_html' | 'http_json' | 'playwright_dom' | 'playwright_network' | 'manual_assist' | 'local_helper';
+export type MonitorCrawlStrategy = 'http_html' | 'http_json';
 export type MonitorSiteSearchBehavior = 'none' | 'supplemental' | 'primary';
 export type MonitorRunStatus = 'success' | 'failed' | 'no_new' | 'partial' | 'manual_required';
-export type AgentTaskType = 'manual_assist' | 'local_helper' | 'document_upload' | 'captcha' | 'purchase_document';
-export type AgentTaskStatus = 'pending' | 'in_progress' | 'request_human' | 'completed' | 'failed' | 'cancelled';
-export type AgentLoginSessionStatus = 'not_started' | 'login_required' | 'active' | 'expired' | 'failed' | 'revoked';
 export type OpportunityRelevance = 'likely_related' | 'needs_manual_review' | 'irrelevant';
 export type OpportunityStatus =
   | 'pending_review'
@@ -52,26 +49,6 @@ export interface MonitorSource {
   expand?: {
     owner_user?: { id: string; name: string; type?: string };
   };
-}
-
-export interface MonitorSourceFormData {
-  source_name: string;
-  owner_name: string;
-  source_url?: string;
-  login_type?: MonitorLoginType;
-  requires_login?: boolean;
-  may_have_captcha?: boolean;
-  schedule_times?: string;
-  category_names?: string;
-  category_urls?: string;
-  crawl_strategy?: MonitorCrawlStrategy;
-  site_search_behavior?: MonitorSiteSearchBehavior;
-  credential_ref?: string;
-  manual_assist_reason?: string;
-  keywords?: string;
-  product_scope?: string;
-  status?: MonitorSourceStatus;
-  remark?: string;
 }
 
 export interface MonitorRun {
@@ -193,55 +170,6 @@ export interface BidDocumentFormData {
   parse_summary?: string;
 }
 
-export interface AgentTask {
-  id: string;
-  source?: string;
-  monitor_run?: string;
-  opportunity?: string;
-  session?: string;
-  source_name: string;
-  owner_name: string;
-  task_type: AgentTaskType;
-  status: AgentTaskStatus;
-  session_status?: AgentLoginSessionStatus;
-  reason?: string;
-  required_artifact?: string;
-  entry_url?: string;
-  action_steps?: string;
-  search_terms?: string;
-  browser_url?: string;
-  due_at?: string;
-  last_attempt_at?: string;
-  result_summary?: string;
-  uploaded_artifacts?: string;
-  created: string;
-  updated: string;
-  expand?: {
-    source?: MonitorSource;
-    monitor_run?: MonitorRun;
-    opportunity?: BidOpportunity;
-    session?: AgentLoginSession;
-  };
-}
-
-export interface AgentLoginSession {
-  id: string;
-  source?: string;
-  source_name: string;
-  owner_name: string;
-  status: AgentLoginSessionStatus;
-  login_url?: string;
-  browser_url?: string;
-  profile_ref?: string;
-  expires_at?: string;
-  last_verified_at?: string;
-  last_error?: string;
-  authorized_by?: string;
-  security_note?: string;
-  created: string;
-  updated: string;
-}
-
 export interface ProductTerm {
   id: string;
   term: string;
@@ -261,60 +189,4 @@ export interface ProductTermFormData {
   weight?: number;
   aliases?: string;
   status?: ProductTerm['status'];
-}
-
-export interface LocalHelperHealth {
-  ok: boolean;
-  service?: string;
-  helperVersion?: string;
-  paired?: boolean;
-  userName?: string;
-  cloudPaired?: boolean;
-  cloudUrl?: string;
-  cloudOwnerName?: string;
-  cloudDeviceName?: string;
-  lastHeartbeatAt?: string;
-  latestRelease?: LocalHelperRelease | null;
-  taskCount?: number;
-}
-
-export interface LocalHelperRelease {
-  latestVersion?: string;
-  minSupportedVersion?: string;
-  portableUrl?: string;
-  installerUrl?: string;
-  sha256Url?: string;
-  updateAvailable?: boolean;
-  updateRequired?: boolean;
-  notes?: string;
-}
-
-export interface LocalHelperDevice {
-  id: string;
-  owner_user?: string;
-  owner_name: string;
-  device_name?: string;
-  device_fingerprint?: string;
-  status: 'pending_pair' | 'active' | 'revoked';
-  pair_code_hash?: string;
-  pair_code_expires_at?: string;
-  access_token_hash?: string;
-  helper_version?: string;
-  platform?: string;
-  last_seen_at?: string;
-  created: string;
-  updated: string;
-}
-
-export interface AgentArtifact {
-  id: string;
-  local_helper_run?: string;
-  agent_task?: string;
-  artifact_type: 'candidate_bundle' | 'dom_snapshot' | 'network_response' | 'screenshot' | 'attachment' | 'manual_text' | 'log';
-  title?: string;
-  url?: string;
-  content?: string;
-  mime_type?: string;
-  created: string;
-  updated: string;
 }

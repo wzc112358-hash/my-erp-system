@@ -1,21 +1,9 @@
 import { pb } from '@/lib/pocketbase';
-import {
-  buildLocalHelperPairingPayload,
-  buildLocalHelperTaskDeepLink,
-  buildPairDeepLink,
-  generatePairCode,
-} from './local-helper-pairing';
 import type {
-  AgentTask,
-  AgentArtifact,
   BidOpportunity,
   BidDocument,
   BidDocumentFormData,
-  LocalHelperDevice,
-  LocalHelperHealth,
   MonitorRun,
-  MonitorSource,
-  MonitorSourceFormData,
   OpportunityListParams,
   OpportunityReview,
   OpportunityReviewFormData,
@@ -23,8 +11,6 @@ import type {
   ProductTerm,
   ProductTermFormData,
 } from '@/types/opportunity';
-
-const LOCAL_HELPER_CLOUD_URL = import.meta.env.VITE_LOCAL_HELPER_CLOUD_URL || 'https://agent.henghuacheng.cn';
 
 const buildOpportunityFilters = (params: OpportunityListParams = {}) => {
   const filters: string[] = [];
@@ -39,101 +25,11 @@ const buildOpportunityFilters = (params: OpportunityListParams = {}) => {
 };
 
 export const OpportunityAPI = {
-  listSources: async () => {
-    return pb.collection('monitor_sources').getList<MonitorSource>(1, 500, {
-      sort: 'owner_name,source_name',
-      expand: 'owner_user',
-    });
-  },
-
-  createSource: async (data: MonitorSourceFormData) => {
-    return pb.collection('monitor_sources').create<MonitorSource>({
-      login_type: 'none',
-      requires_login: false,
-      may_have_captcha: false,
-      status: 'active',
-      schedule_times: '09:00,12:00,15:00,17:30',
-      crawl_strategy: 'http_html',
-      site_search_behavior: 'supplemental',
-      ...data,
-    });
-  },
-
-  updateSource: async (id: string, data: Partial<MonitorSourceFormData>) => {
-    return pb.collection('monitor_sources').update<MonitorSource>(id, data);
-  },
-
   listRuns: async () => {
     return pb.collection('monitor_runs').getList<MonitorRun>(1, 500, {
       sort: '-created',
       expand: 'source',
     });
-  },
-
-  listAgentTasks: async () => {
-    return pb.collection('agent_tasks').getList<AgentTask>(1, 500, {
-      sort: '-created',
-      expand: 'source,monitor_run,opportunity,session',
-    });
-  },
-
-  listLocalHelperDevices: async () => {
-    return pb.collection('local_helper_devices').getList<LocalHelperDevice>(1, 500, {
-      sort: '-updated',
-      expand: 'owner_user',
-    });
-  },
-
-  createLocalHelperPairCode: async ({
-    ownerUser,
-    ownerName,
-    deviceName = '',
-    ttlMinutes = 10,
-  }: {
-    ownerUser: string;
-    ownerName: string;
-    deviceName?: string;
-    ttlMinutes?: number;
-  }) => {
-    const pairCode = generatePairCode();
-    const payload = await buildLocalHelperPairingPayload({
-      pairCode,
-      ownerUser,
-      ownerName,
-      deviceName,
-      ttlMinutes,
-    });
-    const device = await pb.collection('local_helper_devices').create<LocalHelperDevice>(payload);
-    return {
-      device,
-      pairCode,
-      deepLink: buildPairDeepLink({
-        cloudUrl: LOCAL_HELPER_CLOUD_URL,
-        pairCode,
-      }),
-    };
-  },
-
-  revokeLocalHelperDevice: async (id: string) => {
-    return pb.collection('local_helper_devices').update<LocalHelperDevice>(id, {
-      status: 'revoked',
-      access_token_hash: '',
-    });
-  },
-
-  listAgentArtifacts: async () => {
-    return pb.collection('agent_artifacts').getList<AgentArtifact>(1, 500, {
-      sort: '-created',
-      expand: 'agent_task,local_helper_run',
-    });
-  },
-
-  deleteAgentArtifact: async (id: string) => {
-    return pb.collection('agent_artifacts').delete(id);
-  },
-
-  updateAgentTask: async (id: string, data: Partial<AgentTask>) => {
-    return pb.collection('agent_tasks').update<AgentTask>(id, data);
   },
 
   listOpportunities: async (params: OpportunityListParams = {}) => {
@@ -209,17 +105,6 @@ export const OpportunityAPI = {
 
   updateProductTerm: async (id: string, data: Partial<ProductTermFormData>) => {
     return pb.collection('product_terms').update<ProductTerm>(id, data);
-  },
-
-  checkLocalHelper: async () => {
-    const response = await fetch('http://127.0.0.1:17321/health', { signal: AbortSignal.timeout(1200) });
-    if (!response.ok) throw new Error(`local helper ${response.status}`);
-    return response.json() as Promise<LocalHelperHealth>;
-  },
-
-  startLocalHelperTask: async (task: AgentTask) => {
-    window.location.href = buildLocalHelperTaskDeepLink(task.id);
-    return { opened: true, taskId: task.id };
   },
 
   copyGroupSummary: async () => {

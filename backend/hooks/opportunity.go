@@ -24,11 +24,7 @@ func RegisterOpportunityHooks(app *pocketbase.PocketBase) {
 				e.Record.Set("schedule_times", "09:00,12:00,15:00,17:30")
 			}
 			if e.Record.GetString("crawl_strategy") == "" {
-				if e.Record.GetString("status") == "manual_required" || e.Record.GetBool("requires_login") || e.Record.GetBool("may_have_captcha") {
-					e.Record.Set("crawl_strategy", "manual_assist")
-				} else {
-					e.Record.Set("crawl_strategy", "http_html")
-				}
+				e.Record.Set("crawl_strategy", "http_html")
 			}
 			if e.Record.GetString("site_search_behavior") == "" {
 				e.Record.Set("site_search_behavior", "supplemental")
@@ -105,38 +101,6 @@ func RegisterOpportunityHooks(app *pocketbase.PocketBase) {
 		Func: func(e *core.RecordEvent) error {
 			if e.Record.GetString("review_type") == "" {
 				e.Record.Set("review_type", "employee")
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
-
-	app.OnRecordCreate("agent_login_sessions").Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			if e.Record.GetString("status") == "" {
-				e.Record.Set("status", "login_required")
-			}
-			if e.Record.GetString("security_note") == "" {
-				e.Record.Set("security_note", "仅保存服务器浏览器会话状态引用，不在 ERP 明文展示 cookie、密码或 token。")
-			}
-			if e.Record.GetString("login_url") == "" {
-				e.Record.Set("login_url", e.Record.GetString("browser_url"))
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
-
-	app.OnRecordCreate("agent_tasks").Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			if e.Record.GetString("status") == "" {
-				e.Record.Set("status", "pending")
-			}
-			if e.Record.GetString("session_status") == "" && e.Record.GetString("session") != "" {
-				e.Record.Set("session_status", "login_required")
-			}
-			if e.Record.GetDateTime("last_attempt_at").IsZero() {
-				e.Record.Set("last_attempt_at", types.NowDateTime())
 			}
 			return e.Next()
 		},
