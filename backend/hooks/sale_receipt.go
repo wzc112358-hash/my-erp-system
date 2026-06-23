@@ -36,8 +36,8 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(receipts, "product_amount") + newReceiptProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity*1.05 {
-				return fmt.Errorf("收款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.05, "收款产品数量"); err != nil {
+				return err
 			}
 
 			totalAmount := SumField(receipts, "amount") + e.Record.GetFloat("amount")
@@ -48,7 +48,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			var receiptPercent, debtAmount, debtPercent float64
 
 			if receivableAmount > 0 {
-				receiptPercent = (totalAmount / receivableAmount) * 100
+				receiptPercent = ComputePercent(totalAmount, receivableAmount)
 				debtAmount = receivableAmount - totalAmount
 				debtPercent = 100 - receiptPercent
 			}
@@ -90,7 +90,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			var receiptPercent, debtAmount, debtPercent float64
 
 			if receivableAmount > 0 {
-				receiptPercent = (totalAmount / receivableAmount) * 100
+				receiptPercent = ComputePercent(totalAmount, receivableAmount)
 				debtAmount = receivableAmount - totalAmount
 				debtPercent = 100 - receiptPercent
 			}
@@ -132,26 +132,19 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			newReceiptProductAmount := e.Record.GetFloat("product_amount")
 			newReceiptAmount := e.Record.GetFloat("amount")
 
-			totalProductAmount := SumField(receipts, "product_amount")
-			totalAmount := SumField(receipts, "amount")
-			for _, r := range receipts {
-				if r.Id == currentReceiptId {
-					totalProductAmount = totalProductAmount - r.GetFloat("product_amount") + newReceiptProductAmount
-					totalAmount = totalAmount - r.GetFloat("amount") + newReceiptAmount
-					break
-				}
-			}
+			totalProductAmount := SumChildFieldExcluding(receipts, "product_amount", currentReceiptId, newReceiptProductAmount)
+			totalAmount := SumChildFieldExcluding(receipts, "amount", currentReceiptId, newReceiptAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity*1.05 {
-				return fmt.Errorf("收款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.05, "收款产品数量"); err != nil {
+				return err
 			}
 
 			totalContractAmount := contract.GetFloat("executed_quantity") * contract.GetFloat("unit_price")
 			var receiptPercent, debtAmount, debtPercent float64
 
 			if totalContractAmount > 0 {
-				receiptPercent = (totalAmount / totalContractAmount) * 100
+				receiptPercent = ComputePercent(totalAmount, totalContractAmount)
 				debtAmount = totalContractAmount - totalAmount
 				debtPercent = 100 - receiptPercent
 			}
@@ -222,7 +215,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			var receiptPercent, debtAmount, debtPercent float64
 
 			if receivableAmount > 0 {
-				receiptPercent = (totalAmount / receivableAmount) * 100
+				receiptPercent = ComputePercent(totalAmount, receivableAmount)
 				debtAmount = receivableAmount - totalAmount
 				debtPercent = 100 - receiptPercent
 			}

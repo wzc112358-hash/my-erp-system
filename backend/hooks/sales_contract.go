@@ -142,7 +142,7 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 
 			var receiptPercent, debtAmount, debtPercent float64
 			if receivableAmount > 0 {
-				receiptPercent = (receiptedAmount / receivableAmount) * 100
+				receiptPercent = ComputePercent(receiptedAmount, receivableAmount)
 				debtAmount = receivableAmount - receiptedAmount
 				debtPercent = 100 - receiptPercent
 			} else {
@@ -156,9 +156,9 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 			e.Record.Set("debt_percent", debtPercent)
 
 			e.Record.Set("invoiced_amount", invoicedAmount)
-			e.Record.Set("invoice_percent", (invoicedAmount/newTotalAmount)*100)
+			e.Record.Set("invoice_percent", ComputePercent(invoicedAmount, newTotalAmount))
 			e.Record.Set("uninvoiced_amount", newTotalAmount-invoicedAmount)
-			e.Record.Set("uninvoiced_percent", ((newTotalAmount-invoicedAmount)/newTotalAmount)*100)
+			e.Record.Set("uninvoiced_percent", ComputePercent(newTotalAmount-invoicedAmount, newTotalAmount))
 
 			return e.Next()
 		},

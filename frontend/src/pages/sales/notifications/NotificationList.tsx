@@ -4,6 +4,7 @@ import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { SalesNotificationAPI } from '@/api/sales-notification';
+import { handleApiError } from '@/api/helpers';
 import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { useNotificationStore } from '@/stores/notification';
 import type { SalesNotification } from '@/types/sales-notification';
@@ -40,18 +41,9 @@ export const NotificationList: React.FC = () => {
       setData(result.items);
       setTotal(result.totalItems);
     } catch (err) {
-      const error = err as { name?: string; message?: string; cause?: { name?: string } };
-      const isAborted =
-        error.name === 'AbortError' ||
-        error.name === 'CanceledError' ||
-        error.message?.includes('aborted') ||
-        error.message?.includes('autocancelled') ||
-        error.cause?.name === 'AbortError';
-      if (isAborted) {
+      if (handleApiError(err, '加载通知列表失败', (m) => message.error(m), 'SalesNotificationList.fetch')) {
         return;
       }
-      console.error('Fetch notifications error:', err);
-      message.error('加载通知列表失败');
     } finally {
       setLoading(false);
     }

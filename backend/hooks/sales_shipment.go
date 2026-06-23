@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/pocketbase/pocketbase"
@@ -34,8 +33,8 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumField(shipments, "quantity") + newQuantity
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalQuantity > contractTotalQuantity {
-				return fmt.Errorf("发货数量总和(%.2f)不能超过合同总数量(%.2f)", totalQuantity, contractTotalQuantity)
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量"); err != nil {
+				return err
 			}
 
 			return e.Next()
@@ -65,17 +64,11 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 
 			currentShipmentId := e.Record.Id
 			newQuantity := e.Record.GetFloat("quantity")
-			totalQuantity := SumField(shipments, "quantity")
-			for _, r := range shipments {
-				if r.Id == currentShipmentId {
-					totalQuantity = totalQuantity - r.GetFloat("quantity") + newQuantity
-					break
-				}
-			}
+			totalQuantity := SumChildFieldExcluding(shipments, "quantity", currentShipmentId, newQuantity)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalQuantity > contractTotalQuantity {
-				return fmt.Errorf("发货数量总和(%.2f)不能超过合同总数量(%.2f)", totalQuantity, contractTotalQuantity)
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量"); err != nil {
+				return err
 			}
 
 			return e.Next()
@@ -121,7 +114,7 @@ func updateSalesContractExecution(app *pocketbase.PocketBase, contractId string)
 	totalContractQuantity := contract.GetFloat("total_quantity")
 
 	if totalContractQuantity > 0 {
-		executionPercent := (totalQuantity / totalContractQuantity) * 100
+		executionPercent := ComputePercent(totalQuantity, totalContractQuantity)
 		contract.Set("executed_quantity", totalQuantity)
 		contract.Set("execution_percent", executionPercent)
 	}
@@ -132,7 +125,7 @@ func updateSalesContractExecution(app *pocketbase.PocketBase, contractId string)
 
 	var receiptPercent, debtAmount, debtPercent float64
 	if receivableAmount > 0 {
-		receiptPercent = (receiptedAmount / receivableAmount) * 100
+		receiptPercent = ComputePercent(receiptedAmount, receivableAmount)
 		debtAmount = receivableAmount - receiptedAmount
 		debtPercent = 100 - receiptPercent
 	} else {

@@ -1,68 +1,7 @@
-import { pb } from '@/lib/pocketbase';
+import { createNotificationApi } from './notification';
 
-import type { SalesNotification, SalesNotificationListParams, SalesNotificationListResult } from '@/types/sales-notification';
+import type { SalesNotification } from '@/types/sales-notification';
 
-export const SalesNotificationAPI = {
-  list: async (params: SalesNotificationListParams = {}): Promise<SalesNotificationListResult> => {
-    const filters: string[] = [];
-    
-    if (params.is_read !== undefined) {
-      filters.push(`is_read = ${params.is_read}`);
-    }
-
-    if (pb.authStore.record) {
-      const userId = pb.authStore.record.id;
-      const userType = (pb.authStore.record as Record<string, unknown>).type || '';
-      filters.push(`(recipient = "${userId}" || recipient = "${userType}")`);
-    }
-
-    const result = await pb.collection('notifications_02').getList<SalesNotification>(
-      1,
-      500,
-      {
-        filter: filters.length > 0 ? filters.join(' && ') : undefined,
-        sort: '-created',
-        expand: 'purchase_contract',
-      }
-    );
-
-    return {
-      ...result,
-      totalItems: result.totalItems,
-      totalPages: result.totalPages,
-      page: result.page,
-      perPage: result.perPage,
-    };
-  },
-
-  getById: async (id: string) => {
-    return pb.collection('notifications_02').getOne<SalesNotification>(id, {
-      expand: 'purchase_contract',
-    });
-  },
-
-  markAsRead: async (id: string) => {
-    return pb.collection('notifications_02').update<SalesNotification>(id, {
-      is_read: true,
-    });
-  },
-
-  delete: async (id: string) => {
-    return pb.collection('notifications_02').delete(id);
-  },
-
-  getUnreadCount: async (): Promise<number> => {
-    const userId = pb.authStore.record?.id;
-    const filter = userId
-      ? `is_read = false && recipient = "${userId}"`
-      : 'is_read = false';
-    const result = await pb.collection('notifications_02').getList<SalesNotification>(
-      1,
-      1,
-      {
-        filter,
-      }
-    );
-    return result.totalItems;
-  },
-};
+// 销售侧通知（notifications_02 表，expand purchase_contract）。
+// 复用 notification.ts 的工厂，仅集合名与 expand 关联名不同。
+export const SalesNotificationAPI = createNotificationApi<SalesNotification>('notifications_02', 'purchase_contract');

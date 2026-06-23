@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layout, Space, Dropdown, Avatar, Button } from 'antd';
 import {
+  DownloadOutlined,
   LogoutOutlined,
   UserOutlined,
   MenuOutlined,
@@ -60,13 +61,23 @@ export const TopNav: React.FC<TopNavProps> = ({ user, onMenuToggle }) => {
       }}
     >
       <Space size={16} style={{ width: '100%', justifyContent: 'space-between' }}>
-        {onMenuToggle && (
+        <Space size={8}>
+          {onMenuToggle && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              onClick={onMenuToggle}
+            />
+          )}
           <Button
-            type="text"
-            icon={<MenuOutlined />}
-            onClick={onMenuToggle}
-          />
-        )}
+            icon={<DownloadOutlined />}
+            href="/downloads/hcz-local-helper-setup.exe"
+            target="_blank"
+            rel="noreferrer"
+          >
+            下载助手
+          </Button>
+        </Space>
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Space style={{ cursor: 'pointer' }}>
             <Avatar 

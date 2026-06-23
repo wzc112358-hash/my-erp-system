@@ -36,8 +36,8 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(invoices, "product_amount") + newInvoiceProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
-				return fmt.Errorf("发票产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
+				return err
 			}
 
 			totalAmount := SumField(invoices, "amount") + e.Record.GetFloat("amount")
@@ -45,9 +45,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			var invoicePercent, uninvoicedAmount, uninvoicedPercent float64
 
 			if totalContractAmount > 0 {
-				invoicePercent = (totalAmount / totalContractAmount) * 100
+				invoicePercent = ComputePercent(totalAmount, totalContractAmount)
 				uninvoicedAmount = totalContractAmount - totalAmount
-				uninvoicedPercent = (uninvoicedAmount / totalContractAmount) * 100
+				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
 			}
 
 			e.Record.Set("invoiced_amount", totalAmount)
@@ -84,9 +84,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			var invoicePercent, uninvoicedAmount, uninvoicedPercent float64
 
 			if totalContractAmount > 0 {
-				invoicePercent = (totalAmount / totalContractAmount) * 100
+				invoicePercent = ComputePercent(totalAmount, totalContractAmount)
 				uninvoicedAmount = totalContractAmount - totalAmount
-				uninvoicedPercent = (uninvoicedAmount / totalContractAmount) * 100
+				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
 			}
 
 			contract.Set("invoiced_amount", totalAmount)
@@ -126,28 +126,21 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			newInvoiceProductAmount := e.Record.GetFloat("product_amount")
 			newInvoiceAmount := e.Record.GetFloat("amount")
 
-			totalProductAmount := SumField(invoices, "product_amount")
-			totalAmount := SumField(invoices, "amount")
-			for _, r := range invoices {
-				if r.Id == currentInvoiceId {
-					totalProductAmount = totalProductAmount - r.GetFloat("product_amount") + newInvoiceProductAmount
-					totalAmount = totalAmount - r.GetFloat("amount") + newInvoiceAmount
-					break
-				}
-			}
+			totalProductAmount := SumChildFieldExcluding(invoices, "product_amount", currentInvoiceId, newInvoiceProductAmount)
+			totalAmount := SumChildFieldExcluding(invoices, "amount", currentInvoiceId, newInvoiceAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
-				return fmt.Errorf("发票产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
+				return err
 			}
 
 			totalContractAmount := contract.GetFloat("total_amount")
 			var invoicePercent, uninvoicedAmount, uninvoicedPercent float64
 
 			if totalContractAmount > 0 {
-				invoicePercent = (totalAmount / totalContractAmount) * 100
+				invoicePercent = ComputePercent(totalAmount, totalContractAmount)
 				uninvoicedAmount = totalContractAmount - totalAmount
-				uninvoicedPercent = (uninvoicedAmount / totalContractAmount) * 100
+				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
 			}
 
 			e.Record.Set("invoiced_amount", totalAmount)
@@ -218,9 +211,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			var invoicePercent, uninvoicedAmount, uninvoicedPercent float64
 
 			if totalContractAmount > 0 {
-				invoicePercent = (totalAmount / totalContractAmount) * 100
+				invoicePercent = ComputePercent(totalAmount, totalContractAmount)
 				uninvoicedAmount = totalContractAmount - totalAmount
-				uninvoicedPercent = (uninvoicedAmount / totalContractAmount) * 100
+				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
 			}
 
 			contract.Set("invoiced_amount", totalAmount)

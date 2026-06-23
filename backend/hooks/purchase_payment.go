@@ -36,8 +36,8 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(payments, "product_amount") + newPaymentProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
-				return fmt.Errorf("付款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量"); err != nil {
+				return err
 			}
 
 			return e.Next()
@@ -68,17 +68,11 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			currentPaymentId := e.Record.Id
 			newPaymentProductAmount := e.Record.GetFloat("product_amount")
 
-			totalProductAmount := SumField(payments, "product_amount")
-			for _, r := range payments {
-				if r.Id == currentPaymentId {
-					totalProductAmount = totalProductAmount - r.GetFloat("product_amount") + newPaymentProductAmount
-					break
-				}
-			}
+			totalProductAmount := SumChildFieldExcluding(payments, "product_amount", currentPaymentId, newPaymentProductAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalProductAmount > contractTotalQuantity {
-				return fmt.Errorf("付款产品数量总和(%.2f)不能超过合同总数量(%.2f)", totalProductAmount, contractTotalQuantity)
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量"); err != nil {
+				return err
 			}
 
 			oldRecord, _ := GetRecordById(app, "purchase_payments", e.Record.Id)
@@ -142,21 +136,14 @@ func updatePurchaseContractPaymentProgress(app *pocketbase.PocketBase, contractI
 
 	totalAmount := SumField(payments, "amount")
 	if currentRecord != nil {
-		currentPaymentId := currentRecord.Id
-		newPaymentAmount := currentRecord.GetFloat("amount")
-		for _, r := range payments {
-			if r.Id == currentPaymentId {
-				totalAmount = totalAmount - r.GetFloat("amount") + newPaymentAmount
-				break
-			}
-		}
+		totalAmount = SumChildFieldExcluding(payments, "amount", currentRecord.Id, currentRecord.GetFloat("amount"))
 	}
 
 	totalContractAmount := contract.GetFloat("total_amount")
 	if totalContractAmount > 0 {
-		paidPercent := (totalAmount / totalContractAmount) * 100
+		paidPercent := ComputePercent(totalAmount, totalContractAmount)
 		unpaidAmount := totalContractAmount - totalAmount
-		unpaidPercent := (unpaidAmount / totalContractAmount) * 100
+		unpaidPercent := ComputePercent(unpaidAmount, totalContractAmount)
 
 		contract.Set("paid_amount", totalAmount)
 		contract.Set("paid_percent", paidPercent)

@@ -45,8 +45,8 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumField(arrivals, "quantity") + newQuantity
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalQuantity > contractTotalQuantity {
-				return fmt.Errorf("到货数量总和(%.2f)不能超过合同总数量(%.2f)", totalQuantity, contractTotalQuantity)
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "到货数量"); err != nil {
+				return err
 			}
 
 			return e.Next()
@@ -76,17 +76,11 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 			currentArrivalId := e.Record.Id
 			newQuantity := e.Record.GetFloat("quantity")
-			totalQuantity := SumField(arrivals, "quantity")
-			for _, r := range arrivals {
-				if r.Id == currentArrivalId {
-					totalQuantity = totalQuantity - r.GetFloat("quantity") + newQuantity
-					break
-				}
-			}
+			totalQuantity := SumChildFieldExcluding(arrivals, "quantity", currentArrivalId, newQuantity)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if totalQuantity > contractTotalQuantity {
-				return fmt.Errorf("到货数量总和(%.2f)不能超过合同总数量(%.2f)", totalQuantity, contractTotalQuantity)
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "到货数量"); err != nil {
+				return err
 			}
 
 			oldRecord, _ := GetRecordById(app, "purchase_arrivals", e.Record.Id)
@@ -160,7 +154,7 @@ func updatePurchaseContractExecution(app *pocketbase.PocketBase, contractId stri
 	totalContractQuantity := contract.GetFloat("total_quantity")
 
 	if totalContractQuantity > 0 {
-		executionPercent := (totalQuantity / totalContractQuantity) * 100
+		executionPercent := ComputePercent(totalQuantity, totalContractQuantity)
 		contract.Set("executed_quantity", totalQuantity)
 		contract.Set("execution_percent", executionPercent)
 	}

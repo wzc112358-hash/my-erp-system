@@ -6,7 +6,6 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
 func RegisterHooks(app *pocketbase.PocketBase) {
@@ -156,56 +155,4 @@ func SetFields(record *core.Record, fields map[string]any) {
 	for k, v := range fields {
 		record.Set(k, v)
 	}
-}
-
-func OnRecordBeforeCreateRequest(app *pocketbase.PocketBase, collection string, handler func(e *core.RecordEvent) error) {
-	app.OnRecordCreate(collection).Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			err := handler(e)
-			if err != nil {
-				return err
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
-}
-
-func OnRecordAfterCreateRequest(app *pocketbase.PocketBase, collection string, handler func(e *core.RecordEvent) error) {
-	app.OnRecordAfterCreateSuccess(collection).Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			err := handler(e)
-			if err != nil {
-				return err
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
-}
-
-func OnRecordAfterDeleteRequest(app *pocketbase.PocketBase, collection string, handler func(e *core.RecordEvent) error) {
-	app.OnRecordAfterDeleteSuccess(collection).Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			err := handler(e)
-			if err != nil {
-				return err
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
-}
-
-func OnRecordAfterUpdateRequest(app *pocketbase.PocketBase, collection string, handler func(e *core.RecordEvent) error) {
-	app.OnRecordAfterUpdateSuccess(collection).Bind(&hook.Handler[*core.RecordEvent]{
-		Func: func(e *core.RecordEvent) error {
-			err := handler(e)
-			if err != nil {
-				return err
-			}
-			return e.Next()
-		},
-		Priority: 0,
-	})
 }
