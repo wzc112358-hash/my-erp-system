@@ -13,6 +13,8 @@ test('profileFor returns the registered profile for second-batch sites', () => {
   assert.equal(profileFor('华锦兵器网').buyerName, '华锦兵器网');
   assert.equal(profileFor('金能招标网').buyerName, '金能');
   assert.equal(profileFor('能源一号（天津宜远）').sourceName, '能源一号（天津宜远）');
+  assert.equal(profileFor('国能E招').sourceName, '国能E招');
+  assert.equal(profileFor('东华能源网').entryUrl, undefined);
   assert.ok(profileFor('易派克').buyerMatch?.test('中石化'));
 });
 
@@ -29,16 +31,23 @@ test('profileFor returns a usable default when given an empty name', () => {
 test('known local-helper sites expose fallback entry URLs', () => {
   assert.equal(entryUrlForSourceName('中石油招投标网'), 'https://www.cnpcbidding.com/#/tenders');
   assert.equal(entryUrlForSourceName('华锦兵器网'), 'https://www.norincogroup-ebuy.com/');
+  assert.equal(entryUrlForSourceName('隆道云'), 'https://www.longdaoyun.com/');
+  assert.equal(entryUrlForSourceName('金能招标网'), 'http://www.jinnengtech.com:6789/');
+  assert.equal(entryUrlForSourceName('国能E购'), 'https://neep.shop/html/portal/index-Inquiries.html');
   assert.equal(entryUrlForSourceName('能源一号（兰州恒化成）'), 'https://www.energyahead.com/');
   assert.equal(entryUrlForSourceName('裕龙招投标网'), 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96');
+  assert.equal(entryUrlForSourceName('东华能源网'), '');
   assert.equal(entryUrlForSourceName('某个未注册的招标网'), '');
 });
 
 test('known local-helper sites expose default search terms and action steps', () => {
   assert.match(searchTermsForSourceName('裕龙招投标网'), /裕龙石化/);
-  assert.match(searchTermsForSourceName('中石油招投标网'), /缓蚀阻垢剂/);
-  assert.match(searchTermsForSourceName('某个未注册的招标网'), /阻垢剂/);
+  assert.match(searchTermsForSourceName('中石油招投标网'), /白油/);
+  assert.match(searchTermsForSourceName('中石油招投标网'), /TCP2/);
+  assert.match(searchTermsForSourceName('国能E招'), /焦亚硫酸钠/);
+  assert.match(searchTermsForSourceName('某个未注册的招标网'), /凡士林脂/);
   assert.match(actionStepsForSourceName('裕龙招投标网'), /安全验证/);
+  assert.match(actionStepsForSourceName('东华能源网'), /未提供入口 URL/);
   assert.match(actionStepsForSourceName('某个未注册的招标网'), /继续采集/);
 });
 
@@ -52,6 +61,10 @@ test('all second-batch login sites are registered', () => {
     '能源一号（天津宜远）',
     '隆道云',
     '金能招标网',
+    '国能E招',
+    '国能E购',
+    '国能网',
+    '东华能源网',
   ]) {
     assert.ok(SITE_PROFILES[site], `${site} 应在 SITE_PROFILES 中注册`);
   }

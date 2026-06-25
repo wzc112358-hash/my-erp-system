@@ -101,9 +101,17 @@ test('playwright runtime reuses existing page for observe', async () => {
   assert.equal((await runtime.observe()).visibleText, '公告 2');
 });
 
-test('playwright runtime prefers system browsers on Windows before bundled Chromium', () => {
+test('playwright runtime prefers system browsers before bundled Chromium on desktop platforms', () => {
   assert.deepEqual(browserChannelCandidatesFor({
     platform: 'win32',
+    env: {},
+  }), ['chrome', 'msedge', '']);
+  assert.deepEqual(browserChannelCandidatesFor({
+    platform: 'linux',
+    env: {},
+  }), ['chrome', 'msedge', '']);
+  assert.deepEqual(browserChannelCandidatesFor({
+    platform: 'darwin',
     env: {},
   }), ['chrome', 'msedge', '']);
   assert.deepEqual(browserChannelCandidatesFor({

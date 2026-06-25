@@ -34,6 +34,16 @@ test('product matcher identifies chat-history bidding clues', () => {
   assert.ok(result.score >= 70);
 });
 
+test('product matcher recognizes ERP model aliases from contract history', () => {
+  const result = matchProductTerms('采购工业白油68号、阻聚剂B596W、抗静电剂X-997和硅油100粘度');
+
+  assert.ok(result.matchedTerms.includes('白油'));
+  assert.ok(result.matchedTerms.includes('阻聚剂'));
+  assert.ok(result.matchedTerms.includes('抗静电剂'));
+  assert.ok(result.matchedTerms.includes('硅油'));
+  assert.ok(result.score >= 90);
+});
+
 test('product matcher keeps broad or service words from creating false positives', () => {
   const office = matchProductTerms('2026 年办公用品和物业保洁服务采购公告');
   const broad = matchProductTerms('某化工园区系统运维服务招标公告');

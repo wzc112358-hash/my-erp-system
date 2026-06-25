@@ -62,7 +62,8 @@ export const browserChannelCandidatesFor = ({
     if (normalized === 'bundled' || normalized === 'chromium') return [''];
     return [configured, ''];
   }
-  return platform === 'win32' ? ['chrome', 'msedge', ''] : [''];
+  if (['win32', 'darwin', 'linux'].includes(platform)) return ['chrome', 'msedge', ''];
+  return [''];
 };
 
 export const proxyServerFor = (env: Record<string, string | undefined> = process.env) => (

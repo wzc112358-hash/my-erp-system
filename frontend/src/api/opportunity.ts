@@ -109,28 +109,21 @@ export const OpportunityAPI = {
 
   copyGroupSummary: async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const result = await pb.collection('monitor_runs').getList<MonitorRun>(1, 20, {
-      filter: `created >= "${today} 00:00:00"`,
-      sort: '-created',
-    });
-    const latestWithSummary = result.items.find((item) => item.group_summary);
-    if (latestWithSummary?.group_summary) return latestWithSummary.group_summary;
-
     const opportunities = await pb.collection('bid_opportunities').getList<BidOpportunity>(1, 500, {
       filter: `created >= "${today} 00:00:00"`,
     });
     const grouped = opportunities.items.reduce<Record<string, { related: number; urgent: number }>>((acc, item) => {
-      const owner = item.owner_name || '未分配';
-      acc[owner] ||= { related: 0, urgent: 0 };
+      const source = item.source_name || '未知网站';
+      acc[source] ||= { related: 0, urgent: 0 };
       if (item.relevance === 'likely_related') {
-        acc[owner].related += 1;
-        if (item.urgency === 'urgent') acc[owner].urgent += 1;
+        acc[source].related += 1;
+        if (item.urgency === 'urgent') acc[source].urgent += 1;
       }
       return acc;
     }, {});
     const lines = ['今日招投标监测摘要：'];
-    Object.entries(grouped).forEach(([owner, count]) => {
-      lines.push(`${owner}：${count.related} 条疑似相关，${count.urgent} 条需 3 日内确认`);
+    Object.entries(grouped).forEach(([source, count]) => {
+      lines.push(`${source}：${count.related} 条疑似相关，${count.urgent} 条需 3 日内确认`);
     });
     if (Object.keys(grouped).length === 0) {
       lines.push('暂无新增疑似相关商机。');

@@ -34,7 +34,50 @@ interface ProfitCalc {
   minQty: number;
   salesQty: number;
   purchaseQty: number;
+  // 已执行利润（按各自实际执行量）
+  realizedSalesQty: number;
+  realizedPurchaseQty: number;
+  realizedSalesAmount: number;
+  realizedPurchaseAmount: number;
+  realizedFreight: number;
+  realizedMiscellaneous: number;
+  realizedOperatingProfit: number;
+  realizedTax: number;
+  realizedNetProfit: number;
 }
+
+// 读取后端已按 CNY 口径算好的「已执行利润」字段（带默认 0）
+const readRealizedCNY = (data: ContractDetailData) => {
+  const p = data.profit;
+  return {
+    realizedSalesQty: p.realized_sales_quantity ?? 0,
+    realizedPurchaseQty: p.realized_purchase_quantity ?? 0,
+    realizedSalesAmount: p.realized_sales_amount ?? 0,
+    realizedPurchaseAmount: p.realized_purchase_amount ?? 0,
+    realizedFreight: p.realized_freight ?? 0,
+    realizedMiscellaneous: p.realized_miscellaneous ?? 0,
+    realizedOperatingProfit: p.realized_operating_profit ?? 0,
+    realizedTax: p.realized_tax ?? 0,
+    realizedNetProfit: p.realized_net_profit ?? 0,
+  };
+};
+
+// USD 面板：已执行利润字段除以汇率
+const readRealizedUSD = (data: ContractDetailData, rate: number) => {
+  const r = readRealizedCNY(data);
+  if (rate <= 0) return r;
+  return {
+    realizedSalesQty: r.realizedSalesQty,
+    realizedPurchaseQty: r.realizedPurchaseQty,
+    realizedSalesAmount: r.realizedSalesAmount / rate,
+    realizedPurchaseAmount: r.realizedPurchaseAmount / rate,
+    realizedFreight: r.realizedFreight / rate,
+    realizedMiscellaneous: r.realizedMiscellaneous / rate,
+    realizedOperatingProfit: r.realizedOperatingProfit / rate,
+    realizedTax: r.realizedTax / rate,
+    realizedNetProfit: r.realizedNetProfit / rate,
+  };
+};
 
 const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const sc = data.sales_contract;
@@ -47,6 +90,9 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const salesQty = sc ? sc.total_quantity : 0;
   const purchaseQty = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
   const minQty = Math.min(salesQty, purchaseQty);
+
+  // 已执行利润：直接读取后端已按 CNY 口径算好的值
+  const realized = readRealizedCNY(data);
 
   if (!sc) {
     const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
@@ -63,6 +109,7 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
       purchasePaidAmount: paidAmount,
       currentProfit: 0, currentProfitTax: 0, currentProfitNet: 0,
       minQty: 0, salesQty: 0, purchaseQty: purchaseQty,
+      ...realized,
     };
   }
   const salesAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
@@ -84,12 +131,9 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   const taxAmount = (salesIncTax - purchaseTotalAmountCny) * 0.1881;
   const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny - totalTariff - totalVAT;
 
-  let currentProfit = 0;
-  if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
-    const salesUnitPrice = salesAmountCny / salesQty;
-    const purchaseUnitPrice = purchaseTotalAmountCny / purchaseQty;
-    currentProfit = (salesUnitPrice - purchaseUnitPrice) * minQty;
-  }
+  // currentProfit 已被新的「已执行利润」行取代（旧逻辑用合同签订量且未扣运费/税，口径不准）。
+  // 此处保留字段供兼容，但 UI 不再渲染该行。
+  const currentProfit = realized.realizedNetProfit;
 
   return {
     operatingProfit, taxAmount, netProfit,
@@ -104,6 +148,7 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
     purchasePaidAmount: paidAmount,
     currentProfit, currentProfitTax: 0, currentProfitNet: 0,
     minQty, salesQty, purchaseQty,
+    ...realized,
   };
 };
 
@@ -131,6 +176,7 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
       purchasePaidAmount: paidAmountUSD,
       currentProfit: 0, currentProfitTax: 0, currentProfitNet: 0,
       minQty: 0, salesQty: 0, purchaseQty: purchaseQty,
+      ...readRealizedUSD(data, rate),
     };
   }
   const salesAmount = sc.total_amount;
@@ -147,12 +193,8 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   const taxAmount = (salesIncTax - purchaseTotalAmount) * 0.1881;
   const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc - totalTariff - totalVAT;
 
-  let currentProfit = 0;
-  if (minQty > 0 && salesQty > 0 && purchaseQty > 0) {
-    const salesUnitPrice = salesAmount / salesQty;
-    const purchaseUnitPrice = purchaseTotalAmount / purchaseQty;
-    currentProfit = (salesUnitPrice - purchaseUnitPrice) * minQty;
-  }
+  // currentProfit 已被「已执行利润」行取代，此处仅保留兼容字段
+  const currentProfit = (data.profit.realized_net_profit ?? 0) / rate;
 
   return {
     operatingProfit, taxAmount, netProfit,
@@ -167,6 +209,7 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
     purchasePaidAmount: paidAmountUSD,
     currentProfit, currentProfitTax: 0, currentProfitNet: 0,
     minQty, salesQty, purchaseQty,
+    ...readRealizedUSD(data, rate),
   };
 };
 
@@ -517,6 +560,22 @@ const ContractDetailPage: React.FC = () => {
     );
   };
 
+  // 渲染「已执行利润」区块：营业利润、税额、净利润（始终展示，标注未执行部分不计入）
+  const renderRealizedProfitItems = (calc: ProfitCalc, fmt: (v: number) => string) => (
+    <>
+      <Descriptions.Item label={`已执行营业利润（销售已发${calc.realizedSalesQty}吨 / 采购已到${calc.realizedPurchaseQty}吨）`}>
+        <span style={{ color: calc.realizedOperatingProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{fmt(calc.realizedOperatingProfit)}</span>
+      </Descriptions.Item>
+      <Descriptions.Item label="已执行税额">
+        <span style={{ fontWeight: 'bold' }}>{fmt(calc.realizedTax)}</span>
+      </Descriptions.Item>
+      <Descriptions.Item label="已执行净利润" span={2}>
+        <span style={{ color: calc.realizedNetProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>{fmt(calc.realizedNetProfit)}</span>
+        <span style={{ marginLeft: 8, fontSize: 12, color: '#999' }}>（未执行部分暂不核算）</span>
+      </Descriptions.Item>
+    </>
+  );
+
   const renderProfitAnalysis = () => {
     if (!detailData || !detailData.sales_contract) return null;
     const sc = detailData.sales_contract;
@@ -572,18 +631,13 @@ const ContractDetailPage: React.FC = () => {
                     <Descriptions.Item label="净利润">
                       <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
                     </Descriptions.Item>
-                    {!cnyCalc.quantityMatched && cnyCalc.minQty > 0 && (
-                      <Descriptions.Item label={`当前利润（按 ${cnyCalc.minQty} 吨计）`} span={4}>
-                        <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                          {formatCurrency(cnyCalc.currentProfit)}
-                        </span>
-                      </Descriptions.Item>
-                    )}
+                    {renderRealizedProfitItems(cnyCalc, formatCurrency)}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
                     <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
                     <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
+                    <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
                     <div>汇率: 1 USD = {exchangeRate} CNY</div>
                   </div>
                 </>
@@ -612,18 +666,13 @@ const ContractDetailPage: React.FC = () => {
                     <Descriptions.Item label="净利润">
                       <span style={{ color: usdCalc!.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatUSD(usdCalc!.netProfit)}</span>
                     </Descriptions.Item>
-                    {!cnyCalc.quantityMatched && usdCalc!.minQty > 0 && (
-                      <Descriptions.Item label={`当前利润（按 ${usdCalc!.minQty} 吨计）`} span={4}>
-                        <span style={{ color: usdCalc!.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                          {formatUSD(usdCalc!.currentProfit)}
-                        </span>
-                      </Descriptions.Item>
-                    )}
+                    {renderRealizedProfitItems(usdCalc!, formatUSD)}
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
                     <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
                     <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
+                    <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
                   </div>
                 </>
               ),
@@ -649,18 +698,13 @@ const ContractDetailPage: React.FC = () => {
               <Descriptions.Item label="净利润">
                 <span style={{ color: cnyCalc.netProfit < 0 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>{formatCurrency(cnyCalc.netProfit)}</span>
               </Descriptions.Item>
-              {!cnyCalc.quantityMatched && cnyCalc.minQty > 0 && (
-                <Descriptions.Item label={`当前利润（按 ${cnyCalc.minQty} 吨计）`} span={4}>
-                  <span style={{ color: cnyCalc.currentProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>
-                    {formatCurrency(cnyCalc.currentProfit)}
-                  </span>
-                </Descriptions.Item>
-              )}
+              {renderRealizedProfitItems(cnyCalc, formatCurrency)}
             </Descriptions>
             <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
               <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
               <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
               <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
+              <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
               {hasCrossBorder && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
             </div>
           </>

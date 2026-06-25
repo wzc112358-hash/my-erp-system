@@ -207,6 +207,16 @@ export interface ProfitAnalysis {
   is_quantity_matched: boolean;
   tax_rate?: number;
   after_tax_profit?: number;
+  // 已执行利润（按各自实际执行量核算：销售按已发货量、采购按已到货量）
+  realized_sales_quantity?: number;
+  realized_purchase_quantity?: number;
+  realized_sales_amount?: number;
+  realized_purchase_amount?: number;
+  realized_freight?: number;
+  realized_miscellaneous?: number;
+  realized_operating_profit?: number;
+  realized_tax?: number;
+  realized_net_profit?: number;
 }
 
 export interface ComparisonData {

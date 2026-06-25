@@ -15,8 +15,15 @@ let llmSettingsInitialized = false;
 let feedbackLearning = null;
 let priorityBoard = null;
 let scheduleSiteInitialized = false;
+let agentTools = null;
+let activeSidebarPanel = localStorage.getItem('hcz-active-sidebar-panel') || 'tasks';
+let agentRuns = [];
+let selectedAgentRunId = localStorage.getItem('hcz-selected-agent-run-id') || '';
+const agentRunDetails = new Map();
 
 const $ = (id) => document.getElementById(id);
+const railNav = $('railNav');
+const sidebarTitle = $('sidebarTitle');
 const taskList = $('taskList');
 const detail = $('detail');
 const notice = $('notice');
@@ -35,6 +42,7 @@ const feedbackLearningState = $('feedbackLearningState');
 const clearFeedbackLearning = $('clearFeedbackLearning');
 const priorityBoardState = $('priorityBoardState');
 const copyPriorityReport = $('copyPriorityReport');
+const agentToolsState = $('agentToolsState');
 const scheduleForm = $('scheduleForm');
 const scheduleSiteSelect = $('scheduleSiteSelect');
 const scheduleCustomSourceName = $('scheduleCustomSourceName');
@@ -52,6 +60,13 @@ const searchTerms = $('searchTerms');
 const entryUrl = $('entryUrl');
 const actionSteps = $('actionSteps');
 
+const sidebarPanels = {
+  tasks: '本地采集任务',
+  agent: 'Agent 设置',
+  schedule: '自动巡检',
+  insights: '商机看板',
+};
+
 const escapeHtml = (value) => String(value || '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -67,6 +82,26 @@ const statusLabel = (status) => ({
   completed: '已完成',
   failed: '失败',
 }[status] || status || '未知');
+
+const agentRunStatusLabel = (status) => ({
+  running: '运行中',
+  request_human: '等待人工',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}[status] || status || '未知');
+
+const phaseLabel = (phase) => ({
+  plan: '计划',
+  discover: '发现',
+  browser: '浏览器',
+  extract: '提取',
+  assess: '研判',
+  summarize: '摘要',
+  human: '人工',
+  complete: '完成',
+  error: '错误',
+}[phase] || phase || '步骤');
 
 const groupTasks = (items) => {
   const groups = new Map();
@@ -87,6 +122,20 @@ const groupTasks = (items) => {
 const showNotice = (message, bad = false) => {
   notice.textContent = message || '';
   notice.className = `notice${message ? ' show' : ''}${bad ? ' bad' : ''}`;
+};
+
+const setActiveSidebarPanel = (panel, { persist = true } = {}) => {
+  activeSidebarPanel = sidebarPanels[panel] ? panel : 'tasks';
+  if (persist) localStorage.setItem('hcz-active-sidebar-panel', activeSidebarPanel);
+  if (sidebarTitle) sidebarTitle.textContent = sidebarPanels[activeSidebarPanel];
+  for (const section of document.querySelectorAll('[data-panel]')) {
+    section.classList.toggle('active', section.dataset.panel === activeSidebarPanel);
+  }
+  for (const button of document.querySelectorAll('[data-panel-target]')) {
+    const active = button.dataset.panelTarget === activeSidebarPanel;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
 };
 
 const showReleaseNotice = (release) => {
@@ -118,6 +167,55 @@ const requestJson = async (path, options = {}) => {
   const body = await response.json();
   if (!response.ok || body.error) throw new Error(body.error || `请求失败（${response.status}）`);
   return body;
+};
+
+const compactJson = (value, limit = 900) => {
+  if (value === undefined || value === null || value === '') return '';
+  const text = typeof value === 'string'
+    ? value
+    : JSON.stringify(value, null, 2);
+  return text.length > limit ? `${text.slice(0, limit)}\n...[truncated]` : text;
+};
+
+const compactInline = (value, limit = 160) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  const tailLength = Math.min(24, Math.floor(limit / 3));
+  const headLength = Math.max(0, limit - tailLength - 5);
+  return `${text.slice(0, headLength)} ... ${text.slice(-tailLength)}`;
+};
+
+const compactBlock = (value, limit = 1800) => {
+  const text = String(value || '').trim();
+  if (text.length <= limit) return text;
+  const tailLength = Math.min(240, Math.floor(limit / 4));
+  const headLength = Math.max(0, limit - tailLength - 18);
+  return `${text.slice(0, headLength)}\n\n...[truncated]\n\n${text.slice(-tailLength)}`;
+};
+
+const compactUrl = (url, limit = 120) => {
+  const text = String(url || '').trim();
+  return compactInline(text, text.startsWith('data:') ? Math.min(limit, 110) : limit);
+};
+
+const renderUrlLink = (url, emptyText = '暂无链接') => {
+  if (!url) return emptyText;
+  return `<a href="${escapeHtml(url)}" title="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(compactUrl(url))}</a>`;
+};
+
+const agentRunsForTask = (taskId) => agentRuns
+  .filter((run) => run.taskId === taskId)
+  .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+
+const loadAgentRunDetail = async (runId, { renderAfter = true } = {}) => {
+  if (!runId) return null;
+  selectedAgentRunId = runId;
+  localStorage.setItem('hcz-selected-agent-run-id', runId);
+  if (!agentRunDetails.has(runId)) {
+    agentRunDetails.set(runId, await requestJson(`/agent-runs/${encodeURIComponent(runId)}`));
+  }
+  if (renderAfter) render();
+  return agentRunDetails.get(runId);
 };
 
 const copyTextToClipboard = async (text) => {
@@ -195,6 +293,31 @@ const renderPriorityBoard = (board = {}) => {
     `;
   }
   copyPriorityReport.disabled = busy || !items.length;
+};
+
+const renderAgentTools = (state = {}) => {
+  agentTools = state;
+  const tools = state.tools || [];
+  const servers = state.mcpServers || [];
+  if (!tools.length && !servers.length) {
+    agentToolsState.innerHTML = '暂无工具状态';
+    return;
+  }
+  const readyCount = servers.filter((server) => server.status === 'ready').length;
+  agentToolsState.innerHTML = [
+    `<div class="muted">内置工具 ${escapeHtml(tools.length)} 个，MCP 就绪 ${escapeHtml(readyCount)}/${escapeHtml(servers.length)}。</div>`,
+    servers.length ? `
+      <ul class="priority-mini">
+        ${servers.map((server) => `
+          <li>
+            <strong>${escapeHtml(server.label || server.id)}</strong>
+            <span class="muted">${server.status === 'ready' ? '可用' : `fallback · 缺少 ${escapeHtml((server.missingEnv || []).join(', ') || '配置')}`}</span>
+            <span class="muted">${escapeHtml(server.fallbackAdapter || '')}</span>
+          </li>
+        `).join('')}
+      </ul>
+    ` : '',
+  ].filter(Boolean).join('');
 };
 
 const llmSettingsPayload = ({ includeBlankKey = false } = {}) => {
@@ -311,7 +434,8 @@ const renderList = () => {
     const activeCount = group.tasks.filter((task) => ['pending', 'running', 'waiting_agent'].includes(task.status)).length;
     section.innerHTML = `
       <button class="group-toggle" data-group="${escapeHtml(group.sourceName)}" aria-expanded="${open ? 'true' : 'false'}">
-        <span>${escapeHtml(group.sourceName)}</span>
+        <span class="group-arrow">${open ? '▾' : '▸'}</span>
+        <span class="group-name">${escapeHtml(group.sourceName)}</span>
         <span class="group-meta">${activeCount} 待办 · ${completedCount} 完成</span>
         <span class="group-count">${group.tasks.length}</span>
       </button>
@@ -327,7 +451,7 @@ const renderList = () => {
           <strong>${escapeHtml(task.searchTerms || task.ownerName || '本地采集')}</strong>
           <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
         </div>
-        <div class="muted">${escapeHtml(task.entryUrl || '未提供入口 URL')}</div>
+        <div class="muted" title="${escapeHtml(task.entryUrl || '')}">${escapeHtml(task.entryUrl ? compactUrl(task.entryUrl) : '未提供入口 URL')}</div>
         <div class="muted">${escapeHtml(task.updatedAt || '')}</div>
       `;
       body.appendChild(button);
@@ -345,7 +469,7 @@ const renderCandidates = (task) => {
         <li>
           <strong>${escapeHtml(candidate.title)}</strong>
           <div class="muted">${escapeHtml(candidate.buyer_name || '采购方待确认')} · ${escapeHtml(candidate.published_at || '发布日期待确认')} · 截止 ${escapeHtml(candidate.deadline_at || '待确认')}</div>
-          <div class="muted">${candidate.url ? `<a href="${escapeHtml(candidate.url)}" target="_blank" rel="noreferrer">${escapeHtml(candidate.url)}</a>` : '暂无链接'}</div>
+          <div class="muted">${renderUrlLink(candidate.url)}</div>
         </li>
       `).join('')}
     </ul>
@@ -381,8 +505,8 @@ const renderDocumentSummaries = (card) => {
             <li>
               <strong>${escapeHtml(document.title || '附件')}</strong>
               ${document.warning ? `<div class="muted">${escapeHtml(document.warning)}</div>` : ''}
-              ${document.textSnippet ? `<p>${escapeHtml(document.textSnippet)}</p>` : ''}
-              ${document.url ? `<div class="muted"><a href="${escapeHtml(document.url)}" target="_blank" rel="noreferrer">${escapeHtml(document.url)}</a></div>` : ''}
+              ${document.textSnippet ? `<p>${escapeHtml(compactBlock(document.textSnippet, 700))}</p>` : ''}
+              ${document.url ? `<div class="muted">${renderUrlLink(document.url)}</div>` : ''}
             </li>
           `).join('')}
         </ul>
@@ -433,7 +557,7 @@ const renderOpportunityCards = (task) => {
           <div class="card-grid">
             <div>
               <label>证据</label>
-              <p>${escapeHtml(card.evidenceText || '暂无证据')}</p>
+              <p>${escapeHtml(compactBlock(card.evidenceText || '暂无证据', 700))}</p>
             </div>
             <div>
               <label>需确认</label>
@@ -445,11 +569,11 @@ const renderOpportunityCards = (task) => {
             </div>
             <div>
               <label>微信群摘要</label>
-              <pre>${escapeHtml(card.wechatSummary || '')}</pre>
+              <pre>${escapeHtml(compactBlock(card.wechatSummary || '', 900))}</pre>
             </div>
           </div>
           ${renderDocumentSummaries(card)}
-          <div class="muted">${card.url ? `<a href="${escapeHtml(card.url)}" target="_blank" rel="noreferrer">${escapeHtml(card.url)}</a>` : '暂无链接'}</div>
+          <div class="muted">${renderUrlLink(card.url)}</div>
         </article>
       `).join('')}
     </div>
@@ -460,7 +584,7 @@ const renderArtifacts = (task) => {
   const artifacts = task.lastArtifacts || [];
   if (!artifacts.length) return '暂无证据摘要';
   return artifacts
-    .map((artifact) => `${artifact.artifact_type || 'artifact'} · ${artifact.title || ''}${artifact.url ? ` · ${artifact.url}` : ''}`)
+    .map((artifact) => compactInline(`${artifact.artifact_type || 'artifact'} · ${artifact.title || ''}${artifact.url ? ` · ${artifact.url}` : ''}`, 260))
     .join('\n');
 };
 
@@ -471,12 +595,86 @@ const renderDiscoveredLinks = (task) => {
     <ul class="candidate-list">
       ${links.slice(0, 8).map((link) => `
         <li>
-          <strong>${escapeHtml(link.title || link.url)}</strong>
+          <strong>${escapeHtml(compactInline(link.title || link.url, 140))}</strong>
           <div class="muted">${escapeHtml(link.source || 'search')} · 分数 ${escapeHtml(link.score ?? 0)}</div>
-          <div class="muted">${link.url ? `<a href="${escapeHtml(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.url)}</a>` : '暂无链接'}</div>
+          <div class="muted">${renderUrlLink(link.url)}</div>
         </li>
       `).join('')}
     </ul>
+  `;
+};
+
+const renderAgentRunSteps = (detail) => {
+  const steps = detail?.steps || [];
+  if (!detail) {
+    return '<div class="value">点击左侧某次运行查看详细步骤。</div>';
+  }
+  if (!steps.length) {
+    return '<div class="value">这次运行还没有记录步骤。</div>';
+  }
+  return `
+    <div class="agent-step-list">
+      ${steps.map((step) => {
+        const payload = [
+          compactJson(step.observation) ? `观察：\n${compactJson(step.observation)}` : '',
+          compactJson(step.result) ? `结果：\n${compactJson(step.result)}` : '',
+          step.errorMessage ? `错误：${step.errorMessage}` : '',
+        ].filter(Boolean).join('\n\n');
+        return `
+          <article class="agent-step ${escapeHtml(step.phase || '')}">
+            <div class="agent-step-head">
+              <span class="step-index">${escapeHtml(step.stepIndex || '')}</span>
+              <div>
+                <strong>${escapeHtml(phaseLabel(step.phase))} · ${escapeHtml(step.action || '')}</strong>
+                <div class="muted">${escapeHtml(step.tool || 'agent')} · ${escapeHtml(step.createdAt || '')}</div>
+              </div>
+            </div>
+            ${payload ? `<pre>${escapeHtml(payload)}</pre>` : ''}
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+};
+
+const renderAgentRuns = (task) => {
+  const runs = agentRunsForTask(task.id);
+  if (!runs.length) {
+    return '<div class="value">暂无 Agent 运行轨迹。点击“Agent 自动发现”后会记录每一步工具调用。</div>';
+  }
+  const activeRun = runs.some((run) => run.id === selectedAgentRunId)
+    ? runs.find((run) => run.id === selectedAgentRunId)
+    : runs[0];
+  const detail = activeRun ? agentRunDetails.get(activeRun.id) : null;
+  return `
+    <div class="agent-run-board">
+      <div class="agent-run-list">
+        ${runs.slice(0, 6).map((run) => `
+          <button
+            type="button"
+            class="agent-run-card${run.id === activeRun?.id ? ' selected' : ''}"
+            data-agent-run-id="${escapeHtml(run.id)}"
+          >
+            <span class="status ${escapeHtml(run.status)}">${escapeHtml(agentRunStatusLabel(run.status))}</span>
+            <strong>${escapeHtml(run.trigger || 'manual_agent_run')}</strong>
+            <span class="muted">${escapeHtml(run.updatedAt || run.startedAt || '')}</span>
+            ${run.resultSummary ? `<span class="muted">${escapeHtml(compactInline(run.resultSummary, 110))}</span>` : ''}
+          </button>
+        `).join('')}
+      </div>
+      <div class="agent-run-detail">
+        ${activeRun ? `
+          <div class="agent-run-summary">
+            <div>
+              <strong>${escapeHtml(activeRun.id)}</strong>
+              <div class="muted">${escapeHtml(activeRun.sourceName || '')} · ${escapeHtml(agentRunStatusLabel(activeRun.status))}</div>
+            </div>
+            <button type="button" data-agent-run-id="${escapeHtml(activeRun.id)}">${detail ? '刷新轨迹' : '查看轨迹'}</button>
+          </div>
+          ${renderAgentRunSteps(detail)}
+        ` : '<div class="value">暂无可查看的运行。</div>'}
+      </div>
+    </div>
   `;
 };
 
@@ -489,7 +687,7 @@ const renderDetail = () => {
         <div>
           <div>当前任务已不在列表中</div>
           <div class="muted">任务 ID：${escapeHtml(lastSelectedTask.id)} · ${escapeHtml(lastSelectedTask.sourceName || '')}</div>
-          <div class="muted">${escapeHtml(lastSelectedTask.lastLog || lastSelectedTask.lastObservation || '可能已完成、取消或失败。')}</div>
+          <div class="muted">${escapeHtml(compactBlock(lastSelectedTask.lastLog || lastSelectedTask.lastObservation || '可能已完成、取消或失败。', 700))}</div>
         </div>
       `;
       return;
@@ -500,7 +698,7 @@ const renderDetail = () => {
   lastSelectedTask = task;
   selectedTaskId = task.id;
   const entry = task.entryUrl
-    ? `<a href="${escapeHtml(task.entryUrl)}" target="_blank" rel="noreferrer">${escapeHtml(task.entryUrl)}</a>`
+    ? renderUrlLink(task.entryUrl)
     : '未提供';
   const hasEntryUrl = Boolean(task.entryUrl);
   const noEntryWarning = hasEntryUrl
@@ -508,23 +706,25 @@ const renderDetail = () => {
     : '<div class="notice bad show">该任务没有入口 URL，无法打开采集浏览器。请补充入口，或先在站点配置中完善 profile。</div>';
   detail.className = '';
   detail.innerHTML = `
-    <div class="topbar">
-      <div>
-        <h2>${escapeHtml(task.sourceName || '未命名站点')}</h2>
-        <div class="muted">任务 ID：${escapeHtml(task.id)}${task.mode ? ` · ${task.mode === 'local' ? '本机任务' : '云端兼容任务'}` : ''}</div>
+    <div class="detail-top">
+      <div class="topbar">
+        <div>
+          <h2>${escapeHtml(task.sourceName || '未命名站点')}</h2>
+          <div class="muted">任务 ID：${escapeHtml(task.id)}${task.mode ? ` · ${task.mode === 'local' ? '本机任务' : '云端兼容任务'}` : ''}</div>
+        </div>
+        <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
       </div>
-      <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
-    </div>
-    ${noEntryWarning}
-    <div class="actions">
-      <button class="primary" data-action="agent"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>Agent 自动发现</button>
-      <button class="primary" data-action="open"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>打开采集浏览器</button>
-      <button data-action="continue"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>我已完成登录/筛选，继续采集</button>
-      <button data-action="copy-task-report">复制站点日报</button>
-      <button data-action="copy-daily-report">复制今日汇总</button>
-      <button data-action="copy-priority-report">复制重点清单</button>
-      <button data-action="cancel">取消</button>
-      <button class="danger" data-action="fail">失败</button>
+      ${noEntryWarning}
+      <div class="actions">
+        <button class="primary" data-action="agent"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>Agent 自动发现</button>
+        <button class="primary" data-action="open"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>打开采集浏览器</button>
+        <button data-action="continue"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>我已完成登录/筛选，继续采集</button>
+        <button data-action="copy-task-report">复制站点日报</button>
+        <button data-action="copy-daily-report">复制今日汇总</button>
+        <button data-action="copy-priority-report">复制重点清单</button>
+        <button data-action="cancel">取消</button>
+        <button class="danger" data-action="fail">失败</button>
+      </div>
     </div>
     <div class="section">
       <div class="field">
@@ -542,6 +742,10 @@ const renderDetail = () => {
     </div>
     <div class="section">
       <div class="field">
+        <label>Agent 运行轨迹</label>
+        ${renderAgentRuns(task)}
+      </div>
+      <div class="field">
         <label>Agent 发现入口</label>
         ${renderDiscoveredLinks(task)}
       </div>
@@ -555,7 +759,7 @@ const renderDetail = () => {
       </div>
       <div class="field">
         <label>结果摘要</label>
-        <pre>${escapeHtml(task.lastResultSummary || '暂无摘要')}</pre>
+        <pre>${escapeHtml(compactBlock(task.lastResultSummary || '暂无摘要'))}</pre>
       </div>
     </div>
     <div class="section">
@@ -569,20 +773,25 @@ const renderDetail = () => {
       </div>
       <div class="field">
         <label>最近日志</label>
-        <pre>${escapeHtml(task.lastLog || task.lastObservation || '暂无日志')}</pre>
+        <pre>${escapeHtml(compactBlock(task.lastLog || task.lastObservation || '暂无日志', 1600))}</pre>
       </div>
     </div>
   `;
   for (const button of detail.querySelectorAll('[data-action]')) {
     button.disabled = busy || button.hasAttribute('disabled');
   }
+  for (const button of detail.querySelectorAll('[data-agent-run-id]')) {
+    button.disabled = busy;
+  }
 };
 
 const render = () => {
   if (!selectedTaskId && tasks[0]) selectedTaskId = tasks[0].id;
+  setActiveSidebarPanel(activeSidebarPanel, { persist: false });
   renderProfileOptions();
   renderFeedbackLearning(feedbackLearning || {});
   renderPriorityBoard(priorityBoard || {});
+  renderAgentTools(agentTools || {});
   renderSchedules();
   renderList();
   renderDetail();
@@ -599,11 +808,22 @@ const refresh = async () => {
     const profileBody = await requestJson('/site-profiles');
     profiles = profileBody.profiles || [];
     renderLLMSettings(await requestJson('/settings/llm'));
+    renderAgentTools(await requestJson('/agent-tools').catch(() => ({})));
     renderFeedbackLearning(await requestJson('/settings/feedback-learning'));
     renderPriorityBoard(await requestJson('/opportunities/priority-board?limit=8'));
     schedules = (await requestJson('/schedules')).schedules || [];
     const body = await requestJson('/tasks');
     tasks = body.tasks || [];
+    if (!selectedTaskId && tasks[0]) selectedTaskId = tasks[0].id;
+    agentRuns = (await requestJson('/agent-runs?limit=80').catch(() => ({ runs: [] }))).runs || [];
+    const runsForSelected = selectedTaskId ? agentRunsForTask(selectedTaskId) : [];
+    if (runsForSelected.length && !runsForSelected.some((run) => run.id === selectedAgentRunId)) {
+      selectedAgentRunId = runsForSelected[0].id;
+      localStorage.setItem('hcz-selected-agent-run-id', selectedAgentRunId);
+    }
+    if (selectedAgentRunId && !agentRunDetails.has(selectedAgentRunId)) {
+      await loadAgentRunDetail(selectedAgentRunId, { renderAfter: false }).catch(() => null);
+    }
     render();
   } catch (err) {
     showNotice(`刷新失败：${err && err.message ? err.message : err}`, true);
@@ -719,6 +939,7 @@ const saveSchedule = async (event) => {
 };
 
 const editSchedule = (schedule) => {
+  setActiveSidebarPanel('schedule');
   scheduleSiteSelect.value = profiles.some((profile) => profile.sourceName === schedule.sourceName) ? schedule.sourceName : '';
   scheduleCustomSourceName.value = scheduleSiteSelect.value ? '' : schedule.sourceName || '';
   scheduleTimes.value = (schedule.times || []).join(',');
@@ -816,6 +1037,11 @@ const runAction = async (action, { cardIndex = '', feedbackStatus = '' } = {}) =
     if (action === 'agent') {
       if (!task.entryUrl) throw new Error('任务缺少入口 URL，无法运行 Agent。');
       const result = await requestJson(`/tasks/${encodeURIComponent(task.id)}/agent-run`, { method: 'POST', body: JSON.stringify({}) });
+      if (result.agentRunId) {
+        selectedAgentRunId = result.agentRunId;
+        localStorage.setItem('hcz-selected-agent-run-id', selectedAgentRunId);
+        agentRunDetails.delete(selectedAgentRunId);
+      }
       if (result.status === 'request_human') {
         showNotice(result.humanReason || 'Agent 已打开浏览器，需要人工继续处理。');
       } else {
@@ -914,10 +1140,25 @@ taskList.addEventListener('click', (event) => {
   const button = event.target.closest('[data-task-id]');
   if (!button) return;
   selectedTaskId = button.dataset.taskId || '';
+  const runsForSelected = agentRunsForTask(selectedTaskId);
+  selectedAgentRunId = runsForSelected[0]?.id || '';
+  if (selectedAgentRunId) localStorage.setItem('hcz-selected-agent-run-id', selectedAgentRunId);
   render();
 });
 
+railNav.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-panel-target]');
+  if (!button) return;
+  setActiveSidebarPanel(button.dataset.panelTarget || 'tasks');
+});
+
 detail.addEventListener('click', (event) => {
+  const runButton = event.target.closest('[data-agent-run-id]');
+  if (runButton) {
+    loadAgentRunDetail(runButton.dataset.agentRunId || '')
+      .catch((err) => showNotice(`读取 Agent 轨迹失败：${err && err.message ? err.message : err}`, true));
+    return;
+  }
   const button = event.target.closest('[data-action]');
   if (!button) return;
   runAction(button.dataset.action || '', {
@@ -955,4 +1196,5 @@ testLLM.addEventListener('click', testLLMConnection);
 clearFeedbackLearning.addEventListener('click', clearLearning);
 copyPriorityReport.addEventListener('click', copyPriorityReportText);
 refreshButton.addEventListener('click', refresh);
+setActiveSidebarPanel(activeSidebarPanel, { persist: false });
 refresh();

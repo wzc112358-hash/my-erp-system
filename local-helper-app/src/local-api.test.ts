@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
+import { createAgentHarnessStore } from './agent-harness.ts';
 import { createLocalApiServer, resolveRuntimeDirs } from './local-api.ts';
 import { buildOpportunityCards } from './product-knowledge.ts';
 import { createTaskStore } from './task-store.ts';
@@ -111,6 +112,7 @@ test('local API exposes health, pair, tasks, and lifecycle endpoints', async () 
       body: JSON.stringify({ code: 'ABC123', userName: '小魏' }),
     });
     const tasks = await requestJson(baseUrl, '/tasks');
+    const agentTools = await requestJson(baseUrl, '/agent-tools');
     const started = await requestJson(baseUrl, '/tasks/task-huajin-1/start', { method: 'POST' });
     const continued = await requestJson(baseUrl, '/tasks/task-huajin-1/continue', {
       method: 'POST',
@@ -120,6 +122,8 @@ test('local API exposes health, pair, tasks, and lifecycle endpoints', async () 
     assert.equal(health.body.ok, true);
     assert.equal(pair.body.paired, true);
     assert.equal(tasks.body.tasks.length, 1);
+    assert.ok(agentTools.body.tools.some((tool: { name: string }) => tool.name === 'link_discovery.search'));
+    assert.ok(agentTools.body.mcpServers.some((server: { id: string }) => server.id === 'chrome-devtools'));
     assert.equal(started.body.status, 'running');
     assert.equal(continued.body.status, 'waiting_agent');
     assert.equal(continued.body.lastObservation, '已登录，当前页面展示采购公告列表。');
@@ -130,9 +134,11 @@ test('local API exposes health, pair, tasks, and lifecycle endpoints', async () 
 
 test('local API creates and runs local agent tasks without cloud pairing', async () => {
   const store = createTaskStore();
+  const agentHarnessRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'hcz-local-api-agent-runs-'));
   const server = createLocalApiServer({
     store,
     port: 0,
+    agentHarness: createAgentHarnessStore({ rootDir: agentHarnessRoot }),
     runLocalTask: async ({ task }) => ({
       status: 'request_human',
       humanReason: `请在 ${task.sourceName} 完成登录后继续采集。`,
@@ -230,14 +236,18 @@ test('local API creates and runs local agent tasks without cloud pairing', async
     const opened = await requestJson(baseUrl, `/tasks/${taskId}/run`, { method: 'POST' });
     const continued = await requestJson(baseUrl, `/tasks/${taskId}/continue-run`, { method: 'POST' });
     const tasks = await requestJson(baseUrl, '/tasks');
+    const agentRunDetail = await requestJson(baseUrl, `/agent-runs/${agentRun.body.agentRunId}`);
+    const agentRuns = await requestJson(baseUrl, '/agent-runs?limit=5');
 
     const cnpcProfile = profiles.body.profiles.find((profile: { sourceName: string }) => profile.sourceName === '中石油招投标网');
     assert.ok(cnpcProfile);
-    assert.match(cnpcProfile.defaultSearchTerms, /缓蚀阻垢剂/);
+    assert.match(cnpcProfile.defaultSearchTerms, /白油/);
+    assert.match(cnpcProfile.defaultSearchTerms, /TCP2/);
     assert.equal(created.status, 201);
     assert.match(created.body.task.id, /^local-/);
     assert.equal(created.body.task.entryUrl, 'https://www.cnpcbidding.com/#/tenders');
     assert.equal(agentRun.body.status, 'completed');
+    assert.match(agentRun.body.agentRunId, /^run-/);
     assert.equal(agentRun.body.discoveredLinks[0].source, 'mock-search');
     assert.equal(opened.body.status, 'request_human');
     assert.equal(continued.body.candidateBundle.candidates.length, 1);
@@ -246,6 +256,11 @@ test('local API creates and runs local agent tasks without cloud pairing', async
     assert.equal(tasks.body.tasks[0].lastArtifacts[0].artifact_type, 'dom_snapshot');
     assert.equal(tasks.body.tasks[0].lastDiscoveredLinks[0].source, 'mock-search');
     assert.ok(Array.isArray(tasks.body.tasks[0].lastOpportunityCards));
+    assert.equal(agentRunDetail.body.run.taskId, taskId);
+    assert.equal(agentRunDetail.body.run.status, 'completed');
+    assert.ok(agentRunDetail.body.steps.some((step: { action: string }) => step.action === 'agent_run_requested'));
+    assert.ok(agentRunDetail.body.steps.some((step: { action: string }) => step.action === 'agent_run_finished'));
+    assert.equal(agentRuns.body.runs[0].id, agentRun.body.agentRunId);
   } finally {
     await server.stop();
   }
@@ -532,10 +547,12 @@ test('local API manages daily schedules and runs due local tasks', async () => {
 
 test('local API can run a schedule immediately through the agent path', async () => {
   const store = createTaskStore();
+  const agentHarnessRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'hcz-local-api-schedule-agent-runs-'));
   const server = createLocalApiServer({
     store,
     port: 0,
     enableScheduler: false,
+    agentHarness: createAgentHarnessStore({ rootDir: agentHarnessRoot }),
     createBrowserRuntime: () => ({
       open: async () => ({ visibleText: '', url: 'https://example.com/list' }),
       close: async () => undefined,
@@ -584,9 +601,11 @@ test('local API can run a schedule immediately through the agent path', async ()
       body: JSON.stringify({}),
     });
     const tasks = await requestJson(baseUrl, '/tasks');
+    const agentRuns = await requestJson(baseUrl, '/agent-runs?limit=5');
 
     assert.equal(run.body.schedule.lastStatus, 'completed');
     assert.equal(tasks.body.tasks[0].status, 'completed');
+    assert.equal(agentRuns.body.runs[0].trigger, 'manual_schedule_agent_run');
   } finally {
     await server.stop();
   }

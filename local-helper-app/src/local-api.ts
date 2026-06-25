@@ -12,6 +12,13 @@ import {
   sendHeartbeat,
   startCloudTask,
 } from './cloud-client.ts';
+import {
+  createAgentHarnessStore,
+  type AgentHarnessStepInput,
+  type AgentHarnessStore,
+  type AgentRunStatus,
+} from './agent-harness.ts';
+import { DEFAULT_AGENT_TOOL_MANIFESTS } from './agent-toolbox.ts';
 import { runControlledLocalAgentTask, type ControlledAgentOptions } from './controlled-local-agent.ts';
 import { createDefaultBidAssessor } from './bid-assessment.ts';
 import {
@@ -54,6 +61,8 @@ import {
   runLocalHelperTask,
   type CloudTaskChannel,
 } from './task-runner.ts';
+import { describeMcpToolPlans } from './mcp-tool-plans.ts';
+import { createDefaultReActPlanner } from './react-planner.ts';
 import {
   analyzeObservation,
   buildObservationArtifacts,
@@ -127,14 +136,22 @@ const sanitizePathSegment = (value = '') => (
     .replace(/[. ]+$/g, '') || 'default'
 );
 
+export const resolveDataRoot = (
+  env: Record<string, string | undefined> = process.env,
+) => path.join(
+  env.LOCALAPPDATA || env.APPDATA || os.tmpdir(),
+  DEFAULT_DATA_DIR_NAME,
+);
+
+export const resolveAgentHarnessDir = (
+  env: Record<string, string | undefined> = process.env,
+) => String(env.HCZ_LOCAL_HELPER_AGENT_RUN_DIR || path.join(resolveDataRoot(env), 'agent-runs'));
+
 export const resolveRuntimeDirs = (
   task: { sourceName?: string } = {},
   env: Record<string, string | undefined> = process.env,
 ) => {
-  const dataRoot = path.join(
-    env.LOCALAPPDATA || env.APPDATA || os.tmpdir(),
-    DEFAULT_DATA_DIR_NAME,
-  );
+  const dataRoot = resolveDataRoot(env);
   return {
     profileDir: String(env.HCZ_LOCAL_HELPER_PROFILE_DIR || path.join(dataRoot, 'profiles', sanitizePathSegment(task.sourceName))),
     screenshotDir: String(env.HCZ_LOCAL_HELPER_ARTIFACT_DIR || path.join(dataRoot, 'artifacts')),
@@ -154,6 +171,7 @@ export const createLocalApiServer = ({
   rendererDir = '',
   testLLMConnection = ({ config }) => testOpenAICompatibleLLMConfig({ config }),
   createBrowserRuntime,
+  agentHarness = createAgentHarnessStore({ rootDir: resolveAgentHarnessDir() }),
   enableScheduler = process.env.HCZ_LOCAL_SCHEDULER_DISABLED !== '1',
   scheduleIntervalMs = Number(process.env.HCZ_LOCAL_SCHEDULER_INTERVAL_MS || 60_000),
   scheduleWindowMinutes = Number(process.env.HCZ_LOCAL_SCHEDULER_WINDOW_MINUTES || 10),
@@ -170,6 +188,7 @@ export const createLocalApiServer = ({
   rendererDir?: string;
   testLLMConnection?: LLMConnectionTester;
   createBrowserRuntime?: BrowserRuntimeFactory;
+  agentHarness?: AgentHarnessStore;
   enableScheduler?: boolean;
   scheduleIntervalMs?: number;
   scheduleWindowMinutes?: number;
@@ -450,6 +469,91 @@ export const createLocalApiServer = ({
     return 'created';
   };
 
+  const agentRunStatusFor = (result: LocalAgentRunResult | null): AgentRunStatus => {
+    if (!result) return 'failed';
+    if (result.status === 'request_human') return 'request_human';
+    if (result.status === 'completed') return 'completed';
+    if (result.status === 'failed') return 'failed';
+    return 'running';
+  };
+
+  const runAgentTaskWithHarness = async ({
+    task,
+    llmConfig,
+    assessor,
+    trigger,
+  }: {
+    task: LocalHelperTask;
+    llmConfig: LocalLLMConfig | null;
+    assessor: ControlledAgentOptions['assessor'];
+    trigger: string;
+  }): Promise<LocalAgentRunResult & { agentRunId: string }> => {
+    const run = await agentHarness.startRun({
+      taskId: task.id,
+      sourceName: task.sourceName,
+      entryUrl: task.entryUrl,
+      searchTerms: task.searchTerms,
+      trigger,
+    });
+    const recordStep = async (step: AgentHarnessStepInput) => {
+      await agentHarness.appendStep(run.id, step);
+    };
+    await recordStep({
+      phase: 'plan',
+      action: 'agent_run_requested',
+      result: {
+        trigger,
+        taskId: task.id,
+        sourceName: task.sourceName,
+        entryUrl: task.entryUrl,
+        searchTerms: task.searchTerms || '',
+      },
+    });
+
+    try {
+      const result = await runAgentTask({
+        task,
+        browser: getBrowser(task),
+        llm: createDefaultLLMAgent({ config: llmConfig }),
+        assessor,
+        terms: store.getProductTerms(),
+        planner: createDefaultReActPlanner({ config: llmConfig }),
+        recordStep,
+      });
+      await recordStep({
+        phase: 'complete',
+        action: 'agent_run_finished',
+        result: {
+          status: result.status,
+          discoveredLinkCount: result.discoveredLinks?.length || 0,
+          candidateCount: result.candidateBundle?.candidates?.length || 0,
+          opportunityCardCount: result.opportunityCards?.length || 0,
+          artifactCount: result.artifacts?.length || 0,
+        },
+      });
+      await agentHarness.finishRun(run.id, {
+        status: agentRunStatusFor(result),
+        resultSummary: String(result.resultSummary || result.humanReason || ''),
+      });
+      return {
+        ...result,
+        agentRunId: run.id,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await recordStep({
+        phase: 'error',
+        action: 'agent_run_failed',
+        errorMessage,
+      }).catch(() => undefined);
+      await agentHarness.finishRun(run.id, {
+        status: 'failed',
+        errorMessage,
+      }).catch(() => undefined);
+      throw error;
+    }
+  };
+
   const runSchedule = async ({
     schedule,
     runKey,
@@ -483,12 +587,11 @@ export const createLocalApiServer = ({
           applyTaskRunResult(task.id, result, manual ? '已按计划打开采集浏览器。' : '每日计划已打开采集浏览器。');
         } else {
           const llmConfig = store.getLLMConfig({ includeApiKey: true });
-          result = await runAgentTask({
+          result = await runAgentTaskWithHarness({
             task,
-            browser: getBrowser(task),
-            llm: createDefaultLLMAgent({ config: llmConfig }),
+            llmConfig,
             assessor: createDefaultBidAssessor({ config: llmConfig }),
-            terms: store.getProductTerms(),
+            trigger: manual ? 'manual_schedule_agent_run' : 'scheduled_agent_run',
           });
           applyTaskRunResult(task.id, result, manual ? '已手动运行每日 Agent 计划。' : '每日 Agent 计划已启动。');
         }
@@ -602,6 +705,14 @@ export const createLocalApiServer = ({
             defaultSearchTerms: profile.defaultSearchTerms || '',
             defaultActionSteps: profile.defaultActionSteps || '',
           })),
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/agent-tools') {
+        sendJson(response, 200, {
+          tools: DEFAULT_AGENT_TOOL_MANIFESTS,
+          mcpServers: describeMcpToolPlans(),
         });
         return;
       }
@@ -829,6 +940,21 @@ export const createLocalApiServer = ({
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/agent-runs') {
+        const requestedLimit = Number(url.searchParams.get('limit') || 50);
+        sendJson(response, 200, {
+          runs: await agentHarness.listRuns({
+            limit: Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : 50,
+          }),
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && parts[0] === 'agent-runs' && parts[1]) {
+        sendJson(response, 200, await agentHarness.getRun(parts[1]));
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/wechat/daily-report') {
         sendJson(response, 200, {
           text: buildDailyWechatDigest(store.listTasks()),
@@ -911,12 +1037,11 @@ export const createLocalApiServer = ({
         const assessor = createDefaultBidAssessor({ config: llmConfig });
         let result;
         try {
-          result = await runAgentTask({
+          result = await runAgentTaskWithHarness({
             task,
-            browser: getBrowser(task),
-            llm: createDefaultLLMAgent({ config: llmConfig }),
+            llmConfig,
             assessor,
-            terms: store.getProductTerms(),
+            trigger: 'manual_agent_run',
           });
         } catch (error) {
           await closeBrowser(task);

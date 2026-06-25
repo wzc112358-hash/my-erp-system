@@ -10,6 +10,9 @@ Current local-agent phase:
 - Local task lifecycle:
   - `GET /site-profiles`
   - `GET /tasks`
+  - `GET /agent-tools`
+  - `GET /agent-runs`
+  - `GET /agent-runs/:id`
   - `POST /tasks`
   - `POST /tasks/:id/agent-run`
   - `POST /tasks/:id/run`
@@ -44,6 +47,10 @@ Current local-agent phase:
   - `/tasks/:id/run` opens a local task; `/tasks/:id/continue-run` extracts candidates after employee takeover.
 - Controlled local Agent tool layer:
   - `/tasks/:id/agent-run` runs public link discovery, opens the best local browser entry, and extracts candidates when possible.
+  - Each Agent run is persisted under the local helper data directory as `agent-runs/<runId>/run.json` plus ordered `steps.jsonl`.
+  - `/agent-tools` exposes the built-in tool manifest plus planned MCP server status for Chrome DevTools MCP, Firecrawl MCP, and PDF Reader MCP.
+  - ReAct collection runs through `react-planner.ts` + `react-collection-agent.ts`: plan the next action, call a tool, observe/extract, then finish or request employee takeover.
+  - Tool calls are recorded through `agent-toolbox.ts`, so search/browser/document actions share one audit shape in the run log.
   - Firecrawl/Search is optional; configure `FIRECRAWL_API_KEY` or `HCZ_FIRECRAWL_API_KEY` to enable Firecrawl `/v2/search`.
   - Without a Firecrawl key, the Agent falls back to the task entry URL and still works as the existing local browser flow.
   - LLM summary is optional; configure `HCZ_LOCAL_AGENT_LLM_BASE_URL`, `HCZ_LOCAL_AGENT_LLM_API_KEY`, and `HCZ_LOCAL_AGENT_LLM_MODEL` to enable it.

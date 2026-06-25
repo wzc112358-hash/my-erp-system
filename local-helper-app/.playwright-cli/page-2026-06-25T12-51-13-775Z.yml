@@ -1,0 +1,57 @@
+- generic [ref=e2]:
+  - navigation "本地助手导航" [ref=e3]:
+    - generic [ref=e4]: 恒
+    - generic [ref=e5]:
+      - button "T 任务" [ref=e6] [cursor=pointer]:
+        - generic [ref=e7]: T
+        - generic [ref=e8]: 任务
+      - button "A Agent" [pressed] [ref=e9] [cursor=pointer]:
+        - generic [ref=e10]: A
+        - generic [ref=e11]: Agent
+      - button "S 巡检" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: S
+        - generic [ref=e14]: 巡检
+      - button "B 看板" [ref=e15] [cursor=pointer]:
+        - generic [ref=e16]: B
+        - generic [ref=e17]: 看板
+  - complementary [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - heading "Agent 设置" [level=1] [ref=e22]
+          - generic [ref=e23]: 本机模式 · 可选配置云端上传
+        - button "刷新" [ref=e24] [cursor=pointer]
+      - generic [ref=e25]:
+        - generic [ref=e27]:
+          - strong [ref=e28]: Agent 设置
+          - generic [ref=e29]: 模型、工具和 MCP 状态
+        - generic [ref=e30]:
+          - generic [ref=e31]:
+            - strong [ref=e32]: 模型设置
+            - generic [ref=e33]: 未配置 key
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - text: 接口地址
+              - textbox "接口地址" [ref=e36]:
+                - /placeholder: 例如：https://api.openai.com/v1
+            - generic [ref=e37]:
+              - text: 模型名
+              - textbox "模型名" [ref=e38]:
+                - /placeholder: 例如：gpt-4.1-mini
+            - generic [ref=e39]:
+              - text: API Key
+              - textbox "API Key" [ref=e40]:
+                - /placeholder: 留空保持已有 key
+            - generic [ref=e41]:
+              - checkbox "启用 LLM" [ref=e42]
+              - text: 启用 LLM
+          - generic [ref=e43]:
+            - button "保存模型设置" [ref=e44] [cursor=pointer]
+            - button "测试连接" [ref=e45] [cursor=pointer]
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - strong [ref=e48]: 工具状态
+            - generic [ref=e49]: 本地 fallback
+          - generic [ref=e50]: 正在读取工具状态…
+  - main [ref=e51]:
+    - generic [ref=e52]: 请选择或新建一个本地采集任务

@@ -42,6 +42,7 @@ export const ReportPage: React.FC = () => {
     totalMiscellaneous: 0,
     totalProfit: 0,
     totalNetProfit: 0,
+    totalRealizedProfit: 0,
   });
 
   const fetchReportData = useCallback(async () => {
@@ -196,6 +197,7 @@ export const ReportPage: React.FC = () => {
           税额: '',
           营业利润: '',
           净利润: '',
+          已执行利润: '',
         });
       } else {
         salesGroupMap.set(row.salesContractNo, { rows: [row], firstIndex: rowIndex });
@@ -231,6 +233,7 @@ export const ReportPage: React.FC = () => {
           税额: row.tax?.toFixed(6) || '0.00',
           营业利润: row.profit?.toFixed(6) || '0.00',
           净利润: row.netProfit?.toFixed(6) || '0.00',
+          已执行利润: row.realizedProfit?.toFixed(6) || '0.00',
         });
       }
       rowIndex++;
@@ -240,7 +243,7 @@ export const ReportPage: React.FC = () => {
       if (group.rows.length > 1) {
         const startRow = group.firstIndex;
         const endRow = startRow + group.rows.length - 1;
-        for (let c = 13; c <= 22; c++) {
+        for (let c = 13; c <= 23; c++) {
           mergeInfo.push({
             s: { r: startRow, c },
             e: { r: endRow, c },
@@ -275,6 +278,7 @@ export const ReportPage: React.FC = () => {
       税额: summary.totalTax.toFixed(6),
       营业利润: summary.totalProfit.toFixed(6),
       净利润: summary.totalNetProfit.toFixed(6),
+      已执行利润: summary.totalRealizedProfit.toFixed(6),
     };
 
     const ws = XLSX.utils.json_to_sheet([...exportData, summaryRow] as Record<string, unknown>[]);
@@ -306,6 +310,7 @@ export const ReportPage: React.FC = () => {
       { wch: 12 },
       { wch: 12 },
       { wch: 15 },
+      { wch: 12 },
       { wch: 12 },
       { wch: 12 },
       { wch: 12 },
@@ -538,6 +543,17 @@ export const ReportPage: React.FC = () => {
       }),
       render: (val: number) => val?.toFixed(6) || '0.00',
     },
+    {
+      title: '已执行利润',
+      dataIndex: 'realizedProfit',
+      key: 'realizedProfit',
+      width: 100,
+      align: 'right' as const,
+      onCell: (record: ReportData) => ({
+        rowSpan: record.salesRowSpan,
+      }),
+      render: (val: number) => val?.toFixed(6) || '0.00',
+    },
   ];
 
   const summaryColumns = columns.map((col) => ({
@@ -562,6 +578,8 @@ export const ReportPage: React.FC = () => {
         ? summary.totalProfit.toFixed(6)
         : col.dataIndex === 'netProfit'
         ? summary.totalNetProfit.toFixed(6)
+        : col.dataIndex === 'realizedProfit'
+        ? summary.totalRealizedProfit.toFixed(6)
         : undefined;
     },
   }));
@@ -648,7 +666,7 @@ export const ReportPage: React.FC = () => {
             dataSource={displayData}
             columns={summaryColumns}
             rowKey={(_, index) => String(index)}
-            scroll={{ x: 2600 }}
+            scroll={{ x: 2700 }}
             pagination={false}
             size="small"
             footer={() => (
@@ -658,7 +676,8 @@ export const ReportPage: React.FC = () => {
                 {summary.totalFreight.toFixed(6)} | 杂费 {summary.totalMiscellaneous.toFixed(6)} | 销售总价(不含税){' '}
                 {summary.totalSalesAmount.toFixed(6)} | 销售含税总价 {summary.totalSalesTaxAmount.toFixed(6)} | 税额{' '}
                 {summary.totalTax.toFixed(6)} | 营业利润{' '}
-                {summary.totalProfit.toFixed(6)} | 净利润 {summary.totalNetProfit.toFixed(6)}
+                {summary.totalProfit.toFixed(6)} | 净利润 {summary.totalNetProfit.toFixed(6)} | 已执行利润{' '}
+                {summary.totalRealizedProfit.toFixed(6)}
               </div>
             )}
           />

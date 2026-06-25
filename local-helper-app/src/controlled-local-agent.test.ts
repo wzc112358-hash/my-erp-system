@@ -13,6 +13,7 @@ const task = {
 
 test('controlled local agent opens the best discovered link and completes public candidates', async () => {
   let openedUrl = '';
+  const steps: any[] = [];
   const search: SearchAdapter = {
     name: 'mock-search',
     async discoverLinks() {
@@ -48,7 +49,12 @@ test('controlled local agent opens the best discovered link and completes public
     screenshot: async () => '/tmp/hcz/agent.png',
   };
 
-  const result = await runControlledLocalAgentTask({ task, browser, search });
+  const result = await runControlledLocalAgentTask({
+    task,
+    browser,
+    search,
+    recordStep: (step) => steps.push(step),
+  });
 
   assert.equal(openedUrl, 'https://www.cnpcbidding.com/#/detail/notice-1');
   assert.equal(result.status, 'completed');
@@ -56,6 +62,9 @@ test('controlled local agent opens the best discovered link and completes public
   assert.equal(result.candidateBundle?.candidates.length, 1);
   assert.match(result.resultSummary, /发现 1 条招投标候选|1 条候选/);
   assert.equal(result.artifacts[0].artifact_type, 'log');
+  assert.ok(steps.some((step) => step.tool === 'link_discovery.search'));
+  assert.ok(steps.some((step) => step.tool === 'playwright-cdp.open'));
+  assert.ok(steps.some((step) => step.tool === 'playwright-cdp.screenshot'));
 });
 
 test('controlled local agent requests human takeover when discovered page needs login', async () => {
@@ -89,4 +98,3 @@ test('controlled local agent requests human takeover when discovered page needs 
   assert.match(result.humanReason, /登录|验证码|人工/);
   assert.match(result.resultSummary, /mock warning/);
 });
-

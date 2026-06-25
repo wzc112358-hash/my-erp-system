@@ -24,6 +24,7 @@ export interface ReportData {
   tax: number;
   profit: number;
   netProfit: number;
+  realizedProfit: number;
   salesRowSpan: number;
   purchaseRowSpan: number;
   isSalesRow: boolean;
@@ -39,6 +40,7 @@ export interface ReportSummary {
   totalMiscellaneous: number;
   totalProfit: number;
   totalNetProfit: number;
+  totalRealizedProfit: number;
 }
 
 export interface ReportParams {

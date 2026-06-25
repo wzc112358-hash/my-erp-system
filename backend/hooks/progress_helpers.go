@@ -48,3 +48,20 @@ func SumChildFieldExcluding(records []*core.Record, sumField, currentRecordId st
 	}
 	return total
 }
+
+// CheckOverageIfChanged runs CheckOverage only when the validated field
+// actually changed between the old persisted record and the incoming update.
+// This prevents pure status changes (e.g. manager approving a record:
+// manager_confirmed pending -> approved) from being blocked by an overage guard
+// that was already satisfied (or that reflects pre-existing bad data) at create
+// time. If oldRecord is nil (shouldn't normally happen on update) we fall back
+// to always checking, preserving the previous behavior.
+func CheckOverageIfChanged(oldRecord, newRecord *core.Record, fieldName string, totalProductAmount, contractTotalQuantity, toleranceMultiplier float64, itemLabel string) error {
+	if oldRecord == nil {
+		return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel)
+	}
+	if oldRecord.GetFloat(fieldName) == newRecord.GetFloat(fieldName) {
+		return nil
+	}
+	return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel)
+}

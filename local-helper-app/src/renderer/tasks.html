@@ -7,9 +7,11 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f5f7;
+      --bg: #f4f6f8;
       --panel: #ffffff;
       --panel-soft: #f8fafb;
+      --rail: #17212b;
+      --rail-soft: #243242;
       --line: #d8e0e8;
       --line-strong: #b7c4d1;
       --text: #162331;
@@ -23,6 +25,8 @@
       --bad-soft: #fdecea;
       --ok: #1a7f45;
       --ok-soft: #e7f6ed;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
     }
     * { box-sizing: border-box; }
     body {
@@ -33,16 +37,102 @@
     }
     .app {
       display: grid;
-      grid-template-columns: 380px minmax(0, 1fr);
+      grid-template-columns: 68px 372px minmax(0, 1fr);
       height: 100vh;
       overflow: hidden;
     }
-    aside {
-      border-right: 1px solid var(--line);
-      background: var(--panel);
-      padding: 16px;
+    .rail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      border-right: 1px solid #101820;
+      background: var(--rail);
+      padding: 12px 8px;
       overflow: auto;
       min-height: 0;
+    }
+    .rail-brand {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--accent-strong);
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+    .rail-nav {
+      display: grid;
+      gap: 8px;
+      width: 100%;
+    }
+    .rail-button {
+      display: grid;
+      justify-items: center;
+      gap: 3px;
+      width: 52px;
+      min-height: 54px;
+      padding: 7px 4px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #c7d2de;
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .rail-button:hover:not(:disabled) {
+      border-color: rgba(255,255,255,.2);
+      background: var(--rail-soft);
+      color: #fff;
+    }
+    .rail-button.active {
+      background: #ffffff;
+      color: var(--accent-strong);
+      border-color: #ffffff;
+      box-shadow: 0 8px 18px rgba(0,0,0,.18);
+    }
+    .rail-icon {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      background: rgba(255,255,255,.1);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .rail-button.active .rail-icon {
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      overflow: auto;
+      min-height: 0;
+    }
+    .sidebar-inner {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .sidebar-panel {
+      display: none;
+      gap: 14px;
+    }
+    .sidebar-panel.active { display: grid; }
+    .panel-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 2px;
+    }
+    .panel-head strong {
+      display: block;
+      font-size: 14px;
     }
     main {
       padding: 20px 24px;
@@ -54,7 +144,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      margin-bottom: 12px;
+      margin-bottom: 0;
     }
     h1 { font-size: 17px; margin: 0; }
     h2 { font-size: 20px; margin: 0 0 4px; }
@@ -71,7 +161,7 @@
       white-space: nowrap;
     }
     .status.running { background: #e6f0ff; color: #1261b5; }
-    .status.waiting_agent { background: var(--warn-soft); color: var(--warn); }
+    .status.waiting_agent, .status.request_human { background: var(--warn-soft); color: var(--warn); }
     .status.cancelled, .status.failed { background: var(--bad-soft); color: var(--bad); }
     .status.completed { background: var(--ok-soft); color: var(--ok); }
     button {
@@ -83,6 +173,7 @@
       padding: 0 12px;
       font-size: 13px;
       cursor: pointer;
+      transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
     }
     button:hover:not(:disabled) { border-color: var(--accent); }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -94,7 +185,6 @@
       display: grid;
       gap: 8px;
       padding: 12px;
-      margin-bottom: 16px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel-soft);
@@ -103,7 +193,6 @@
       display: grid;
       gap: 8px;
       padding: 12px;
-      margin-bottom: 16px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
@@ -208,14 +297,12 @@
       font-weight: 700;
       text-align: left;
     }
-    .group-toggle::before {
-      content: "▾";
+    .group-arrow {
       color: var(--muted);
       width: 12px;
       flex: 0 0 12px;
     }
-    .group-toggle[aria-expanded="false"]::before { content: "▸"; }
-    .group-toggle span:first-child {
+    .group-toggle .group-name {
       min-width: 0;
       flex: 1;
       overflow: hidden;
@@ -255,6 +342,7 @@
     .task-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
     .task-title strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    .detail-top .actions { margin: 0; }
     .section {
       padding: 16px 0;
       border-top: 1px solid var(--line);
@@ -295,6 +383,16 @@
     .notice.update { background: var(--warn-soft); color: #7a4b00; }
     .notice.update.required { background: var(--bad-soft); color: var(--bad); }
     .notice.show { display: block; }
+    .detail-top {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      margin-bottom: 14px;
+    }
+    .detail-top .topbar { margin-bottom: 0; }
     .candidate-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
     .candidate-list li {
       border: 1px solid var(--line);
@@ -303,6 +401,100 @@
       padding: 10px;
     }
     .candidate-list strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .agent-run-board {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .agent-run-list {
+      display: grid;
+      gap: 8px;
+    }
+    .agent-run-card {
+      display: grid;
+      gap: 5px;
+      width: 100%;
+      min-height: 82px;
+      padding: 10px;
+      text-align: left;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .agent-run-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(15,118,110,.12);
+    }
+    .agent-run-card strong {
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .agent-run-detail {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+    }
+    .agent-run-summary {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .agent-run-summary strong {
+      display: block;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .agent-step-list {
+      display: grid;
+      gap: 8px;
+    }
+    .agent-step {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .agent-step.plan { border-left-color: var(--blue); }
+    .agent-step.discover, .agent-step.browser { border-left-color: var(--accent); }
+    .agent-step.extract, .agent-step.assess, .agent-step.summarize { border-left-color: var(--ok); }
+    .agent-step.human { border-left-color: var(--warn); }
+    .agent-step.error { border-left-color: var(--bad); }
+    .agent-step.complete { border-left-color: var(--ok); }
+    .agent-step-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .agent-step-head strong {
+      display: block;
+      font-size: 13px;
+    }
+    .step-index {
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .agent-step pre {
+      max-height: 220px;
+      overflow: auto;
+      background: var(--panel-soft);
+    }
     .opportunity-list { display: grid; gap: 10px; }
     .opportunity-card {
       display: grid;
@@ -334,6 +526,10 @@
       color: var(--accent-strong);
       font-weight: 800;
       font-size: 15px;
+    }
+    .score.blue {
+      background: var(--blue-soft);
+      color: var(--blue);
     }
     .pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
     .card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -430,152 +626,265 @@
       word-break: break-word;
     }
     @media (max-width: 980px) {
-      .app { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
-      aside { border-right: 0; border-bottom: 1px solid var(--line); }
+      .app {
+        grid-template-columns: 64px minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+      .rail, .sidebar {
+        max-height: 560px;
+      }
+      main {
+        grid-column: 1 / -1;
+        min-height: 60vh;
+      }
       .card-grid { grid-template-columns: 1fr; }
+      .agent-run-board { grid-template-columns: 1fr; }
+      .agent-run-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 640px) {
+      .app { grid-template-columns: 1fr; }
+      .rail {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        flex-direction: row;
+        justify-content: space-between;
+        border-right: 0;
+        border-bottom: 1px solid #101820;
+        min-height: 64px;
+        max-height: none;
+      }
+      .rail-brand { margin: 0; }
+      .rail-nav {
+        display: flex;
+        width: auto;
+        overflow-x: auto;
+      }
+      .rail-button { min-width: 52px; }
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: none;
+      }
+      main { grid-column: auto; padding: 16px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .span-2 { grid-column: auto; }
+      .agent-run-list { grid-template-columns: 1fr; }
+      .agent-run-summary { display: grid; }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <aside>
-      <div class="topbar">
-        <div>
-          <h1>本地采集任务</h1>
-          <div class="muted" id="cloudState">正在检查连接…</div>
-        </div>
-        <button id="refresh">刷新</button>
+    <nav class="rail" aria-label="本地助手导航">
+      <div class="rail-brand">恒</div>
+      <div class="rail-nav" id="railNav">
+        <button class="rail-button active" type="button" data-panel-target="tasks" aria-pressed="true" title="任务">
+          <span class="rail-icon">T</span>
+          <span>任务</span>
+        </button>
+        <button class="rail-button" type="button" data-panel-target="agent" aria-pressed="false" title="Agent">
+          <span class="rail-icon">A</span>
+          <span>Agent</span>
+        </button>
+        <button class="rail-button" type="button" data-panel-target="schedule" aria-pressed="false" title="巡检">
+          <span class="rail-icon">S</span>
+          <span>巡检</span>
+        </button>
+        <button class="rail-button" type="button" data-panel-target="insights" aria-pressed="false" title="看板">
+          <span class="rail-icon">B</span>
+          <span>看板</span>
+        </button>
       </div>
-      <form class="settings-form" id="llmSettingsForm">
-        <div class="create-title">
-          <strong>模型设置</strong>
-          <span class="muted" id="llmState">未配置</span>
+    </nav>
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="topbar">
+          <div>
+            <h1 id="sidebarTitle">本地采集任务</h1>
+            <div class="muted" id="cloudState">正在检查连接…</div>
+          </div>
+          <button id="refresh">刷新</button>
         </div>
-        <div class="form-grid">
-          <label class="span-2">
-            接口地址
-            <input id="llmBaseUrl" placeholder="例如：https://api.openai.com/v1" />
-          </label>
-          <label>
-            模型名
-            <input id="llmModel" placeholder="例如：gpt-4.1-mini" />
-          </label>
-          <label>
-            API Key
-            <input id="llmApiKey" type="password" autocomplete="off" placeholder="留空保持已有 key" />
-          </label>
-          <label class="check-row span-2">
-            <input id="llmEnabled" type="checkbox" />
-            启用 LLM
-          </label>
-        </div>
-        <div class="settings-actions">
-          <button class="primary" type="submit">保存模型设置</button>
-          <button type="button" id="testLLM">测试连接</button>
-        </div>
-      </form>
-      <div class="settings-form">
-        <div class="create-title">
-          <strong>反馈学习</strong>
-          <span class="muted">本地记忆</span>
-        </div>
-        <div class="value" id="feedbackLearningState">暂无反馈学习数据</div>
-        <div class="settings-actions">
-          <button type="button" id="clearFeedbackLearning">清空学习数据</button>
-        </div>
+
+        <section class="sidebar-panel active" data-panel="tasks">
+          <div class="panel-head">
+            <div>
+              <strong>任务队列</strong>
+              <div class="muted">新建、选择和继续采集</div>
+            </div>
+          </div>
+          <form class="create-form" id="createTaskForm">
+            <div class="create-title">
+              <strong>新建采集</strong>
+              <span class="muted">本机浏览器</span>
+            </div>
+            <div class="form-grid">
+              <label>
+                站点
+                <select id="siteSelect"></select>
+              </label>
+              <label>
+                自定义站点名
+                <input id="customSourceName" placeholder="未在列表中时填写" />
+              </label>
+              <label class="span-2">
+                搜索词
+                <input id="searchTerms" placeholder="例如：裕龙石化,缓蚀剂,阻垢剂" />
+              </label>
+              <label class="span-2">
+                入口 URL
+                <input id="entryUrl" placeholder="选择站点后自动填充，可手动修改" />
+              </label>
+              <label class="span-2">
+                操作提示
+                <textarea id="actionSteps"></textarea>
+              </label>
+            </div>
+            <button class="primary" type="submit">新建本地采集任务</button>
+          </form>
+          <div class="task-list" id="taskList"></div>
+        </section>
+
+        <section class="sidebar-panel" data-panel="agent">
+          <div class="panel-head">
+            <div>
+              <strong>Agent 设置</strong>
+              <div class="muted">模型、工具和 MCP 状态</div>
+            </div>
+          </div>
+          <form class="settings-form" id="llmSettingsForm">
+            <div class="create-title">
+              <strong>模型设置</strong>
+              <span class="muted" id="llmState">未配置</span>
+            </div>
+            <div class="form-grid">
+              <label class="span-2">
+                接口地址
+                <input id="llmBaseUrl" placeholder="例如：https://api.openai.com/v1" />
+              </label>
+              <label>
+                模型名
+                <input id="llmModel" placeholder="例如：gpt-4.1-mini" />
+              </label>
+              <label>
+                API Key
+                <input id="llmApiKey" type="password" autocomplete="off" placeholder="留空保持已有 key" />
+              </label>
+              <label class="check-row span-2">
+                <input id="llmEnabled" type="checkbox" />
+                启用 LLM
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button class="primary" type="submit">保存模型设置</button>
+              <button type="button" id="testLLM">测试连接</button>
+            </div>
+          </form>
+          <div class="settings-form">
+            <div class="create-title">
+              <strong>工具状态</strong>
+              <span class="muted">本地 fallback</span>
+            </div>
+            <div class="value" id="agentToolsState">正在读取工具状态…</div>
+          </div>
+        </section>
+
+        <section class="sidebar-panel" data-panel="schedule">
+          <div class="panel-head">
+            <div>
+              <strong>自动巡检</strong>
+              <div class="muted">每日计划和立即运行</div>
+            </div>
+          </div>
+          <form class="settings-form" id="scheduleForm">
+            <div class="create-title">
+              <strong>计划设置</strong>
+              <span class="muted">每日计划</span>
+            </div>
+            <div class="form-grid">
+              <label>
+                站点
+                <select id="scheduleSiteSelect"></select>
+              </label>
+              <label>
+                自定义站点
+                <input id="scheduleCustomSourceName" placeholder="未在列表中时填写" />
+              </label>
+              <label>
+                每日时间
+                <input id="scheduleTimes" placeholder="例如：09:00,15:00" />
+              </label>
+              <label>
+                运行方式
+                <select id="scheduleRunMode">
+                  <option value="agent">Agent 自动发现</option>
+                  <option value="open_browser">打开浏览器等待人工</option>
+                  <option value="create_task_only">只创建任务</option>
+                </select>
+              </label>
+              <label class="span-2">
+                搜索词
+                <input id="scheduleSearchTerms" placeholder="选择站点后自动填充" />
+              </label>
+              <label class="span-2">
+                入口 URL
+                <input id="scheduleEntryUrl" placeholder="选择站点后自动填充" />
+              </label>
+              <label class="span-2">
+                操作提示
+                <textarea id="scheduleActionSteps"></textarea>
+              </label>
+              <label class="check-row span-2">
+                <input id="scheduleEnabled" type="checkbox" checked />
+                启用计划
+              </label>
+            </div>
+            <button class="primary" type="submit">保存每日巡检计划</button>
+          </form>
+          <div class="settings-form">
+            <div class="create-title">
+              <strong>巡检计划</strong>
+              <span class="muted" id="scheduleState">暂无计划</span>
+            </div>
+            <div id="scheduleList" class="task-list"></div>
+          </div>
+        </section>
+
+        <section class="sidebar-panel" data-panel="insights">
+          <div class="panel-head">
+            <div>
+              <strong>商机看板</strong>
+              <div class="muted">重点、反馈和本地学习</div>
+            </div>
+          </div>
+          <div class="settings-form">
+            <div class="create-title">
+              <strong>今日重点</strong>
+              <span class="muted">优先处理</span>
+            </div>
+            <div class="value" id="priorityBoardState">暂无重点商机</div>
+            <div class="settings-actions">
+              <button type="button" id="copyPriorityReport">复制重点清单</button>
+            </div>
+          </div>
+          <div class="settings-form">
+            <div class="create-title">
+              <strong>反馈学习</strong>
+              <span class="muted">本地记忆</span>
+            </div>
+            <div class="value" id="feedbackLearningState">暂无反馈学习数据</div>
+            <div class="settings-actions">
+              <button type="button" id="clearFeedbackLearning">清空学习数据</button>
+            </div>
+          </div>
+        </section>
       </div>
-      <div class="settings-form">
-        <div class="create-title">
-          <strong>今日重点</strong>
-          <span class="muted">优先处理</span>
-        </div>
-        <div class="value" id="priorityBoardState">暂无重点商机</div>
-        <div class="settings-actions">
-          <button type="button" id="copyPriorityReport">复制重点清单</button>
-        </div>
-      </div>
-      <form class="settings-form" id="scheduleForm">
-        <div class="create-title">
-          <strong>自动巡检</strong>
-          <span class="muted">每日计划</span>
-        </div>
-        <div class="form-grid">
-          <label>
-            站点
-            <select id="scheduleSiteSelect"></select>
-          </label>
-          <label>
-            自定义站点
-            <input id="scheduleCustomSourceName" placeholder="未在列表中时填写" />
-          </label>
-          <label>
-            每日时间
-            <input id="scheduleTimes" placeholder="例如：09:00,15:00" />
-          </label>
-          <label>
-            运行方式
-            <select id="scheduleRunMode">
-              <option value="agent">Agent 自动发现</option>
-              <option value="open_browser">打开浏览器等待人工</option>
-              <option value="create_task_only">只创建任务</option>
-            </select>
-          </label>
-          <label class="span-2">
-            搜索词
-            <input id="scheduleSearchTerms" placeholder="选择站点后自动填充" />
-          </label>
-          <label class="span-2">
-            入口 URL
-            <input id="scheduleEntryUrl" placeholder="选择站点后自动填充" />
-          </label>
-          <label class="span-2">
-            操作提示
-            <textarea id="scheduleActionSteps"></textarea>
-          </label>
-          <label class="check-row span-2">
-            <input id="scheduleEnabled" type="checkbox" checked />
-            启用计划
-          </label>
-        </div>
-        <button class="primary" type="submit">保存每日巡检计划</button>
-      </form>
-      <div class="settings-form">
-        <div class="create-title">
-          <strong>巡检计划</strong>
-          <span class="muted" id="scheduleState">暂无计划</span>
-        </div>
-        <div id="scheduleList" class="task-list"></div>
-      </div>
-      <form class="create-form" id="createTaskForm">
-        <div class="create-title">
-          <strong>新建采集</strong>
-          <span class="muted">本机浏览器</span>
-        </div>
-        <div class="form-grid">
-          <label>
-            站点
-            <select id="siteSelect"></select>
-          </label>
-          <label>
-            自定义站点名
-            <input id="customSourceName" placeholder="未在列表中时填写" />
-          </label>
-          <label class="span-2">
-            搜索词
-            <input id="searchTerms" placeholder="例如：裕龙石化,缓蚀剂,阻垢剂" />
-          </label>
-          <label class="span-2">
-            入口 URL
-            <input id="entryUrl" placeholder="选择站点后自动填充，可手动修改" />
-          </label>
-          <label class="span-2">
-            操作提示
-            <textarea id="actionSteps"></textarea>
-          </label>
-        </div>
-        <button class="primary" type="submit">新建本地采集任务</button>
-      </form>
-      <div class="task-list" id="taskList"></div>
     </aside>
     <main>
       <div class="notice" id="notice"></div>

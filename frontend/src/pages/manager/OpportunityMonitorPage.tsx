@@ -41,7 +41,7 @@ const statusMap: Record<string, { label: string; color: string }> = {
   pending_review: { label: '待判断', color: 'orange' },
   follow: { label: '可关注', color: 'green' },
   irrelevant: { label: '不相关', color: 'default' },
-  needs_boss: { label: '需王总判断', color: 'purple' },
+  needs_boss: { label: '需管理判断', color: 'purple' },
   needs_documents: { label: '需补标书', color: 'blue' },
   expired: { label: '已错过截止', color: 'red' },
   converted: { label: '已转正式业务', color: 'cyan' },
@@ -85,7 +85,7 @@ const tag = (map: Record<string, { label: string; color: string }>, value?: stri
 const OPPORTUNITY_DECISIONS: Array<{ label: string; value: OpportunityReviewDecision }> = [
   { label: '可关注', value: 'follow' },
   { label: '不相关', value: 'irrelevant' },
-  { label: '需王总判断', value: 'needs_boss' },
+  { label: '需管理判断', value: 'needs_boss' },
   { label: '需补标书', value: 'needs_documents' },
   { label: '已错过截止', value: 'expired' },
 ];
@@ -104,7 +104,7 @@ const decisionToStatus = (decision: OpportunityReviewDecision): OpportunityStatu
 
 const buildConfirmationPackageText = (opportunity: BidOpportunity, decisionComment?: string) => [
   `商机：${opportunity.title}`,
-  `来源：${opportunity.source_name} / ${opportunity.owner_name}`,
+  `来源：${opportunity.source_name}`,
   `采购单位：${opportunity.buyer_name || '-'}`,
   `截止日期：${fmtDate(opportunity.deadline_date)}`,
   `产品关键词：${opportunity.product_keywords || '-'}`,
@@ -112,7 +112,7 @@ const buildConfirmationPackageText = (opportunity: BidOpportunity, decisionComme
   `硬性条件：${opportunity.hard_requirements || '-'}`,
   `风险点：${opportunity.risk_flags || '-'}`,
   `员工自评：${opportunity.employee_assessment || '-'}`,
-  `王总意见：${decisionComment || opportunity.boss_decision || '-'}`,
+  `管理意见：${decisionComment || opportunity.boss_decision || '-'}`,
   `建议动作：${opportunity.recommended_action || '同意后进入报价准备，由业务继续补充采购价格和报价资料'}`,
 ].join('\n');
 
@@ -176,8 +176,6 @@ const OpportunityMonitorPage: React.FC = () => {
     ));
   }, [opportunities, user]);
 
-  const bossQueue = useMemo(() => opportunities.filter((item) => item.status === 'needs_boss' || item.status === 'follow'), [opportunities]);
-
   const openDetail = async (record: BidOpportunity) => {
     setDetail(record);
     try {
@@ -215,7 +213,7 @@ const OpportunityMonitorPage: React.FC = () => {
       employee_assessment: reviewType === 'employee' ? values.comment : reviewing.employee_assessment,
       boss_decision: reviewType === 'boss' ? values.comment : reviewing.boss_decision,
       confirmation_package: approvedForQuote ? buildConfirmationPackageText(reviewing, values.comment) : reviewing.confirmation_package,
-      recommended_action: approvedForQuote ? '王总已同意继续，进入报价准备' : reviewing.recommended_action,
+      recommended_action: approvedForQuote ? '已同意继续，进入报价准备' : reviewing.recommended_action,
       quote_ready_at: approvedForQuote ? new Date().toISOString() : reviewing.quote_ready_at,
     });
     message.success('判断已保存');
@@ -271,7 +269,6 @@ const OpportunityMonitorPage: React.FC = () => {
       ),
     },
     { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 120, ellipsis: true },
-    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 80 },
     { title: '采购单位', dataIndex: 'buyer_name', key: 'buyer_name', width: 150, ellipsis: true, render: (v: string) => v || '-' },
     { title: '产品关键词', dataIndex: 'product_keywords', key: 'product_keywords', width: 150, render: (v: string) => v || '-' },
     { title: '相关性', dataIndex: 'relevance', key: 'relevance', width: 110, render: (v: string) => tag(relevanceMap, v) },
@@ -294,7 +291,7 @@ const OpportunityMonitorPage: React.FC = () => {
           </Button>
           {isManager && (record.status === 'needs_boss' || record.status === 'follow') && (
             <Button type="text" icon={<ExclamationCircleOutlined />} onClick={() => openReview(record, true)}>
-              王总
+              决策
             </Button>
           )}
         </Space>
@@ -312,7 +309,6 @@ const OpportunityMonitorPage: React.FC = () => {
       sorter: (a, b) => String(a.created || '').localeCompare(String(b.created || '')),
     },
     { title: '网站', dataIndex: 'source_name', key: 'source_name', width: 160 },
-    { title: '负责人', dataIndex: 'owner_name', key: 'owner_name', width: 90 },
     { title: '结果', dataIndex: 'status', key: 'status', width: 110, render: (v: string) => tag(statusMap, v) },
     { title: '新增', dataIndex: 'found_count', key: 'found_count', width: 80 },
     { title: '疑似相关', dataIndex: 'related_count', key: 'related_count', width: 90 },
@@ -365,19 +361,14 @@ const OpportunityMonitorPage: React.FC = () => {
               children: (
                 <>
                   {toolbar}
-                  <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={opportunities} scroll={{ x: 1200 }} />
+                  <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={opportunities} scroll={{ x: 1120 }} />
                 </>
               ),
             },
             {
               key: 'mine',
               label: `我的待判断(${myPending.length})`,
-              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={myPending} scroll={{ x: 1200 }} />,
-            },
-            {
-              key: 'boss',
-              label: '王总确认台',
-              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={bossQueue} scroll={{ x: 1200 }} />,
+              children: <Table rowKey="id" loading={loading} columns={opportunityColumns} dataSource={myPending} scroll={{ x: 1120 }} />,
             },
             {
               key: 'runs',
@@ -400,7 +391,7 @@ const OpportunityMonitorPage: React.FC = () => {
             <Select options={(reviewMode === 'boss' ? BOSS_DECISIONS : OPPORTUNITY_DECISIONS).map((item) => ({ ...item }))} />
           </Form.Item>
           <Form.Item name="comment" label="判断说明">
-            <TextArea rows={4} placeholder="写明能否操作、缺哪些资料、需王总确认的问题等" />
+            <TextArea rows={4} placeholder="写明能否操作、缺哪些资料、需进一步确认的问题等" />
           </Form.Item>
         </Form>
       </Modal>
@@ -423,7 +414,7 @@ const OpportunityMonitorPage: React.FC = () => {
             </Flex>
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="标题">{detail.title}</Descriptions.Item>
-              <Descriptions.Item label="来源">{detail.source_name} / {detail.owner_name}</Descriptions.Item>
+              <Descriptions.Item label="来源">{detail.source_name}</Descriptions.Item>
               <Descriptions.Item label="采购单位">{detail.buyer_name || '-'}</Descriptions.Item>
               <Descriptions.Item label="发布时间">{fmtDate(detail.publish_date)}</Descriptions.Item>
               <Descriptions.Item label="截止日期">{fmtDate(detail.deadline_date)}</Descriptions.Item>
@@ -441,10 +432,10 @@ const OpportunityMonitorPage: React.FC = () => {
               <Descriptions.Item label="硬性条件">{detail.hard_requirements || '-'}</Descriptions.Item>
               <Descriptions.Item label="风险标记">{detail.risk_flags || '-'}</Descriptions.Item>
               <Descriptions.Item label="员工自评">{detail.employee_assessment || '-'}</Descriptions.Item>
-              <Descriptions.Item label="王总意见">{detail.boss_decision || '-'}</Descriptions.Item>
+              <Descriptions.Item label="管理意见">{detail.boss_decision || '-'}</Descriptions.Item>
               <Descriptions.Item label="建议动作">{detail.recommended_action || '-'}</Descriptions.Item>
               <Descriptions.Item label="报价准备时间">{fmtDate(detail.quote_ready_at)}</Descriptions.Item>
-              <Descriptions.Item label="王总确认包">
+              <Descriptions.Item label="确认包">
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{detail.confirmation_package || buildConfirmationPackageText(detail)}</pre>
               </Descriptions.Item>
               <Descriptions.Item label="链接">

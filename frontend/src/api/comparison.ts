@@ -42,6 +42,103 @@ interface SaleInvoiceItem {
   issue_date: string;
 }
 
+// 到货记录中参与运费/杂费折算与到货量统计的最小字段集
+interface ArrivalForRealized {
+  quantity: number;
+  purchase_contract: string;
+  freight_1: number;
+  freight_1_currency: 'USD' | 'CNY';
+  freight_2?: number;
+  freight_2_currency?: 'USD' | 'CNY';
+  miscellaneous_expenses: number;
+  miscellaneous_expenses_currency: 'USD' | 'CNY';
+  tariff?: number;
+  value_added_tax?: number;
+}
+
+// 已执行利润：按各自实际执行量核算
+// - 销售收入按销售已发货量
+// - 采购成本按采购已到货量（按到货比例分摊各采购合同金额）
+// - 运费/杂费/关税/增值税按实际已发生（到货记录）
+// 返回值均为 CNY 口径。
+function computeRealizedProfit(
+  salesContract: ComparisonSalesContract | undefined,
+  purchaseContracts: ComparisonPurchaseContract[],
+  salesShipments: { quantity: number }[],
+  arrivals: ArrivalForRealized[],
+  rate: number,
+): Pick<
+  ProfitAnalysis,
+  | 'realized_sales_quantity'
+  | 'realized_purchase_quantity'
+  | 'realized_sales_amount'
+  | 'realized_purchase_amount'
+  | 'realized_freight'
+  | 'realized_miscellaneous'
+  | 'realized_operating_profit'
+  | 'realized_tax'
+  | 'realized_net_profit'
+> {
+  const realizedSalesQty = salesShipments.reduce((sum, s) => sum + (s.quantity || 0), 0);
+  const realizedPurchaseQty = arrivals.reduce((sum, a) => sum + (a.quantity || 0), 0);
+
+  // 已发生运费/杂费/关税/增值税（按币种折算 CNY）
+  let realizedFreight = 0;
+  let realizedMisc = 0;
+  let realizedTariff = 0;
+  let realizedVat = 0;
+  arrivals.forEach((a) => {
+    const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
+    const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
+    const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+    realizedFreight += (a.freight_1 || 0) * f1Rate + (a.freight_2 || 0) * f2Rate;
+    realizedMisc += (a.miscellaneous_expenses || 0) * mRate;
+    realizedTariff += a.tariff || 0;
+    realizedVat += a.value_added_tax || 0;
+  });
+
+  // 采购成本：按到货比例分摊每个采购合同金额，并折算 CNY
+  const realizedPurchaseAmountCny = purchaseContracts.reduce((sum, pc) => {
+    const pcArrivals = arrivals.filter((a) => a.purchase_contract === pc.id);
+    const pcArrivedQty = pcArrivals.reduce((s, a) => s + (a.quantity || 0), 0);
+    const ratio = pc.total_quantity > 0 ? pcArrivedQty / pc.total_quantity : 0;
+    const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
+    return sum + amountCny * ratio;
+  }, 0);
+
+  // 销售收入：按已发货量计算（含税口径）
+  let realizedSalesAmountCny = 0;
+  if (salesContract && salesContract.total_quantity > 0) {
+    const unitPriceCny = salesContract.is_cross_border
+      ? (salesContract.unit_price * rate)
+      : salesContract.unit_price;
+    realizedSalesAmountCny = unitPriceCny * realizedSalesQty;
+  }
+
+  const isExTax = salesContract ? salesContract.is_price_excluding_tax : false;
+  // 含税/不含税调整，与全额利润保持一致
+  const realizedSalesIncTax = isExTax ? realizedSalesAmountCny * 1.13 : realizedSalesAmountCny;
+  const realizedSalesExTax = isExTax ? realizedSalesAmountCny : realizedSalesAmountCny / 1.13;
+
+  const realizedOperating =
+    realizedSalesExTax - realizedPurchaseAmountCny / 1.13 - realizedFreight - realizedMisc - realizedTariff - realizedVat;
+  const realizedTax = (realizedSalesIncTax - realizedPurchaseAmountCny) * 0.1881;
+  const realizedNet =
+    realizedSalesIncTax - realizedPurchaseAmountCny - realizedTax - realizedFreight - realizedMisc - realizedTariff - realizedVat;
+
+  return {
+    realized_sales_quantity: realizedSalesQty,
+    realized_purchase_quantity: realizedPurchaseQty,
+    realized_sales_amount: realizedSalesIncTax,
+    realized_purchase_amount: realizedPurchaseAmountCny,
+    realized_freight: realizedFreight,
+    realized_miscellaneous: realizedMisc,
+    realized_operating_profit: realizedOperating,
+    realized_tax: realizedTax,
+    realized_net_profit: realizedNet,
+  };
+}
+
 export const ComparisonAPI = {
   getSalesContracts: async () => {
     const result = await pb.collection('sales_contracts').getList(
@@ -453,6 +550,13 @@ export const ComparisonAPI = {
       total_freight: freightCny,
       total_miscellaneous: miscCny,
       is_quantity_matched: isQuantityMatched,
+      ...computeRealizedProfit(
+        salesContract,
+        purchaseContracts,
+        salesShipmentsList,
+        purchaseArrivalsList,
+        rate,
+      ),
     };
 
     return {
@@ -606,6 +710,13 @@ export const ComparisonAPI = {
       total_freight: totalFreight,
       total_miscellaneous: totalMiscellaneous,
       is_quantity_matched: isQuantityMatched,
+      ...computeRealizedProfit(
+        salesContract,
+        purchaseContracts,
+        salesShipments,
+        purchaseArrivals,
+        rate,
+      ),
     };
 
     return {
@@ -676,6 +787,13 @@ export const ComparisonAPI = {
       total_freight: totalFreight,
       total_miscellaneous: totalMiscellaneous,
       is_quantity_matched: true,
+      ...computeRealizedProfit(
+        undefined,
+        [purchaseContract],
+        [],
+        purchaseArrivals,
+        rate,
+      ),
     };
 
     return {

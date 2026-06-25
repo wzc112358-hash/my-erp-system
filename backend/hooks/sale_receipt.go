@@ -136,7 +136,9 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			totalAmount := SumChildFieldExcluding(receipts, "amount", currentReceiptId, newReceiptAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.05, "收款产品数量"); err != nil {
+			oldRecord, _ := GetRecordById(app, "sale_receipts", e.Record.Id)
+			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
+			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.05, "收款产品数量"); err != nil {
 				return err
 			}
 
@@ -164,7 +166,6 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 				log.Printf("[SaleReceipt] Failed to save contract: %v\n", err)
 			}
 
-			oldRecord, _ := GetRecordById(app, "sale_receipts", e.Record.Id)
 			oldStatus := ""
 			if oldRecord != nil {
 				oldStatus = oldRecord.GetString("manager_confirmed")

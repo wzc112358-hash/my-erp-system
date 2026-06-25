@@ -1,7 +1,7 @@
 [
   {
     "term": "白油",
-    "aliases": ["食品级白油", "工业白油", "矿物白油"],
+    "aliases": ["食品级白油", "工业白油", "矿物白油", "2号食品级白油", "4号食品级白油", "68号工业白油", "工业白油68号", "68#白油", "聚丙烯用配置白油"],
     "sources": ["erp_history"],
     "weight": 92,
     "status": "active"
@@ -43,7 +43,7 @@
   },
   {
     "term": "阻聚剂",
-    "aliases": ["协同阻聚剂", "丁二烯阻聚剂", "苯乙烯阻聚剂", "B596", "S600", "S620", "MEHQ", "对苯二酚"],
+    "aliases": ["协同阻聚剂", "丁二烯阻聚剂", "苯乙烯阻聚剂", "苯乙烯真阻", "压缩机阻聚剂", "B596", "B596W", "S600", "S620", "E130", "MEHQ", "对苯二酚", "对苯二酚单甲醚"],
     "sources": ["erp_history", "chat_history"],
     "weight": 84,
     "status": "active"
@@ -78,7 +78,7 @@
   },
   {
     "term": "硅油",
-    "aliases": ["二甲基硅油"],
+    "aliases": ["二甲基硅油", "100粘度硅油", "硅油100粘度", "100CS硅油", "1000CS硅油"],
     "sources": ["erp_history"],
     "weight": 78,
     "status": "active"
@@ -113,21 +113,21 @@
   },
   {
     "term": "分散剂",
-    "aliases": ["水处理分散剂"],
+    "aliases": ["水处理分散剂", "分散剂A970", "丁二烯分散剂"],
     "sources": ["erp_history"],
     "weight": 68,
     "status": "active"
   },
   {
     "term": "消泡剂",
-    "aliases": ["有机硅消泡剂"],
+    "aliases": ["有机硅消泡剂", "丁腈消泡剂"],
     "sources": ["erp_history"],
     "weight": 70,
     "status": "active"
   },
   {
     "term": "抗静电剂",
-    "aliases": ["防静电剂"],
+    "aliases": ["防静电剂", "抗静电剂X-997", "抗静电剂997", "抗静电剂163", "多区抗静电剂163"],
     "sources": ["chat_history"],
     "weight": 70,
     "status": "active"

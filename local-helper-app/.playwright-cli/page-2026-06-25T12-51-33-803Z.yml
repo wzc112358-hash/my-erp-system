@@ -1,0 +1,135 @@
+- generic [ref=e2]:
+  - navigation "本地助手导航" [ref=e3]:
+    - generic [ref=e4]: 恒
+    - generic [ref=e5]:
+      - button "T 任务" [active] [pressed] [ref=e6] [cursor=pointer]:
+        - generic [ref=e7]: T
+        - generic [ref=e8]: 任务
+      - button "A Agent" [ref=e9] [cursor=pointer]:
+        - generic [ref=e10]: A
+        - generic [ref=e11]: Agent
+      - button "S 巡检" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: S
+        - generic [ref=e14]: 巡检
+      - button "B 看板" [ref=e15] [cursor=pointer]:
+        - generic [ref=e16]: B
+        - generic [ref=e17]: 看板
+  - complementary [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - heading "本地采集任务" [level=1] [ref=e116]
+          - generic [ref=e23]: 本机模式 · 可选配置云端上传
+        - button "刷新" [ref=e24] [cursor=pointer]
+      - generic [ref=e117]:
+        - generic [ref=e119]:
+          - strong [ref=e120]: 任务队列
+          - generic [ref=e121]: 新建、选择和继续采集
+        - generic [ref=e122]:
+          - generic [ref=e123]:
+            - strong [ref=e124]: 新建采集
+            - generic [ref=e125]: 本机浏览器
+          - generic [ref=e126]:
+            - generic [ref=e127]:
+              - text: 站点
+              - combobox "站点" [ref=e128]:
+                - option "自定义站点"
+                - option "中石油招投标网" [selected]
+                - option "华锦兵器网"
+                - option "华北兵器网"
+                - option "易派克"
+                - option "云梦泽询价网"
+                - option "能源一号（兰州恒化成）"
+                - option "能源一号（北京恒化成）"
+                - option "能源一号（天津宜远）"
+                - option "隆道云"
+                - option "金能招标网"
+                - option "延长石油"
+                - option "中化"
+                - option "中海油"
+                - option "国能E招"
+                - option "国能E购"
+                - option "国能网"
+                - option "东华能源网"
+                - option "裕龙招投标网"
+            - generic [ref=e129]:
+              - text: 自定义站点名
+              - textbox "自定义站点名" [ref=e130]:
+                - /placeholder: 未在列表中时填写
+            - generic [ref=e131]:
+              - text: 搜索词
+              - textbox "搜索词" [ref=e132]:
+                - /placeholder: 例如：裕龙石化,缓蚀剂,阻垢剂
+                - text: 白油,凡士林脂,TCP2,阻聚剂,丁二烯阻聚剂,抗氧剂168,抗氧剂618,四氯乙烯,全氯乙烯,硅油,EDTA,抗静电剂,基础油,PAO
+            - generic [ref=e133]:
+              - text: 入口 URL
+              - textbox "入口 URL" [ref=e134]:
+                - /placeholder: 选择站点后自动填充，可手动修改
+                - text: https://www.cnpcbidding.com/#/tenders
+            - generic [ref=e135]:
+              - text: 操作提示
+              - textbox "操作提示" [ref=e136]: 查看招标公告、谈判采购公告、询价(竞价)采购公告；优先按历史产品关键词和发布日期筛选，停留在列表或详情页后继续采集。
+          - button "新建本地采集任务" [ref=e137] [cursor=pointer]
+        - generic [ref=e139]:
+          - button "▾ 裕龙招投标网 1 待办 · 0 完成 1" [expanded] [ref=e140] [cursor=pointer]:
+            - generic [ref=e141]: ▾
+            - generic [ref=e142]: 裕龙招投标网
+            - generic [ref=e143]: 1 待办 · 0 完成
+            - generic [ref=e144]: "1"
+          - button "裕龙石化 缓蚀剂 待处理 https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96 2026-06-25T12:49:10.641Z" [ref=e146] [cursor=pointer]:
+            - generic [ref=e147]:
+              - strong [ref=e148]: 裕龙石化 缓蚀剂
+              - generic [ref=e149]: 待处理
+            - generic [ref=e150]: https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96
+            - generic [ref=e151]: 2026-06-25T12:49:10.641Z
+  - main [ref=e51]:
+    - generic [ref=e52]:
+      - generic [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - heading "裕龙招投标网" [level=2] [ref=e70]
+            - generic [ref=e71]: 任务 ID：local-1782391750641-02bc0352 · 本机任务
+          - generic [ref=e72]: 待处理
+        - generic [ref=e73]:
+          - button "Agent 自动发现" [ref=e74] [cursor=pointer]
+          - button "打开采集浏览器" [ref=e75] [cursor=pointer]
+          - button "我已完成登录/筛选，继续采集" [ref=e76] [cursor=pointer]
+          - button "复制站点日报" [ref=e77] [cursor=pointer]
+          - button "复制今日汇总" [ref=e78] [cursor=pointer]
+          - button "复制重点清单" [ref=e79] [cursor=pointer]
+          - button "取消" [ref=e80] [cursor=pointer]
+          - button "失败" [ref=e81] [cursor=pointer]
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]: 入口 URL
+          - link "https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96" [ref=e86] [cursor=pointer]:
+            - /url: https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96
+        - generic [ref=e87]:
+          - generic [ref=e88]: 搜索词
+          - generic [ref=e89]: 裕龙石化 缓蚀剂
+        - generic [ref=e90]:
+          - generic [ref=e91]: 操作提示
+          - generic [ref=e92]: 若出现安全验证，先人工完成验证；搜索裕龙石化和产品关键词，停留在搜索结果列表后继续采集。
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]: Agent 发现入口
+          - generic [ref=e96]: 暂无发现入口
+        - generic [ref=e97]:
+          - generic [ref=e98]: 商机卡片
+          - generic [ref=e99]: 暂无商机卡片
+        - generic [ref=e100]:
+          - generic [ref=e101]: 原始候选结果
+          - generic [ref=e102]: 暂无候选结果
+        - generic [ref=e103]:
+          - generic [ref=e104]: 结果摘要
+          - generic [ref=e105]: 暂无摘要
+      - generic [ref=e106]:
+        - generic [ref=e107]:
+          - generic [ref=e108]: 最近截图
+          - generic [ref=e109]: 暂无截图
+        - generic [ref=e110]:
+          - generic [ref=e111]: 证据摘要
+          - generic [ref=e112]: 暂无证据摘要
+        - generic [ref=e113]:
+          - generic [ref=e114]: 最近日志
+          - generic [ref=e115]: 暂无日志

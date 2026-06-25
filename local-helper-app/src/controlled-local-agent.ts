@@ -1,16 +1,15 @@
 import {
   createDefaultSearchAdapter,
   formatDiscoveredLinks,
-  type DiscoveredLink,
   type LinkDiscoveryResult,
   type SearchAdapter,
 } from './agent-search-adapter.ts';
+import type { AgentHarnessStepInput } from './agent-harness.ts';
 import {
   assessOpportunityCards,
   createDeterministicBidAssessor,
   type BidAssessor,
 } from './bid-assessment.ts';
-import { createCdpMcpBrowserTool } from './cdp-mcp-adapter.ts';
 import {
   createDefaultLLMAgent,
   type LLMAgentAdapter,
@@ -21,23 +20,30 @@ import {
   type ProductTerm,
 } from './product-knowledge.ts';
 import {
-  buildObservationArtifacts,
-  createSiteHarness,
   type BrowserHarnessRuntime,
   type LocalHelperArtifact,
   type LocalHelperTask,
 } from './site-harness.ts';
-import { profileFor } from './site-profiles.ts';
 import {
   summarizeCandidateBundle,
   type LocalAgentRunResult,
 } from './local-agent-runner.ts';
+import {
+  runReActCollectionAgent,
+} from './react-collection-agent.ts';
+import {
+  createDefaultReActPlanner,
+  type ReActPlanner,
+} from './react-planner.ts';
 
 export type ControlledAgentOptions = {
   search?: SearchAdapter;
   llm?: LLMAgentAdapter;
   assessor?: BidAssessor;
   terms?: ProductTerm[];
+  recordStep?: (step: AgentHarnessStepInput) => Promise<void> | void;
+  planner?: ReActPlanner;
+  maxIterations?: number;
 };
 
 const discoveryArtifactFor = (
@@ -51,9 +57,6 @@ const discoveryArtifactFor = (
   mime_type: 'text/plain',
 });
 
-const selectedUrlFor = (task: LocalHelperTask, links: DiscoveredLink[]) =>
-  links[0]?.url || task.entryUrl;
-
 export const runControlledLocalAgentTask = async ({
   task,
   browser,
@@ -61,41 +64,72 @@ export const runControlledLocalAgentTask = async ({
   llm = createDefaultLLMAgent(),
   assessor = createDeterministicBidAssessor(),
   terms,
+  recordStep = async () => undefined,
+  planner = createDefaultReActPlanner(),
+  maxIterations = 6,
 }: {
   task: LocalHelperTask;
   browser: BrowserHarnessRuntime;
 } & ControlledAgentOptions): Promise<LocalAgentRunResult> => {
-  const discovery = await search.discoverLinks({ task, limit: 8 });
-  const discoveredLinks = discovery.links || [];
-  const targetUrl = selectedUrlFor(task, discoveredLinks);
-  const browserTool = createCdpMcpBrowserTool({ browser });
-  const harness = createSiteHarness({
-    browser: browserTool,
-    profile: profileFor(task.sourceName),
+  await recordStep({
+    phase: 'plan',
+    action: 'start_controlled_agent',
+    result: {
+      sourceName: task.sourceName,
+      entryUrl: task.entryUrl,
+      searchTerms: task.searchTerms || '',
+    },
   });
-  const agentTask = {
-    ...task,
-    entryUrl: targetUrl || task.entryUrl,
-  };
-  const result = await harness.openTask(agentTask);
-  const screenshotPath = await browserTool.screenshot().catch(() => '');
-  const observation = result.observation
-    ? {
-      ...result.observation,
-      screenshotPath: screenshotPath || result.observation.screenshotPath,
-    }
-    : undefined;
-  const artifacts = [
-    discoveryArtifactFor(discovery, task),
-    ...(observation ? buildObservationArtifacts(observation, task) : []),
-  ];
+  const result = await runReActCollectionAgent({
+    task,
+    browser,
+    search,
+    planner,
+    recordStep,
+    maxIterations,
+  });
+  const discoveredLinks = result.discoveredLinks || [];
+  const observation = result.observation;
+  const artifacts = result.artifacts.length > 0
+    ? result.artifacts
+    : [
+      discoveryArtifactFor({
+        provider: search.name,
+        query: task.searchTerms || '',
+        links: discoveredLinks,
+        warnings: [],
+      }, task),
+    ];
+  await recordStep({
+    phase: 'extract',
+    action: 'analyze_observation',
+    tool: 'react-collection-agent',
+    observation: {
+      status: result.status,
+      title: observation?.title || '',
+      url: observation?.url || '',
+      screenshotPath: observation?.screenshotPath || '',
+    },
+    result: {
+      candidateCount: result.candidateBundle?.candidates?.length || 0,
+      artifactCount: artifacts.length,
+      humanReason: result.status === 'request_human' ? result.humanReason || '' : '',
+    },
+  });
 
   if (result.status === 'request_human') {
-    const targetLine = targetUrl ? `已打开：${targetUrl}` : '没有可打开的入口。';
+    await recordStep({
+      phase: 'human',
+      action: 'request_human_takeover',
+      result: {
+        reason: result.humanReason || '请员工完成登录/验证或手动进入公告列表后继续采集。',
+        currentUrl: observation?.url || '',
+      },
+    });
     return {
       status: 'request_human',
       humanReason: [
-        `Agent 已完成公开链接发现，${targetLine}`,
+        `ReAct Agent 已完成 ${result.iterations.length} 轮采集尝试。`,
         result.humanReason || '请员工完成登录/验证或手动进入公告列表后继续采集。',
       ].join(' '),
       observation,
@@ -103,8 +137,7 @@ export const runControlledLocalAgentTask = async ({
       artifacts,
       resultSummary: [
         `发现 ${discoveredLinks.length} 个候选入口。`,
-        ...discovery.warnings,
-        result.humanReason,
+        result.resultSummary,
       ].filter(Boolean).join('\n'),
       discoveredLinks,
     };
@@ -116,6 +149,15 @@ export const runControlledLocalAgentTask = async ({
     cards: buildOpportunityCards({ bundle: result.candidateBundle, task, terms }),
     assessor,
   });
+  await recordStep({
+    phase: 'assess',
+    action: 'assess_opportunity_cards',
+    tool: 'bid-assessor',
+    result: {
+      cardCount: opportunityCards.length,
+      topActions: opportunityCards.slice(0, 5).map((card) => card.recommendedAction),
+    },
+  });
   const fallbackSummary = summarizeOpportunityCards(
     opportunityCards,
     summarizeCandidateBundle(result.candidateBundle),
@@ -126,6 +168,15 @@ export const runControlledLocalAgentTask = async ({
     candidateBundle: result.candidateBundle,
     fallbackSummary,
   }).catch(() => fallbackSummary);
+  await recordStep({
+    phase: 'summarize',
+    action: 'summarize_agent_result',
+    tool: 'llm-or-deterministic',
+    result: {
+      summaryLength: resultSummary.length,
+      fallbackUsed: resultSummary === fallbackSummary,
+    },
+  });
 
   return {
     status: 'completed',

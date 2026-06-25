@@ -130,7 +130,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			totalAmount := SumChildFieldExcluding(invoices, "amount", currentInvoiceId, newInvoiceAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
+			oldRecord, _ := GetRecordById(app, "sale_invoices", e.Record.Id)
+			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
+			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
 				return err
 			}
 
@@ -160,7 +162,6 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 				return err
 			}
 
-			oldRecord, _ := GetRecordById(app, "sale_invoices", e.Record.Id)
 			oldStatus := ""
 			if oldRecord != nil {
 				oldStatus = oldRecord.GetString("manager_confirmed")

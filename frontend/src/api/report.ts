@@ -53,9 +53,13 @@ interface PurchaseContractData {
 
 interface PurchaseArrivalData {
   purchase_contract: string;
+  quantity: number;
   freight_1: number;
+  freight_1_currency: 'USD' | 'CNY';
   freight_2?: number;
+  freight_2_currency?: 'USD' | 'CNY';
   miscellaneous_expenses: number;
+  miscellaneous_expenses_currency: 'USD' | 'CNY';
 }
 
 interface SalesShipmentData {
@@ -93,6 +97,22 @@ function getYearFromDate(dateStr: string): number {
   if (!dateStr) return 0;
   const date = new Date(dateStr);
   return date.getFullYear();
+}
+
+// 按币种把到货记录的运费/杂费折算为 CNY，并统计到货量
+function arrivalCostsCny(arrivals: PurchaseArrivalData[], rate: number) {
+  let freight = 0;
+  let miscellaneous = 0;
+  let quantity = 0;
+  arrivals.forEach((a) => {
+    const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
+    const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
+    const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+    freight += (a.freight_1 || 0) * f1Rate + (a.freight_2 || 0) * f2Rate;
+    miscellaneous += (a.miscellaneous_expenses || 0) * mRate;
+    quantity += a.quantity || 0;
+  });
+  return { freight, miscellaneous, quantity };
 }
 
 export const ReportAPI = {
@@ -214,8 +234,7 @@ export const ReportAPI = {
 
     purchaseContracts.forEach((pc) => {
       const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-      const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
-      const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
+      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
 
       let salesContract: SalesContractData | undefined;
       let customerName = '';
@@ -275,6 +294,7 @@ export const ReportAPI = {
         tax: 0,
         profit: 0,
         netProfit: 0,
+        realizedProfit: 0,
         salesRowSpan: 0,
         purchaseRowSpan: 1,
         isSalesRow: false,
@@ -286,18 +306,20 @@ export const ReportAPI = {
     const salesContractFreightTotal = new Map<string, number>();
     const salesContractMiscTotal = new Map<string, number>();
     const salesContractTaxTotal = new Map<string, number>();
-    
+    // 每个销售合同关联的采购已到货量（用于已执行利润）
+    const salesContractArrivedQty = new Map<string, number>();
+
     reportData.forEach((row) => {
       if (row.salesContractNo) {
         const count = salesContractRowCounts.get(row.salesContractNo) || 0;
         salesContractRowCounts.set(row.salesContractNo, count + 1);
-        
+
         const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
         salesContractPurchaseTotal.set(row.salesContractNo, purchaseTotal + row.purchaseTotalAmount);
-        
+
         const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
         salesContractFreightTotal.set(row.salesContractNo, freightTotal + row.freight);
-        
+
         const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
         salesContractMiscTotal.set(row.salesContractNo, miscTotal + row.miscellaneous);
 
@@ -313,11 +335,22 @@ export const ReportAPI = {
       }
     });
 
+    // 统计每个销售合同关联的采购已到货量
+    salesContracts.forEach((sc) => {
+      const relatedPurchases = purchaseContracts.filter((pc) => pc.expand?.sales_contract?.id === sc.id);
+      let arrivedQty = 0;
+      relatedPurchases.forEach((pc) => {
+        const arrivals = purchaseArrivalsMap.get(pc.id) || [];
+        arrivedQty += arrivalCostsCny(arrivals, rate).quantity;
+      });
+      salesContractArrivedQty.set(sc.no, arrivedQty);
+    });
+
     let currentSalesNo = '';
-    
+
     reportData.forEach((row) => {
       const salesRowCount = salesContractRowCounts.get(row.salesContractNo) || 1;
-      
+
       if (row.salesContractNo !== currentSalesNo) {
         currentSalesNo = row.salesContractNo;
         row.salesRowSpan = salesRowCount;
@@ -326,17 +359,38 @@ export const ReportAPI = {
         const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
         const salesTaxTotal = salesContractTaxTotal.get(row.salesContractNo) || 0;
         const purchaseTaxTotal = salesContractPurchaseTotal.get(row.salesContractNo) ? (purchaseTotal * 1.13) : 0;
-        
+
         row.salesTaxTotalAmount = salesTaxTotal;
         row.tax = (salesTaxTotal - purchaseTaxTotal) * 0.1881;
         row.profit = salesTaxTotal / 1.13 - purchaseTotal - freightTotal - miscTotal;
         row.netProfit = salesTaxTotal / 1.13 - purchaseTotal - row.tax - miscTotal - freightTotal;
+
+        // 已执行利润：按销售合同关联的采购已到货量核算
+        // 销售已实现收入（含税）= 销售含税单价 × 已到货量
+        const sc = salesContracts.find((s) => s.no === row.salesContractNo);
+        const arrivedQty = salesContractArrivedQty.get(row.salesContractNo) || 0;
+        let realizedProfit = 0;
+        if (sc) {
+          const salesUnitPriceCny = sc.is_cross_border ? sc.unit_price * rate : sc.unit_price;
+          const isExTax = sc.is_price_excluding_tax;
+          const realizedSalesInc = salesUnitPriceCny * arrivedQty * (isExTax ? 1.13 : 1);
+          const realizedSalesEx = salesUnitPriceCny * arrivedQty * (isExTax ? 1 : 1 / 1.13);
+          // 采购已实现成本：按到货比例分摊（已到货即视为已实现成本）
+          const purchaseRatio = sc.total_quantity > 0 ? Math.min(arrivedQty / sc.total_quantity, 1) : 0;
+          const realizedPurchaseInc = purchaseTaxTotal * purchaseRatio;
+          const realizedTax = (realizedSalesInc - realizedPurchaseInc) * 0.1881;
+          const realizedFreight = freightTotal * purchaseRatio;
+          const realizedMisc = miscTotal * purchaseRatio;
+          realizedProfit = realizedSalesEx - realizedPurchaseInc / 1.13 - realizedTax - realizedFreight - realizedMisc;
+        }
+        row.realizedProfit = realizedProfit;
       } else {
         row.salesRowSpan = 0;
         row.salesTaxTotalAmount = 0;
         row.profit = 0;
         row.tax = 0;
         row.netProfit = 0;
+        row.realizedProfit = 0;
       }
     });
 
@@ -356,8 +410,7 @@ export const ReportAPI = {
       }
 
       const arrivals = purchaseArrivalsMap.get(sc.id) || [];
-      const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
-      const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
+      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
 
       const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
       const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
@@ -389,6 +442,7 @@ export const ReportAPI = {
         tax: salesIncTax * 0.1881,
         profit: salesExTax - freight - miscellaneous,
         netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
+        realizedProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,
@@ -405,6 +459,7 @@ export const ReportAPI = {
       totalMiscellaneous: 0,
       totalProfit: 0,
       totalNetProfit: 0,
+      totalRealizedProfit: 0,
     };
 
     const processedSalesContracts = new Set<string>();
@@ -427,6 +482,7 @@ export const ReportAPI = {
 
       summary.totalProfit += row.profit;
       summary.totalNetProfit += row.netProfit;
+      summary.totalRealizedProfit += row.realizedProfit;
     });
 
     summary.totalTax = (summary.totalSalesTaxAmount - summary.totalPurchaseTaxAmount) * 0.1881;
@@ -441,7 +497,7 @@ export const ReportAPI = {
     const rate = await getUsdToCnyRate();
     const allIds = [...salesIds, ...purchaseIds];
     if (allIds.length === 0) {
-      return { data: [], summary: { totalSalesAmount: 0, totalPurchaseAmount: 0, totalSalesTaxAmount: 0, totalPurchaseTaxAmount: 0, totalTax: 0, totalFreight: 0, totalMiscellaneous: 0, totalProfit: 0, totalNetProfit: 0 } };
+      return { data: [], summary: { totalSalesAmount: 0, totalPurchaseAmount: 0, totalSalesTaxAmount: 0, totalPurchaseTaxAmount: 0, totalTax: 0, totalFreight: 0, totalMiscellaneous: 0, totalProfit: 0, totalNetProfit: 0, totalRealizedProfit: 0 } };
     }
 
     const filterParts: string[] = [];
@@ -596,8 +652,7 @@ export const ReportAPI = {
 
     purchaseContracts.forEach((pc) => {
       const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-      const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
-      const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
+      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
 
       let salesContract: SalesContractData | undefined;
       let customerName = '';
@@ -657,6 +712,7 @@ export const ReportAPI = {
         tax: 0,
         profit: 0,
         netProfit: 0,
+        realizedProfit: 0,
         salesRowSpan: 0,
         purchaseRowSpan: 1,
         isSalesRow: false,
@@ -668,6 +724,7 @@ export const ReportAPI = {
     const salesContractFreightTotal = new Map<string, number>();
     const salesContractMiscTotal = new Map<string, number>();
     const salesContractTaxTotal = new Map<string, number>();
+    const salesContractArrivedQty = new Map<string, number>();
 
     reportData.forEach((row) => {
       if (row.salesContractNo) {
@@ -695,6 +752,18 @@ export const ReportAPI = {
       }
     });
 
+    salesContracts.forEach((sc) => {
+      const relatedPurchases = purchaseContracts.filter(
+        (pc) => pc.expand?.sales_contract?.id === sc.id || pc.sales_contract === sc.id
+      );
+      let arrivedQty = 0;
+      relatedPurchases.forEach((pc) => {
+        const arrivals = purchaseArrivalsMap.get(pc.id) || [];
+        arrivedQty += arrivalCostsCny(arrivals, rate).quantity;
+      });
+      salesContractArrivedQty.set(sc.no, arrivedQty);
+    });
+
     let currentSalesNo = '';
 
     reportData.forEach((row) => {
@@ -713,12 +782,30 @@ export const ReportAPI = {
         row.tax = (salesTaxTotal - purchaseTaxTotal) * 0.1881;
         row.profit = salesTaxTotal / 1.13 - purchaseTotal - freightTotal - miscTotal;
         row.netProfit = salesTaxTotal / 1.13 - purchaseTotal - row.tax - miscTotal - freightTotal;
+
+        const sc = salesContracts.find((s) => s.no === row.salesContractNo);
+        const arrivedQty = salesContractArrivedQty.get(row.salesContractNo) || 0;
+        let realizedProfit = 0;
+        if (sc) {
+          const salesUnitPriceCny = sc.is_cross_border ? sc.unit_price * rate : sc.unit_price;
+          const isExTax = sc.is_price_excluding_tax;
+          const realizedSalesInc = salesUnitPriceCny * arrivedQty * (isExTax ? 1.13 : 1);
+          const realizedSalesEx = salesUnitPriceCny * arrivedQty * (isExTax ? 1 : 1 / 1.13);
+          const purchaseRatio = sc.total_quantity > 0 ? Math.min(arrivedQty / sc.total_quantity, 1) : 0;
+          const realizedPurchaseInc = purchaseTaxTotal * purchaseRatio;
+          const realizedTax = (realizedSalesInc - realizedPurchaseInc) * 0.1881;
+          const realizedFreight = freightTotal * purchaseRatio;
+          const realizedMisc = miscTotal * purchaseRatio;
+          realizedProfit = realizedSalesEx - realizedPurchaseInc / 1.13 - realizedTax - realizedFreight - realizedMisc;
+        }
+        row.realizedProfit = realizedProfit;
       } else {
         row.salesRowSpan = 0;
         row.salesTaxTotalAmount = 0;
         row.profit = 0;
         row.tax = 0;
         row.netProfit = 0;
+        row.realizedProfit = 0;
       }
     });
 
@@ -732,8 +819,7 @@ export const ReportAPI = {
       }
 
       const arrivals = purchaseArrivalsMap.get(sc.id) || [];
-      const freight = arrivals.reduce((sum, a) => sum + (a.freight_1 || 0) + (a.freight_2 || 0), 0);
-      const miscellaneous = arrivals.reduce((sum, a) => sum + (a.miscellaneous_expenses || 0), 0);
+      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
 
       const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
       const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
@@ -765,6 +851,7 @@ export const ReportAPI = {
         tax: salesIncTax * 0.1881,
         profit: salesExTax - freight - miscellaneous,
         netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
+        realizedProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,
@@ -781,6 +868,7 @@ export const ReportAPI = {
       totalMiscellaneous: 0,
       totalProfit: 0,
       totalNetProfit: 0,
+      totalRealizedProfit: 0,
     };
 
     const processedSalesContracts = new Set<string>();
@@ -803,6 +891,7 @@ export const ReportAPI = {
 
       summary.totalProfit += row.profit;
       summary.totalNetProfit += row.netProfit;
+      summary.totalRealizedProfit += row.realizedProfit;
     });
 
     summary.totalTax = (summary.totalSalesTaxAmount - summary.totalPurchaseTaxAmount) * 0.1881;
