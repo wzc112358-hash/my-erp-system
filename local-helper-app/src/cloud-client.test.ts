@@ -9,6 +9,7 @@ import {
   pullCloudTasks,
   sendHeartbeat,
   startCloudTask,
+  uploadCloudTaskReport,
 } from './cloud-client.ts';
 
 const createFetch = () => {
@@ -54,6 +55,7 @@ test('cloud client sends bearer token for task channel calls', async () => {
     requestHuman: true,
   });
   await cancelCloudTask(options, 'task-huajin-1');
+  await uploadCloudTaskReport(options, 'task-huajin-1', { summary: '筛选出 1 条信息' });
 
   assert.equal(calls[0].url, 'https://agent.example.com/local-helper/heartbeat');
   assert.equal(calls[1].url, 'https://agent.example.com/local-helper/release?currentVersion=0.2.0');
@@ -61,6 +63,8 @@ test('cloud client sends bearer token for task channel calls', async () => {
   assert.equal(calls[3].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/start');
   assert.equal(calls[4].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/continue');
   assert.equal(calls[5].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/cancel');
+  assert.equal(calls[6].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/result');
+  assert.equal(JSON.parse(String(calls[6].options.body)).summary, '筛选出 1 条信息');
   assert.equal((calls[4].options.headers as Record<string, string>).Authorization, 'Bearer token-xiaowei');
 });
 

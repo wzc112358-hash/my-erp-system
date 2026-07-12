@@ -11,7 +11,9 @@ import {
   pullCloudTasks,
   sendHeartbeat,
   startCloudTask,
+  uploadCloudTaskReport,
 } from './cloud-client.ts';
+import { buildCollectionReport } from './collection-report.ts';
 import {
   createAgentHarnessStore,
   type AgentHarnessStepInput,
@@ -71,7 +73,7 @@ import {
   type LocalHelperArtifact,
   type LocalHelperTask,
 } from './site-harness.ts';
-import { profileFor, SITE_PROFILES } from './site-profiles.ts';
+import { PILOT_SITE_NAMES, profileFor, SITE_PROFILES } from './site-profiles.ts';
 import type { createTaskStore } from './task-store.ts';
 
 type Store = ReturnType<typeof createTaskStore>;
@@ -86,6 +88,7 @@ type LocalAgentRunner = (input: {
 } & Partial<ControlledAgentOptions>) => Promise<LocalAgentRunResult>;
 type LLMConnectionTester = (input: { config: LocalLLMConfig | null }) => Promise<LLMConnectionTestResult>;
 type BrowserRuntimeFactory = (task: { sourceName?: string }) => BrowserHarnessRuntime;
+type CloudReportUploader = typeof uploadCloudTaskReport;
 
 const DEFAULT_HELPER_VERSION = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || '0.1.14';
 const DEFAULT_DATA_DIR_NAME = 'HengHuaChengLocalHelper';
@@ -104,6 +107,7 @@ const UI_FILES: Record<string, string> = {
   '/ui/tasks': 'tasks.html',
   '/ui/tasks.html': 'tasks.html',
   '/ui/tasks.js': 'tasks.js',
+  '/ui/tasks-minimal.js': 'tasks-minimal.js',
 };
 
 const UI_MIME: Record<string, string> = {
@@ -175,6 +179,7 @@ export const createLocalApiServer = ({
   enableScheduler = process.env.HCZ_LOCAL_SCHEDULER_DISABLED !== '1',
   scheduleIntervalMs = Number(process.env.HCZ_LOCAL_SCHEDULER_INTERVAL_MS || 60_000),
   scheduleWindowMinutes = Number(process.env.HCZ_LOCAL_SCHEDULER_WINDOW_MINUTES || 10),
+  uploadReport = uploadCloudTaskReport,
 }: {
   store: Store;
   port?: number;
@@ -192,6 +197,7 @@ export const createLocalApiServer = ({
   enableScheduler?: boolean;
   scheduleIntervalMs?: number;
   scheduleWindowMinutes?: number;
+  uploadReport?: CloudReportUploader;
 }) => {
   const browserRuntimes = new Map<string, BrowserHarnessRuntime>();
   const taskBrowserKeys = new Map<string, string>();
@@ -679,6 +685,12 @@ export const createLocalApiServer = ({
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/favicon.ico') {
+        response.writeHead(204, { 'Cache-Control': 'public, max-age=86400' });
+        response.end();
+        return;
+      }
+
       if (request.method === 'GET' && rendererDir && UI_FILES[url.pathname]) {
         const fileName = UI_FILES[url.pathname];
         const filePath = path.join(rendererDir, fileName);
@@ -704,6 +716,7 @@ export const createLocalApiServer = ({
             buyerName: profile.buyerName || '',
             defaultSearchTerms: profile.defaultSearchTerms || '',
             defaultActionSteps: profile.defaultActionSteps || '',
+            pilot: PILOT_SITE_NAMES.includes(profile.sourceName as typeof PILOT_SITE_NAMES[number]),
           })),
         });
         return;
@@ -936,7 +949,12 @@ export const createLocalApiServer = ({
       }
 
       if (request.method === 'GET' && url.pathname === '/tasks') {
-        sendJson(response, 200, { tasks: store.listTasks() });
+        sendJson(response, 200, {
+          tasks: store.listTasks().map((task) => ({
+            ...task,
+            collectionReport: buildCollectionReport(task),
+          })),
+        });
         return;
       }
 
@@ -1062,6 +1080,26 @@ export const createLocalApiServer = ({
         sendJson(response, 200, {
           text: buildTaskWechatReport(store.getTask(parts[1])),
         });
+        return;
+      }
+
+      if (request.method === 'GET' && parts[0] === 'tasks' && parts[2] === 'collection-report') {
+        sendJson(response, 200, buildCollectionReport(store.getTask(parts[1])));
+        return;
+      }
+
+      if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'upload') {
+        const task = store.getTask(parts[1]);
+        const report = buildCollectionReport(task);
+        if (!['has_matches', 'no_matches'].includes(report.status)) {
+          throw new Error('当前采集尚未完成，不能上传');
+        }
+        const pairing = store.getCloudPairing();
+        const result = await uploadReport({
+          cloudUrl: pairing.cloudUrl,
+          token: pairing.token,
+        }, task.id, report as unknown as Record<string, unknown>);
+        sendJson(response, 200, { uploaded: true, report, cloud: result });
         return;
       }
 

@@ -28,6 +28,30 @@ test('default LLM agent uses deterministic fallback when disabled', async () => 
   assert.equal(summary, 'fallback summary');
 });
 
+test('deterministic LLM agent keeps opportunity-card fallback summary', async () => {
+  const agent = createDefaultLLMAgent({ env: {}, config: null });
+  const summary = await agent.summarize({
+    task: { id: 't1', sourceName: '国能E招', entryUrl: 'https://example.com' },
+    discoveredLinks: [],
+    candidateBundle: {
+      source_name: '国能E招',
+      candidates: [{
+        title: '电缆采购公开招标项目招标公告',
+        url: 'https://example.com/notice/1',
+        published_at: '',
+        deadline_at: '',
+        buyer_name: '',
+        raw_text: '电缆采购公开招标项目招标公告',
+        attachments: [],
+      }],
+    },
+    fallbackSummary: '本次采集识别到 1 条候选，生成 1 张商机卡片。低相关可跳过：1 条。',
+  });
+
+  assert.match(summary, /商机卡片/);
+  assert.doesNotMatch(summary, /发现 1 条招投标候选/);
+});
+
 test('default LLM agent can use saved OpenAI-compatible config', async () => {
   const calls: Array<{ authorization: string; body: any }> = [];
   const agent = createDefaultLLMAgent({
@@ -77,6 +101,7 @@ test('LLM connection test validates required config and calls chat completions',
   assert.equal(missing.ok, false);
   assert.match(missing.message, /接口地址|API Key|模型名/);
 
+  const calls: any[] = [];
   const ok = await testOpenAICompatibleLLMConfig({
     env: {},
     config: {
@@ -85,12 +110,16 @@ test('LLM connection test validates required config and calls chat completions',
       apiKey: 'sk-local',
       model: 'demo-model',
     },
-    fetchImpl: (async () => new Response(JSON.stringify({
-      choices: [{ message: { content: '连接正常' } }],
-    }), { status: 200 })) as typeof fetch,
+    fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body || '{}')));
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '连接正常' } }],
+      }), { status: 200 });
+    }) as typeof fetch,
   });
 
   assert.equal(ok.ok, true);
   assert.equal(ok.model, 'demo-model');
   assert.match(ok.message, /连接正常/);
+  assert.equal(calls[0].max_tokens, 64);
 });

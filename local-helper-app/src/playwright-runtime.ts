@@ -10,6 +10,8 @@ import type {
 
 type PageLike = {
   goto?: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
+  waitForLoadState?: (state?: string, options?: Record<string, unknown>) => Promise<unknown>;
+  waitForTimeout?: (timeout: number) => Promise<unknown>;
   title: () => Promise<string>;
   url: () => string;
   content?: () => Promise<string>;
@@ -37,6 +39,7 @@ export type PlaywrightRuntimeOptions = {
   screenshotDir?: string;
   headless?: boolean;
   navigationTimeoutMs?: number;
+  settleTimeoutMs?: number;
   browserChannels?: string[];
   proxyServer?: string;
   env?: Record<string, string | undefined>;
@@ -105,10 +108,11 @@ export const createPlaywrightRuntime = ({
   profileDir,
   screenshotDir = path.join(profileDir, 'artifacts'),
   headless = false,
+  env = process.env,
   navigationTimeoutMs = 45000,
+  settleTimeoutMs = Number(env.HCZ_LOCAL_HELPER_SETTLE_TIMEOUT_MS || 3000),
   browserChannels,
   proxyServer,
-  env = process.env,
   platform = process.platform,
 }: PlaywrightRuntimeOptions): BrowserHarnessRuntime => {
   let contextPromise: Promise<ContextLike> | null = null;
@@ -211,6 +215,12 @@ export const createPlaywrightRuntime = ({
     screenshotPath,
   });
 
+  const settlePage = async (target: PageLike) => {
+    if (settleTimeoutMs <= 0) return;
+    await target.waitForLoadState?.('networkidle', { timeout: settleTimeoutMs }).catch(() => undefined);
+    await target.waitForTimeout?.(150).catch(() => undefined);
+  };
+
   return {
     async open(url: string) {
       const target = await page();
@@ -218,6 +228,7 @@ export const createPlaywrightRuntime = ({
         waitUntil: 'domcontentloaded',
         timeout: navigationTimeoutMs,
       });
+      await settlePage(target);
       return observePage(target);
     },
 

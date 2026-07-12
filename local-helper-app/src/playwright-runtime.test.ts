@@ -101,6 +101,45 @@ test('playwright runtime reuses existing page for observe', async () => {
   assert.equal((await runtime.observe()).visibleText, '公告 2');
 });
 
+test('playwright runtime waits briefly for SPA content after navigation', async () => {
+  const calls: string[] = [];
+  let settled = false;
+  const fakePage = {
+    goto: async () => {
+      calls.push('goto');
+    },
+    waitForLoadState: async (state: string, options: Record<string, unknown>) => {
+      calls.push(`wait:${state}:${options.timeout}`);
+      settled = true;
+    },
+    waitForTimeout: async (timeout: number) => {
+      calls.push(`timeout:${timeout}`);
+    },
+    title: async () => '裕龙招投标网',
+    url: () => 'https://ctbpsp.com/#/bulletinList',
+    locator: () => ({
+      innerText: async () => settled ? '2026-06-26 裕龙石化阻聚剂采购招标公告' : '加载中...',
+    }),
+  };
+  const chromium = {
+    launchPersistentContext: async () => ({
+      pages: () => [fakePage],
+      newPage: async () => fakePage,
+    }),
+  };
+
+  const runtime = createPlaywrightRuntime({
+    chromium,
+    profileDir: 'profiles/spa',
+    settleTimeoutMs: 1200,
+  });
+
+  const observation = await runtime.open('https://ctbpsp.com/#/bulletinList');
+
+  assert.equal(observation.visibleText, '2026-06-26 裕龙石化阻聚剂采购招标公告');
+  assert.deepEqual(calls, ['goto', 'wait:networkidle:1200', 'timeout:150']);
+});
+
 test('playwright runtime prefers system browsers before bundled Chromium on desktop platforms', () => {
   assert.deepEqual(browserChannelCandidatesFor({
     platform: 'win32',

@@ -90,3 +90,12 @@ export const cancelCloudTask = async (
   method: 'POST',
   body: JSON.stringify(payload),
 });
+
+export const uploadCloudTaskReport = async (
+  options: CloudClientOptions,
+  taskId: string,
+  payload: Record<string, unknown>,
+) => requestJson(options, `/local-helper/tasks/${encodeURIComponent(taskId)}/result`, {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});

@@ -5,8 +5,13 @@ package-lock.json
 
 # Build outputs
 dist/
+app-dist/
 build/
 release/
+release-user/
+.playwright-cli/
+output/playwright/
+local-helper-app/output/playwright/
 
 # Database
 backend/pb_data/

@@ -8,6 +8,7 @@ const CORE_HISTORY_TERMS = '凡士林脂,凡士林油,白油,工业白油,68号�
 const PETROCHEMICAL_TERMS = '白油,凡士林脂,TCP2,阻聚剂,丁二烯阻聚剂,抗氧剂168,抗氧剂618,四氯乙烯,全氯乙烯,硅油,EDTA,抗静电剂,基础油,PAO';
 const NORINCO_TERMS = '消泡剂,硅油,四氯乙烯,矿物油,引发剂,液氮,阻聚剂,抗静电剂';
 export const DEFAULT_SEARCH_TERMS = CORE_HISTORY_TERMS;
+export const PILOT_SITE_NAMES = ['国能E购', '易派克', '裕龙招投标网'] as const;
 
 export const SITE_PROFILES: Record<string, SiteHarnessProfile> = {
   中石油招投标网: {
@@ -43,10 +44,11 @@ export const SITE_PROFILES: Record<string, SiteHarnessProfile> = {
     defaultActionSteps: '可先不登录搜索公开采购信息；按产品名称、公司营业范围和发布日期筛选，确认是否接受代理商后继续采集。',
     buyerName: '中石化',
     buyerMatch: /石化|中石化|sinopec/i,
+    noisePattern: /评标结果|招标结果|中标候选|中标结果|成交结果|采购结果|入围结果|结果公示/,
   },
   云梦泽询价网: {
     sourceName: '云梦泽询价网',
-    entryUrl: 'https://www.ymzec.com/bid/web-outportal/index.html#/home--',
+    entryUrl: 'https://www.ymzec.com/bid/web-outportal/index.html#/home',
     defaultSearchTerms: PETROCHEMICAL_TERMS,
     defaultActionSteps: '查看招标采购和非招标采购，非招包含谈判采购、询比采购；按历史产品关键词筛选，需要买标书时先停下交人确认。',
   },
@@ -133,7 +135,10 @@ export const SITE_PROFILES: Record<string, SiteHarnessProfile> = {
     sourceName: '裕龙招投标网',
     entryUrl: 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96',
     defaultSearchTerms: `裕龙石化,${PETROCHEMICAL_TERMS},催化剂,化工助剂`,
-    defaultActionSteps: '若出现安全验证，先人工完成验证；搜索裕龙石化和产品关键词，停留在搜索结果列表后继续采集。',
+    defaultActionSteps: '若出现网易盾/安全验证/访问验证，先人工完成验证；在中国招标投标公共服务平台搜索裕龙石化，再用产品关键词二次筛选，停留在搜索结果列表或详情页后继续采集。',
+    humanRequiredPattern: /网易盾|安全验证|访问验证|验证通过|滑块|cstaticdun|interfaceacting|antidom|vaptcha|captcha|访问过于频繁|请稍后|输入验证码|请输入验证码|traceid|ERR_CONNECTION_CLOSED/i,
+    candidateLinePattern: /裕龙.*(?:公告|采购|招标|公示)|(?:白油|凡士林|阻聚剂|抗氧剂|四氯乙烯|硅油|EDTA|抗静电剂|催化剂|化工助剂|消泡剂).*(?:公告|采购|招标|公示)/,
+    noisePattern: /中标候选人公示|中标结果|成交结果|废\S*处置|^[\u4e00-\u9fa5]{2,8}(?:省|市).*接收时间|专栏首页|发布工具|发布媒介|问题清单|搜索引擎|最新项目|换一换|生物医疗|电子商城|标书编制|合规审查|请升级VIP|信息定制|联系我们|公告发布客服|QQ|全国招标公告公示搜索引擎/,
     buyerName: '裕龙石化',
     buyerMatch: /裕龙/,
   },

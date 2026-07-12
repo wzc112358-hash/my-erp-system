@@ -1,13 +1,14 @@
 import type { DiscoveredLink } from './agent-search-adapter.ts';
 import type { AgentToolManifest } from './agent-toolbox.ts';
 import {
+  callOpenAICompatibleChatCompletion,
   resolveLLMSettings,
   type LocalLLMConfig,
 } from './local-llm-agent.ts';
 import type { LocalHelperTask } from './site-harness.ts';
 
 export type ReActAction =
-  | { type: 'search'; reason: string; limit?: number }
+  | { type: 'search'; reason: string; limit?: number; query?: string }
   | { type: 'open_url'; reason: string; url: string }
   | { type: 'observe'; reason: string }
   | { type: 'read_documents'; reason: string; maxDocuments?: number }
@@ -16,6 +17,7 @@ export type ReActAction =
 
 export type ReActPlannerState = {
   task: LocalHelperTask;
+  siteSkill?: string;
   iteration: number;
   maxIterations: number;
   tools: AgentToolManifest[];
@@ -100,6 +102,13 @@ export const createDeterministicReActPlanner = (): ReActPlanner => ({
         type: 'search',
         reason: '先发现公开入口和公告链接。',
         limit: 8,
+        query: state.task.searchTerms || state.task.sourceName,
+      };
+    }
+    if (state.discoveredLinks.length === 0 && !state.task.entryUrl) {
+      return {
+        type: 'request_human',
+        reason: '资料中没有该站点入口 URL，公开搜索也没有发现可打开链接；请补充网址或手动打开公告页后继续采集。',
       };
     }
     const nextUrl = firstUnvisitedUrl(state);
@@ -131,10 +140,12 @@ const coerceAction = (
   const reason = String(raw?.reason || '').trim() || 'LLM 已选择下一步。';
   if (type === 'search') {
     const limit = Number(raw?.limit || 8);
+    const query = String(raw?.query || '').replace(/\s+/g, ' ').trim().slice(0, 500);
     return {
       type,
       reason,
       limit: Number.isFinite(limit) && limit > 0 ? Math.min(12, Math.round(limit)) : 8,
+      ...(query ? { query } : {}),
     };
   }
   if (type === 'open_url') {
@@ -159,17 +170,20 @@ const coerceAction = (
 const plannerPromptFor = (state: ReActPlannerState) => [
   '你是恒化成本地招投标采集 ReAct planner。你只能选择一个下一步动作，并输出严格 JSON。',
   '不要编造 URL；open_url 只能使用 discoveredLinks 或 task.entryUrl 中已有 URL。',
+  '必须遵守站点 skill：栏目、登录/验证码处理、重点产品和必须抽取字段优先级高于通用搜索。',
   '如果遇到登录、验证码、CA、短信、安全验证、空白页或没有入口，应 request_human。',
   '如果已经有候选公告且有附件线索但还没读附件，应 read_documents。',
   '如果已经有候选公告且没有必要再读附件，应 finish。',
   '',
   '动作 JSON 之一：',
-  '{"type":"search","reason":"...","limit":8}',
+  '{"type":"search","reason":"...","query":"站点和产品搜索语句","limit":8}',
   '{"type":"open_url","reason":"...","url":"..."}',
   '{"type":"observe","reason":"..."}',
   '{"type":"read_documents","reason":"...","maxDocuments":2}',
   '{"type":"finish","reason":"..."}',
   '{"type":"request_human","reason":"..."}',
+  '',
+  `站点 skill：\n${trim(state.siteSkill || '无站点 skill。', 3500)}`,
   '',
   `状态 JSON：\n${trim(JSON.stringify(state, null, 2), 5000)}`,
 ].join('\n');
@@ -191,31 +205,24 @@ export const createOpenAIReActPlanner = ({
     const { enabled, apiKey, baseUrl, model } = resolveLLMSettings({ env, config });
     if (!enabled || !apiKey || !baseUrl || !model) return fallback.chooseAction(state);
     try {
-      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: '你只输出一个 JSON 对象，不输出解释。',
-            },
-            {
-              role: 'user',
-              content: plannerPromptFor(state),
-            },
-          ],
-        }),
+      const result = await callOpenAICompatibleChatCompletion({
+        env,
+        config,
+        fetchImpl,
+        temperature: 0,
+        responseFormatJson: true,
+        messages: [
+          {
+            role: 'system',
+            content: '你只输出一个 JSON 对象，不输出解释。',
+          },
+          {
+            role: 'user',
+            content: plannerPromptFor(state),
+          },
+        ],
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) return fallback.chooseAction(state);
-      return coerceAction(firstJsonObject(String(body?.choices?.[0]?.message?.content || '')), state) ||
+      return coerceAction(firstJsonObject(result.content), state) ||
         fallback.chooseAction(state);
     } catch {
       return fallback.chooseAction(state);
@@ -236,4 +243,3 @@ export const createDefaultReActPlanner = ({
   if (settings.enabled && settings.apiKey) return createOpenAIReActPlanner({ env, config, fetchImpl });
   return createDeterministicReActPlanner();
 };
-

@@ -88,10 +88,12 @@ export type SiteHarnessProfile = {
 };
 
 export const DEFAULT_HUMAN_REQUIRED_PATTERN =
-  /验证码|短信|手机验证码|安全验证|滑块|请先登录|未登录|登录超时|登录已失效|重新登录|CA证书|数字证书|(?:账号|用户名|手机号|邮箱).{0,20}密码|密码.{0,20}(?:账号|用户名|手机号|邮箱)/i;
+  /验证码|短信|手机验证码|安全验证|滑块|请先登录|未登录|登录超时|登录已失效|重新登录|CA证书|数字证书|access verification|slide to verify|not a robot|traceid|robot|(?:账号|用户名|手机号|邮箱).{0,20}密码|密码.{0,20}(?:账号|用户名|手机号|邮箱)/i;
+export const STRONG_HUMAN_REQUIRED_PATTERN =
+  /输入验证码|请输入验证码|填写验证码|安全验证|滑块|access verification|slide to verify|not a robot|traceid/i;
 export const DEFAULT_EMPTY_PAGE_PATTERN =
-  /页面无法访问|ERR_EMPTY_RESPONSE|无法打开|空白页|加载失败/i;
-export const DEFAULT_NOTICE_TITLE_PATTERN = /公告|采购|询价|招标|竞价|谈判|公示|变更/;
+  /页面无法访问|ERR_EMPTY_RESPONSE|无法打开|空白页|加载失败|bad gateway|(?:^|\s|http\s*)502(?:\s|$|bad gateway)|网关错误/i;
+export const DEFAULT_NOTICE_TITLE_PATTERN = /公告|采购|询价|招标公告|招标项目|公开招标|邀请招标|竞价|谈判|公示|变更/;
 export const DEFAULT_EXCLUDE_PATTERN = /登录|注册|首页|帮助|导航|验证码/;
 export const DEFAULT_MAX_CANDIDATES = 30;
 
@@ -99,6 +101,9 @@ const DATE_PATTERN = /(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2})/;
 const DEADLINE_HINT_PATTERN = /截止|递交|报价/;
 const ATTACHMENT_LINK_PATTERN = /\.(?:pdf|doc|docx|xls|xlsx|zip|rar)(?:[?#].*)?$/i;
 const ATTACHMENT_TEXT_PATTERN = /附件|下载|标书|采购文件|招标文件|询价文件/;
+const NOTICE_NAV_TEXT_PATTERN = /^(招标公示\/公告|非招标公示\/公告|招标公告|投标邀请书|资格预审公告|外部招标机构公告|非招标公告|变更公告|候选人公示|中标公告|中标结果公告|终止公告|招标计划|招标文件公示|邀请招标事项公示|可不招标事项公示|谈判采购|竞价采购|询比采购|直接采购|拟成交结果公示|成交结果公告|公告信息|新闻动态|更多|查看全部)$/;
+const NOTICE_NAV_TOKEN_PATTERN = /(招标公示\/公告|非招标公示\/公告|招标公告|投标邀请书|资格预审公告|外部招标机构公告|非招标公告|变更公告|候选人公示|中标公告|中标结果公告|终止公告|招标计划|招标文件公示|邀请招标事项公示|可不招标事项公示|谈判采购|竞价采购|询比采购|直接采购|拟成交结果公示|成交结果公告|公告信息|新闻动态|更多|查看全部)/g;
+const PORTAL_CONTROL_TEXT_PATTERN = /^(全部)?招标人招标代理机构$|^搜索$|^搜标题$|^加载中\.{0,3}$|TenderSeek|全网标讯智能搜索引擎|招标计划资格预审公告招标公告|谈判采购竞价采购询比采购|培训通知|投标人培训|线上直播|操作实务|实战技能专项培训|系统发版|域名变更|平台升级|平台通知|新闻通知|操作指南|中国石油中国招标投标公共服务平台|中国招标投标公共服务平台|中国石油采购与招标网|全国企业采购交易|中国招标投标协会|国有企业采购供应信用管理平台|国家企业信用信息公示系统|采购与招标相关网站|典型招标文件|京ICP备|版权所有|法律声明|联系我们|网站使用帮助|客服咨询|客户服务|政策法规|操作说明|操作手册|常见问题|下载专区|用户手册|培训课件|工具下载|常用网站|集团公司网站|登录信息定制|开启更多服务|发布工具|发布媒介|问题清单|搜索引擎|增值服务|专栏首页/;
 const ARTIFACT_TEXT_LIMIT = 120_000;
 const NETWORK_RESPONSE_LIMIT = 20;
 const NETWORK_TITLE_FIELDS = [
@@ -127,6 +132,9 @@ const looksLikeNoticeTitle = (line: string, profile: SiteHarnessProfile) => {
   const candidateLinePattern = profile.candidateLinePattern;
   const noisePattern = profile.noisePattern;
   const compactLine = line.replace(/\s+/g, '');
+  if (NOTICE_NAV_TEXT_PATTERN.test(compactLine)) return false;
+  if (PORTAL_CONTROL_TEXT_PATTERN.test(compactLine) || PORTAL_CONTROL_TEXT_PATTERN.test(line)) return false;
+  if (!compactLine.replace(NOTICE_NAV_TOKEN_PATTERN, '')) return false;
   if (compactLine.length < 8 && !DATE_PATTERN.test(line)) return false;
   if (noisePattern?.test(line)) return false;
   return (noticePattern.test(line) || Boolean(candidateLinePattern?.test(line))) && !excludePattern.test(line);
@@ -152,6 +160,12 @@ export const analyzeObservation = (
     return {
       status: 'request_human',
       reason: '页面为空或加载失败，需要员工确认网络、账号或站点可访问性。',
+    };
+  }
+  if (STRONG_HUMAN_REQUIRED_PATTERN.test(authText)) {
+    return {
+      status: 'request_human',
+      reason: '检测到强验证码或滑块验证，需要员工在本机浏览器接管。',
     };
   }
   if (humanPattern.test(authText) && !hasNoticeContent(observation, profile)) {
@@ -198,7 +212,11 @@ const trimArtifactContent = (value = '', limit = ARTIFACT_TEXT_LIMIT) => (
 
 const attachmentLinksFor = (observation: BrowserObservation) => (
   (observation.links || [])
-    .filter((link) => ATTACHMENT_LINK_PATTERN.test(link.href) || ATTACHMENT_TEXT_PATTERN.test(`${link.text} ${link.title || ''}`))
+    .filter((link) => {
+      const label = (link.title || link.text || '').replace(/\s+/g, ' ').trim();
+      return ATTACHMENT_LINK_PATTERN.test(link.href) ||
+        (ATTACHMENT_TEXT_PATTERN.test(label) && !NOTICE_NAV_TEXT_PATTERN.test(label.replace(/\s+/g, '')));
+    })
     .map((link) => normalizeUrl(link.href, observation.url))
     .filter(Boolean)
 );
@@ -345,7 +363,13 @@ export const extractCandidateBundle = (
   const textCandidates = lines
     .map((line, index) => {
       if (!looksLikeNoticeTitle(line, profile)) return null;
-      const nearbyText = [line, lines[index + 1] || '', lines[index + 2] || ''].join(' ');
+      const nearbyText = [
+        line,
+        lines[index + 1] || '',
+        lines[index + 2] || '',
+        lines[index + 3] || '',
+        lines[index + 4] || '',
+      ].join(' ');
       const date = normalizeDate(nearbyText.match(DATE_PATTERN)?.[1] || '');
       const buyerName = profile.buyerMatch
         ? (profile.buyerMatch.test(line) ? profile.buyerName || '' : '')

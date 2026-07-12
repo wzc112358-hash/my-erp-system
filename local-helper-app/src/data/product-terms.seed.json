@@ -294,6 +294,27 @@
     "status": "active"
   },
   {
+    "term": "催化剂检测装置",
+    "aliases": ["催化剂活性检测实验装置", "活性检测实验装置", "催化剂评价装置", "催化剂性能评价装置", "实验室装备更新"],
+    "sources": ["negative_guard"],
+    "weight": -60,
+    "status": "active"
+  },
+  {
+    "term": "催化剂再生服务",
+    "aliases": ["催化剂再生", "电解银催化剂再生", "电解银采购及再生"],
+    "sources": ["negative_guard"],
+    "weight": -70,
+    "status": "active"
+  },
+  {
+    "term": "废旧物资出售",
+    "aliases": ["出售竞价", "竞价销售", "竞价销售项目", "销售项目", "废料出售", "废旧物资", "废塑料", "废PE膜", "废包装桶", "处置竞价", "处置项目", "废催化剂处置", "石膏处置"],
+    "sources": ["negative_guard"],
+    "weight": -160,
+    "status": "active"
+  },
+  {
     "term": "化工",
     "aliases": ["化学品"],
     "sources": ["broad_guard"],

@@ -11,20 +11,22 @@ const shared = {
   external: ['electron', 'playwright'],
 };
 
+const outputDir = 'app-dist';
+fs.rmSync(outputDir, { recursive: true, force: true });
+fs.mkdirSync(outputDir, { recursive: true });
+
 await Promise.all([
   esbuild.build({
     ...shared,
     entryPoints: ['src/main.ts'],
-    outfile: 'dist/main.js',
+    outfile: `${outputDir}/main.js`,
   }),
   esbuild.build({
     ...shared,
     entryPoints: ['src/electron-main.ts'],
-    outfile: 'dist/electron-main.js',
+    outfile: `${outputDir}/electron-main.js`,
   }),
 ]);
 
-// 配对界面是纯静态资源，直接拷贝到 dist（已包含在 electron-builder 的 dist/**/* 中）。
-fs.rmSync('dist/renderer', { recursive: true, force: true });
-fs.cpSync('src/renderer', 'dist/renderer', { recursive: true });
-
+// 配对界面是纯静态资源，直接拷贝到 app-dist（已包含在 electron-builder 的 app-dist/**/* 中）。
+fs.cpSync('src/renderer', `${outputDir}/renderer`, { recursive: true });

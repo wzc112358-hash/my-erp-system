@@ -1,4 +1,5 @@
 import type { LocalHelperTask } from './site-harness.ts';
+import { siteCollectionSkillFor } from './site-skills.ts';
 
 export type DiscoveredLink = {
   title: string;
@@ -18,6 +19,7 @@ export type LinkDiscoveryResult = {
 export type LinkDiscoveryInput = {
   task: LocalHelperTask;
   limit?: number;
+  queryOverride?: string;
 };
 
 export type SearchAdapter = {
@@ -29,6 +31,7 @@ type FetchLike = typeof fetch;
 
 const DEFAULT_FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev/v2';
 const DEFAULT_SEARCH_LIMIT = 8;
+const DEFAULT_QUERY_LIMIT = 3;
 const NOTICE_TERMS = ['招标', '采购', '询价', '询比', '竞价', '谈判', '公告', '公示'];
 
 export const splitSearchTerms = (value = '') => value
@@ -54,18 +57,61 @@ const normalizeUrl = (value = '', baseUrl = '') => {
 };
 
 const compactWhitespace = (value = '') => value.replace(/\s+/g, ' ').trim();
+const unique = <T>(items: T[]) => [...new Set(items.filter(Boolean))];
 
-export const buildDiscoveryQuery = (task: LocalHelperTask) => {
+const searchDomainsFor = (task: LocalHelperTask) => {
+  const skill = siteCollectionSkillFor(task.sourceName);
   const host = hostnameForUrl(task.entryUrl);
-  const terms = splitSearchTerms(task.searchTerms || '').slice(0, 8);
+  return unique([...(skill.searchDomains || []), host]);
+};
+
+const queryTermsFor = (task: LocalHelperTask) => {
+  const skill = siteCollectionSkillFor(task.sourceName);
+  const skillTerms = skill.deepSearchTerms?.length ? skill.deepSearchTerms : skill.productFocus;
+  return unique([
+    ...splitSearchTerms(task.searchTerms || ''),
+    ...(skillTerms || []),
+  ])
+    .filter((term) => !/^(国能|中石化|易派客|询价|竞价|竞争性谈判|招标|采购|公告)$/.test(term))
+    .slice(0, 12);
+};
+
+const applyQueryTemplate = (template: string, task: LocalHelperTask) => {
+  const terms = queryTermsFor(task);
+  const host = hostnameForUrl(task.entryUrl) || searchDomainsFor(task)[0] || '';
+  return compactWhitespace(template
+    .replace(/\{domain\}/g, host)
+    .replace(/\{sourceName\}/g, task.sourceName || '')
+    .replace(/\{terms\}/g, terms.slice(0, 8).join(' OR '))
+    .replace(/\{termList\}/g, terms.slice(0, 8).join(' '))
+    .replace(/\{noticeTerms\}/g, NOTICE_TERMS.slice(0, 5).join(' ')));
+};
+
+export const buildDiscoveryQueries = (
+  task: LocalHelperTask,
+  queryLimit = DEFAULT_QUERY_LIMIT,
+  queryOverride = '',
+) => {
+  const llmQuery = compactWhitespace(queryOverride).slice(0, 500);
+  if (llmQuery) return [llmQuery];
+  const skill = siteCollectionSkillFor(task.sourceName);
+  const templatedQueries = (skill.deepSearchQueries || [])
+    .map((template) => applyQueryTemplate(template, task))
+    .filter(Boolean);
+  if (templatedQueries.length) return unique(templatedQueries).slice(0, queryLimit);
+
+  const host = hostnameForUrl(task.entryUrl);
+  const terms = queryTermsFor(task).slice(0, 8);
   const sitePart = host ? `site:${host}` : task.sourceName;
-  return compactWhitespace([
+  return [compactWhitespace([
     sitePart,
     task.sourceName,
     ...terms,
     ...NOTICE_TERMS.slice(0, 4),
-  ].filter(Boolean).join(' ')).slice(0, 500);
+  ].filter(Boolean).join(' ')).slice(0, 500)];
 };
+
+export const buildDiscoveryQuery = (task: LocalHelperTask) => buildDiscoveryQueries(task, 1)[0] || '';
 
 const titleTokensFor = (sourceName = '') => sourceName
   .split(/[（）()\s·\-_/]+/)
@@ -120,9 +166,15 @@ export const createFirecrawlSearchAdapter = ({
 } = {}): SearchAdapter => ({
   name: 'firecrawl',
 
-  async discoverLinks({ task, limit = DEFAULT_SEARCH_LIMIT }) {
+  async discoverLinks({ task, limit = DEFAULT_SEARCH_LIMIT, queryOverride = '' }) {
     const apiKey = String(env.FIRECRAWL_API_KEY || env.HCZ_FIRECRAWL_API_KEY || '').trim();
-    const query = buildDiscoveryQuery(task);
+    const queryLimit = Number(env.HCZ_FIRECRAWL_SEARCH_QUERY_LIMIT || DEFAULT_QUERY_LIMIT);
+    const queries = buildDiscoveryQueries(
+      task,
+      Number.isFinite(queryLimit) && queryLimit > 0 ? Math.min(5, queryLimit) : DEFAULT_QUERY_LIMIT,
+      queryOverride,
+    );
+    const query = queries[0] || buildDiscoveryQuery(task);
     if (!apiKey) {
       return {
         provider: this.name,
@@ -134,55 +186,57 @@ export const createFirecrawlSearchAdapter = ({
 
     const baseUrl = String(env.FIRECRAWL_BASE_URL || env.HCZ_FIRECRAWL_BASE_URL || DEFAULT_FIRECRAWL_BASE_URL)
       .replace(/\/+$/, '');
-    const host = hostnameForUrl(task.entryUrl);
-    const response = await fetchImpl(`${baseUrl}/search`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        limit,
-        sources: ['web'],
-        country: 'CN',
-        timeout: 45000,
-        ignoreInvalidURLs: true,
-        ...(host ? { includeDomains: [host] } : {}),
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body?.success === false) {
-      return {
-        provider: this.name,
-        query,
-        links: [],
-        warnings: [`Firecrawl 搜索失败：${body?.error || body?.message || response.status}`],
-      };
-    }
+    const domains = searchDomainsFor(task);
+    const warnings: string[] = [];
+    const links: DiscoveredLink[] = [];
+    for (const currentQuery of queries) {
+      const response = await fetchImpl(`${baseUrl}/search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: currentQuery,
+          limit,
+          sources: ['web'],
+          country: 'CN',
+          timeout: 45000,
+          ignoreInvalidURLs: true,
+          ...(domains.length ? { includeDomains: domains } : {}),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.success === false) {
+        warnings.push(`Firecrawl 搜索失败：${body?.error || body?.message || response.status}`);
+        continue;
+      }
 
-    const primaryLinks = firecrawlRowsFrom(body).map((row: any) => ({
-      title: compactWhitespace(row?.title || row?.metadata?.title || row?.url || ''),
-      url: normalizeUrl(row?.url || row?.metadata?.sourceURL || row?.metadata?.url || ''),
-      description: compactWhitespace(row?.description || row?.snippet || row?.markdown?.slice?.(0, 260) || ''),
-      source: this.name,
-    }));
-    const nestedLinks = firecrawlRowsFrom(body).flatMap((row: any) => (
-      Array.isArray(row?.links)
-        ? row.links.map((url: string) => ({
-          title: normalizeUrl(url, row?.url || ''),
-          url: normalizeUrl(url, row?.url || ''),
-          description: compactWhitespace(row?.title || row?.description || ''),
-          source: `${this.name}:links`,
-        }))
-        : []
-    ));
+      warnings.push(...[body?.warning].filter(Boolean));
+      const primaryLinks = firecrawlRowsFrom(body).map((row: any) => ({
+        title: compactWhitespace(row?.title || row?.metadata?.title || row?.url || ''),
+        url: normalizeUrl(row?.url || row?.metadata?.sourceURL || row?.metadata?.url || ''),
+        description: compactWhitespace(row?.description || row?.snippet || row?.markdown?.slice?.(0, 260) || ''),
+        source: this.name,
+      }));
+      const nestedLinks = firecrawlRowsFrom(body).flatMap((row: any) => (
+        Array.isArray(row?.links)
+          ? row.links.map((url: string) => ({
+            title: normalizeUrl(url, row?.url || ''),
+            url: normalizeUrl(url, row?.url || ''),
+            description: compactWhitespace(row?.title || row?.description || ''),
+            source: `${this.name}:links`,
+          }))
+          : []
+      ));
+      links.push(...primaryLinks, ...nestedLinks);
+    }
 
     return {
       provider: this.name,
-      query,
-      links: rankDiscoveredLinks([...primaryLinks, ...nestedLinks], task).slice(0, limit),
-      warnings: [body?.warning].filter(Boolean),
+      query: queries.join('\n'),
+      links: rankDiscoveredLinks(links, task).slice(0, limit),
+      warnings,
     };
   },
 });

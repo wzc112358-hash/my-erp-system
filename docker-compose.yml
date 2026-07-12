@@ -76,6 +76,10 @@ services:
       - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
       - OPPORTUNITY_AGENT_SAMPLE_MODE=0
       - COLLECTOR_SERVICE_URL=http://collector-service:8096
+      - LOCAL_HELPER_API_PORT=8097
+      - LOCAL_HELPER_PAIR_CODE=${LOCAL_HELPER_PAIR_CODE}
+      - LOCAL_HELPER_API_TOKEN=${LOCAL_HELPER_API_TOKEN}
+      - LOCAL_HELPER_LATEST_VERSION=${LOCAL_HELPER_LATEST_VERSION:-0.1.18}
     deploy:
       resources:
         limits:
@@ -83,6 +87,12 @@ services:
     networks:
       - web
       - agent-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.local-helper-agent.rule=Host(`agent.henghuacheng.cn`)"
+      - "traefik.http.routers.local-helper-agent.entryPoints=websecure"
+      - "traefik.http.routers.local-helper-agent.tls.certResolver=letsencrypt"
+      - "traefik.http.services.local-helper-agent.loadbalancer.server.port=8097"
 
   collector-service:
     build:

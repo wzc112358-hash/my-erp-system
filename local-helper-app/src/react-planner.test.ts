@@ -48,6 +48,22 @@ test('deterministic ReAct planner searches, reads documents, then finishes', asy
   assert.equal(finish.type, 'finish');
 });
 
+test('deterministic ReAct planner requests a URL when search has no links and no entry URL', async () => {
+  const planner = createDeterministicReActPlanner();
+  const action = await planner.chooseAction({
+    ...baseState,
+    task: {
+      ...baseState.task,
+      entryUrl: '',
+    },
+    iteration: 2,
+    warnings: ['未配置 FIRECRAWL_API_KEY/HCZ_FIRECRAWL_API_KEY，已跳过 Firecrawl 搜索。'],
+  });
+
+  assert.equal(action.type, 'request_human');
+  assert.match(action.reason, /入口 URL|补充网址/);
+});
+
 test('OpenAI ReAct planner parses a constrained JSON action', async () => {
   const planner = createOpenAIReActPlanner({
     config: {
@@ -93,4 +109,3 @@ test('default ReAct planner falls back to deterministic planner without a key', 
   assert.equal(planner.name, 'deterministic-react-planner');
   assert.equal(action.type, 'search');
 });
-

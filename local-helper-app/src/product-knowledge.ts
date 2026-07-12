@@ -129,6 +129,7 @@ const normalize = (value = '') => value.normalize('NFKC').toLowerCase();
 const compact = (value = '') => normalize(value).replace(/\s+/g, '');
 const unique = <T>(items: T[]) => [...new Set(items.filter(Boolean))];
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const COMPANY_CONTEXT_SUFFIX = /^(有限责任公司|股份有限公司|有限公司|分公司|子公司|公司|集团|研究院|研究所|厂)/;
 
 export const loadProductTerms = (terms: ProductTerm[] = DEFAULT_TERMS) => (
   terms
@@ -147,9 +148,29 @@ const labelsForTerm = (term: ProductTerm) => unique([term.term, ...(term.aliases
 
 const sourceListFor = (term: ProductTerm) => unique([...(term.sources || []), term.source || 'curated']);
 
+const isCompanyNameContext = (text: string, index: number, label: string) => {
+  if (label !== '催化剂') return false;
+  const after = text.slice(index + label.length, index + label.length + 12);
+  return COMPANY_CONTEXT_SUFFIX.test(after);
+};
+
+const containsLabelOutsideCompanyName = (haystack: string, label: string) => {
+  if (!label) return false;
+  let index = haystack.indexOf(label);
+  while (index >= 0) {
+    if (!isCompanyNameContext(haystack, index, label)) return true;
+    index = haystack.indexOf(label, index + label.length);
+  }
+  return false;
+};
+
 const includesLabel = (haystack: string, compactHaystack: string, label: string) => {
   const normalized = normalize(label);
-  return Boolean(normalized) && (haystack.includes(normalized) || compactHaystack.includes(compact(label)));
+  const compactLabel = compact(label);
+  return Boolean(normalized) && (
+    containsLabelOutsideCompanyName(haystack, normalized)
+    || containsLabelOutsideCompanyName(compactHaystack, compactLabel)
+  );
 };
 
 const snippetFor = (text: string, label: string) => {
@@ -194,16 +215,21 @@ export const matchProductTerms = (
   const negativePenalty = negativeMatches.reduce((sum, match) => sum + Math.abs(Math.min(0, match.weight)), 0);
   const broadOnlyPenalty = matches.length === 0 && negativeMatches.length > 0 ? 20 : 0;
   const score = Math.round(clamp(positiveScore - negativePenalty - broadOnlyPenalty, 0, 100));
+  const effectiveMatches = score > 0 ? matches : [];
 
   return {
     score,
-    matchedTerms: unique(matches.map((match) => match.term)),
-    matchedSources: unique(matches.flatMap((match) => match.sources)),
-    evidenceText: unique(matches.map((match) => match.evidenceText)).slice(0, 3).join('\n'),
+    matchedTerms: unique(effectiveMatches.map((match) => match.term)),
+    matchedSources: unique(effectiveMatches.flatMap((match) => match.sources)),
+    evidenceText: unique(effectiveMatches.map((match) => match.evidenceText)).slice(0, 3).join('\n'),
     negativeTerms: unique(negativeMatches.map((match) => match.term)),
-    matches,
+    matches: effectiveMatches,
   };
 };
+
+const stripMachineText = (value = '') => value
+  .replace(/https?:\/\/\S+/gi, ' ')
+  .replace(/\b[A-Za-z0-9_-]{24,}\b/g, ' ');
 
 const candidateText = (candidate: CandidateBundle['candidates'][number]) => [
   candidate.title,
@@ -212,7 +238,7 @@ const candidateText = (candidate: CandidateBundle['candidates'][number]) => [
   candidate.deadline_at,
   candidate.raw_text,
   ...(candidate.attachments || []),
-].filter(Boolean).join('\n');
+].filter(Boolean).map((value) => stripMachineText(String(value))).join('\n');
 
 const collectRequirementHints = (text: string) => {
   const lines = text
@@ -250,6 +276,11 @@ const recommendedActionFor = (match: ProductMatchResult): OpportunityRecommended
   if (match.score >= 55) return 'deep_read_document';
   return 'ask_boss';
 };
+
+const isNonActionableNotice = (candidate: CandidateBundle['candidates'][number]) => (
+  /(?:评标|招标|中标候选|中标|成交|采购|入围)结果(?:公告|公示|通知)?|结果公示|候选人公示|废(?:旧|物|料).{0,8}(?:销售|处置)/
+    .test(candidate.title)
+);
 
 const bidabilityFor = (match: ProductMatchResult): OpportunityBidability => {
   if (match.score <= 0) return 'likely_cannot_do';
@@ -409,7 +440,7 @@ export const buildOpportunityCards = ({
     const hardRequirements = collectRequirementHints(text);
     const riskFlags = riskFlagsFor(text, match);
     const missingInfo = missingInfoFor(text, match);
-    const recommendedAction = recommendedActionFor(match);
+    const recommendedAction = isNonActionableNotice(candidate) ? 'ignore' : recommendedActionFor(match);
     return {
       id: cardIdFor(sourceName, candidate.title, candidate.url),
       title: candidate.title,

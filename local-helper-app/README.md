@@ -141,6 +141,17 @@ docker run --rm \
   /bin/bash -lc 'cd /repo/local-helper-app && npm ci && npm run package:release'
 ```
 
+Deploy the generated ERP download files without building on the server:
+
+```bash
+npm run deploy:downloads
+```
+
+This uploads `frontend/public/downloads/` to the ERP server repo and the running
+`erp-frontend` container. It does not run Electron packaging, `npm install`, or
+`docker compose build` on the server. Override defaults with `HCZ_DEPLOY_HOST`,
+`HCZ_SSH_KEY`, `HCZ_REMOTE_REPO`, or `HCZ_FRONTEND_CONTAINER` if needed.
+
 Pair with cloud API:
 
 ```bash

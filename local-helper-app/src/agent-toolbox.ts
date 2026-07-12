@@ -35,7 +35,7 @@ export const DEFAULT_AGENT_TOOL_MANIFESTS: AgentToolManifest[] = [
     name: 'link_discovery.search',
     kind: 'search',
     description: 'Discover public bidding entry and notice links with Firecrawl or entry URL fallback.',
-    inputSchema: { limit: 'number' },
+    inputSchema: { limit: 'number', query: 'string' },
   },
   {
     name: 'browser.open',
@@ -168,14 +168,15 @@ export const createLinkDiscoveryTool = ({
 }: {
   task: LocalHelperTask;
   search: SearchAdapter;
-}): AgentTool<{ limit?: number }, LinkDiscoveryResult> => ({
+}): AgentTool<{ limit?: number; query?: string }, LinkDiscoveryResult> => ({
   name: 'link_discovery.search',
   kind: 'search',
   description: 'Discover public bidding entry and notice links with Firecrawl or entry URL fallback.',
   inputSchema: {
     limit: 'number',
+    query: 'string',
   },
-  invoke: ({ limit }) => search.discoverLinks({ task, limit }),
+  invoke: ({ limit, query }) => search.discoverLinks({ task, limit, queryOverride: query }),
   summarize: discoverySummary,
 });
 

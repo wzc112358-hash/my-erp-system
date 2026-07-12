@@ -90,6 +90,25 @@ test('document reader extracts attachment links from page observation', () => {
   }]);
 });
 
+test('document reader ignores notice column navigation links', () => {
+  const links = extractDocumentLinks({
+    title: '国能E招',
+    url: 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html',
+    visibleText: '公告信息 招标公告 招标文件公示',
+    links: [
+      { text: '招标公告', href: '/bidweb/001/001002/moreinfo.html' },
+      { text: '资格预审公告', href: '/bidweb/001/001001/moreinfo.html' },
+      { text: '招标文件公示', href: '/bidweb/001/001006/moreinfo.html' },
+      { text: '下载采购文件', href: '/files/tender.docx' },
+    ],
+  });
+
+  assert.deepEqual(links, [{
+    title: '下载采购文件',
+    url: 'https://www.chnenergybidding.com.cn/files/tender.docx',
+  }]);
+});
+
 test('document reader extracts text from simple PDF and DOCX buffers', () => {
   const pdf = Buffer.from('%PDF-1.4\nBT\n(阻聚剂技术规格 20 吨) Tj\nET', 'utf8');
   const docx = makeDocx('<w:document><w:body><w:p><w:r><w:t>代理商投标需授权</w:t></w:r></w:p></w:body></w:document>');

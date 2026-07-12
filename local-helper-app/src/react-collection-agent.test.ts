@@ -121,3 +121,45 @@ test('ReAct collection agent requests human takeover on login verification pages
   assert.equal(result.candidateBundle, null);
 });
 
+test('ReAct collection agent clears stale human reason after a later ready page', async () => {
+  const search: SearchAdapter = {
+    name: 'mock-search',
+    async discoverLinks() {
+      return {
+        provider: 'mock-search',
+        query: '',
+        warnings: [],
+        links: [],
+      };
+    },
+  };
+  const result = await runReActCollectionAgent({
+    task,
+    search,
+    planner: {
+      name: 'stale-human-reason-test-planner',
+      async chooseAction(state) {
+        if (state.iteration === 1) return { type: 'observe', reason: 'first observe empty page' };
+        if (state.iteration === 2) return { type: 'open_url', reason: 'open valid list', url: state.task.entryUrl };
+        if (state.lastHumanReason) return { type: 'request_human', reason: state.lastHumanReason };
+        return { type: 'finish', reason: 'ready candidate should finish' };
+      },
+    },
+    browser: {
+      observe: async () => ({
+        title: '',
+        url: '',
+        visibleText: '',
+      }),
+      open: async (url) => ({
+        title: '阻聚剂采购询源公告',
+        url,
+        visibleText: '2026-06-22 阻聚剂采购询源公告 报价截止 2026-06-25',
+      }),
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.humanReason, '');
+  assert.equal(result.candidateBundle?.candidates.length, 1);
+});

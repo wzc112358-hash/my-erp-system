@@ -22,7 +22,7 @@ const requestJson = async (baseUrl: string, path: string, options: RequestInit =
 };
 
 const createMockCloudServer = () => {
-  const calls: Array<{ method: string; url: string; authorization: string }> = [];
+  const calls: Array<{ method: string; url: string; authorization: string; body: string }> = [];
   const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -30,6 +30,7 @@ const createMockCloudServer = () => {
       method: request.method || '',
       url: request.url || '',
       authorization: String(request.headers.authorization || ''),
+      body: Buffer.concat(chunks).toString('utf8'),
     });
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     if (request.url === '/local-helper/pair') {
@@ -440,6 +441,75 @@ test('local API exposes copy-ready WeChat summaries', async () => {
     assert.match(priorityReport.body.text, /今日招投标重点清单/);
   } finally {
     await server.stop();
+  }
+});
+
+test('local API exposes one filtered report and uploads it through paired cloud', async () => {
+  const cloud = createMockCloudServer();
+  await cloud.start();
+  const store = createTaskStore();
+  const task = store.createTask({ sourceName: '国能E购' });
+  store.continueTask(task.id, {
+    status: 'completed',
+    candidateBundle: {
+      source_name: '国能E购',
+      candidates: [{
+        title: '云南公司循环水阻垢剂采购公告',
+        url: 'https://example.com/notice/1',
+        published_at: '2026-07-11',
+        deadline_at: '2026-07-13 13:30:00',
+        raw_text: '循环水阻垢剂采购',
+        attachments: [],
+      }],
+    },
+    opportunityCards: [{
+      id: 'report-card-1',
+      title: '云南公司循环水阻垢剂采购公告',
+      sourceName: '国能E购',
+      url: 'https://example.com/notice/1',
+      buyerName: '云南公司',
+      publishedAt: '2026-07-11',
+      deadlineAt: '2026-07-13 13:30:00',
+      matchedTerms: ['阻垢剂'],
+      relevanceScore: 88,
+      bidability: 'needs_manual_check',
+      hardRequirements: ['需确认是否接受代理商'],
+      riskFlags: [],
+      missingInfo: ['未找到规格'],
+      recommendedAction: 'send_to_group',
+      evidenceText: '标题命中阻垢剂。',
+      wechatSummary: '',
+    }],
+  });
+  const server = createLocalApiServer({ store, port: 0 });
+  await server.start();
+  try {
+    const baseUrl = server.url();
+    await requestJson(baseUrl, '/cloud/pair', {
+      method: 'POST',
+      body: JSON.stringify({
+        cloudUrl: cloud.url(),
+        code: 'PAIR',
+        deviceName: '测试电脑',
+        deviceFingerprint: 'test-device',
+      }),
+    });
+    const report = await requestJson(baseUrl, `/tasks/${task.id}/collection-report`);
+    const uploaded = await requestJson(baseUrl, `/tasks/${task.id}/upload`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(report.status, 200);
+    assert.equal(report.body.status, 'has_matches');
+    assert.equal(report.body.selectedCount, 1);
+    assert.equal(uploaded.body.uploaded, true);
+    const call = cloud.calls.find((item) => item.url === `/local-helper/tasks/${task.id}/result`);
+    assert.equal(call?.authorization, 'Bearer cloud-token-xiaowei');
+    assert.match(call?.body || '', /阻垢剂采购公告/);
+  } finally {
+    await server.stop();
+    await cloud.stop();
   }
 });
 

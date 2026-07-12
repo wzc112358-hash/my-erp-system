@@ -1,7 +1,10 @@
 'use strict';
 
 const params = new URLSearchParams(location.search);
-const apiBase = (params.get('api') || 'http://127.0.0.1:17321').replace(/\/+$/, '');
+const defaultApiBase = location.protocol === 'http:' || location.protocol === 'https:'
+  ? location.origin
+  : 'http://127.0.0.1:17321';
+const apiBase = (params.get('api') || defaultApiBase).replace(/\/+$/, '');
 let selectedTaskId = params.get('taskId') || '';
 let tasks = [];
 let profiles = [];
@@ -16,10 +19,15 @@ let feedbackLearning = null;
 let priorityBoard = null;
 let scheduleSiteInitialized = false;
 let agentTools = null;
-let activeSidebarPanel = localStorage.getItem('hcz-active-sidebar-panel') || 'tasks';
+let activeSidebarPanel = ['tasks', 'agent'].includes(localStorage.getItem('hcz-active-sidebar-panel'))
+  ? localStorage.getItem('hcz-active-sidebar-panel')
+  : 'tasks';
 let agentRuns = [];
 let selectedAgentRunId = localStorage.getItem('hcz-selected-agent-run-id') || '';
 const agentRunDetails = new Map();
+let llmTesting = false;
+let llmTestMessage = '';
+let llmTestStatus = '';
 
 const $ = (id) => document.getElementById(id);
 const railNav = $('railNav');
@@ -38,6 +46,7 @@ const llmApiKey = $('llmApiKey');
 const llmEnabled = $('llmEnabled');
 const llmState = $('llmState');
 const testLLM = $('testLLM');
+const llmTestState = $('llmTestState');
 const feedbackLearningState = $('feedbackLearningState');
 const clearFeedbackLearning = $('clearFeedbackLearning');
 const priorityBoardState = $('priorityBoardState');
@@ -67,7 +76,7 @@ const sidebarPanels = {
   insights: '商机看板',
 };
 
-const escapeHtml = (value) => String(value || '')
+const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;')
@@ -160,13 +169,23 @@ const showReleaseNotice = (release) => {
 };
 
 const requestJson = async (path, options = {}) => {
-  const response = await fetch(`${apiBase}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  const body = await response.json();
-  if (!response.ok || body.error) throw new Error(body.error || `请求失败（${response.status}）`);
-  return body;
+  const { timeoutMs = 0, ...fetchOptions } = options;
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  try {
+    const response = await fetch(`${apiBase}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller?.signal,
+    });
+    const body = await response.json();
+    if (!response.ok || body.error) throw new Error(body.error || `请求失败（${response.status}）`);
+    return body;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 };
 
 const compactJson = (value, limit = 900) => {
@@ -252,6 +271,18 @@ const renderLLMSettings = (settings = {}) => {
   llmState.textContent = settings.hasApiKey
     ? `已配置${settings.model ? ` · ${settings.model}` : ''}`
     : '未配置 key';
+};
+
+const renderLLMTestState = () => {
+  if (!llmTestState || !testLLM) return;
+  testLLM.textContent = llmTesting ? '测试中…' : '测试连接';
+  if (!llmTestMessage) {
+    llmTestState.textContent = '';
+    llmTestState.className = 'inline-test-state';
+    return;
+  }
+  llmTestState.textContent = llmTestMessage;
+  llmTestState.className = `inline-test-state show ${llmTestStatus || ''}`.trim();
 };
 
 const renderFeedbackLearning = (learning = {}) => {
@@ -359,28 +390,33 @@ const applyScheduleProfileDefaults = (sourceName, { force = false } = {}) => {
 const renderProfileOptions = () => {
   const current = siteSelect.value;
   const scheduleCurrent = scheduleSiteSelect.value;
+  const pilotOrder = ['国能E购', '易派克', '裕龙招投标网'];
+  const pilotProfiles = profiles
+    .filter((profile) => profile.pilot)
+    .sort((left, right) => pilotOrder.indexOf(left.sourceName) - pilotOrder.indexOf(right.sourceName));
+  const selectableProfiles = pilotProfiles.length ? pilotProfiles : profiles;
   const options = [
     '<option value="">自定义站点</option>',
-    ...profiles.map((profile) => (
+    ...selectableProfiles.map((profile) => (
       `<option value="${escapeHtml(profile.sourceName)}">${escapeHtml(profile.sourceName)}</option>`
     )),
   ].join('');
   siteSelect.innerHTML = options;
   scheduleSiteSelect.innerHTML = options;
-  if (!siteSelectInitialized && profiles.length) {
-    siteSelect.value = profiles[0].sourceName;
+  if (!siteSelectInitialized && selectableProfiles.length) {
+    siteSelect.value = selectableProfiles[0].sourceName;
     siteSelectInitialized = true;
     applyProfileDefaults(siteSelect.value);
   } else {
-    siteSelect.value = profiles.some((profile) => profile.sourceName === current) ? current : '';
+    siteSelect.value = selectableProfiles.some((profile) => profile.sourceName === current) ? current : '';
   }
-  if (!scheduleSiteInitialized && profiles.length) {
-    scheduleSiteSelect.value = profiles[0].sourceName;
+  if (!scheduleSiteInitialized && selectableProfiles.length) {
+    scheduleSiteSelect.value = selectableProfiles[0].sourceName;
     scheduleTimes.value = scheduleTimes.value || '09:00,15:00';
     scheduleSiteInitialized = true;
     applyScheduleProfileDefaults(scheduleSiteSelect.value);
   } else {
-    scheduleSiteSelect.value = profiles.some((profile) => profile.sourceName === scheduleCurrent) ? scheduleCurrent : '';
+    scheduleSiteSelect.value = selectableProfiles.some((profile) => profile.sourceName === scheduleCurrent) ? scheduleCurrent : '';
   }
 };
 
@@ -448,7 +484,7 @@ const renderList = () => {
       button.dataset.taskId = task.id;
       button.innerHTML = `
         <div class="task-title">
-          <strong>${escapeHtml(task.searchTerms || task.ownerName || '本地采集')}</strong>
+          <strong>${escapeHtml(task.collectionReport?.status === 'has_matches' ? `${task.collectionReport.selectedCount} 条相关信息` : '当次巡检')}</strong>
           <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
         </div>
         <div class="muted" title="${escapeHtml(task.entryUrl || '')}">${escapeHtml(task.entryUrl ? compactUrl(task.entryUrl) : '未提供入口 URL')}</div>
@@ -473,6 +509,44 @@ const renderCandidates = (task) => {
         </li>
       `).join('')}
     </ul>
+  `;
+};
+
+const collectionStatusLabel = (status) => ({
+  pending: '尚未完成',
+  needs_human: '需要人工协助',
+  no_matches: '今日无相关信息',
+  has_matches: '已筛选出相关信息',
+  failed: '采集失败',
+}[status] || status || '尚未生成');
+
+const renderCollectionReport = (task) => {
+  const report = task.collectionReport || {};
+  const items = report.items || [];
+  return `
+    <div class="collection-report">
+      <div class="opportunity-head">
+        <div>
+          <strong>${escapeHtml(collectionStatusLabel(report.status))}</strong>
+          <div class="muted">原始候选 ${escapeHtml(report.rawCount || 0)} 条 · 筛选保留 ${escapeHtml(report.selectedCount || 0)} 条</div>
+        </div>
+        <span class="status ${report.status === 'has_matches' || report.status === 'no_matches' ? 'completed' : report.status === 'failed' ? 'failed' : 'waiting_agent'}">${escapeHtml(report.selectedCount || 0)}</span>
+      </div>
+      <pre>${escapeHtml(report.summary || '运行智能采集后，这里只显示应关注的信息和可复制总结。')}</pre>
+      ${items.length ? `
+        <ul class="candidate-list">
+          ${items.map((item) => `
+            <li>
+              <strong>${escapeHtml(item.title || '')}</strong>
+              <div class="muted">${escapeHtml((item.matchedProducts || []).join('、') || '产品待确认')} · 截止 ${escapeHtml(item.deadlineAt || '待确认')}</div>
+              <div>${escapeHtml(item.judgment || '')}</div>
+              ${(item.requirements || []).length ? `<div class="muted">要求/风险：${escapeHtml(item.requirements.slice(0, 3).join('；'))}</div>` : ''}
+              <div class="muted">${renderUrlLink(item.url)}</div>
+            </li>
+          `).join('')}
+        </ul>
+      ` : ''}
+    </div>
   `;
 };
 
@@ -716,14 +790,11 @@ const renderDetail = () => {
       </div>
       ${noEntryWarning}
       <div class="actions">
-        <button class="primary" data-action="agent"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>Agent 自动发现</button>
-        <button class="primary" data-action="open"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>打开采集浏览器</button>
-        <button data-action="continue"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>我已完成登录/筛选，继续采集</button>
-        <button data-action="copy-task-report">复制站点日报</button>
-        <button data-action="copy-daily-report">复制今日汇总</button>
-        <button data-action="copy-priority-report">复制重点清单</button>
-        <button data-action="cancel">取消</button>
-        <button class="danger" data-action="fail">失败</button>
+        <button class="primary" data-action="agent"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>开始智能采集</button>
+        <button data-action="open"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>打开浏览器协助</button>
+        <button data-action="continue"${hasEntryUrl ? '' : ' disabled title="任务缺少入口 URL"'}>人工处理完成，继续</button>
+        <button data-action="copy-collection-report">一键复制总结</button>
+        <button class="primary" data-action="upload">一键上传云端</button>
       </div>
     </div>
     <div class="section">
@@ -740,42 +811,44 @@ const renderDetail = () => {
         <pre>${escapeHtml(task.actionSteps || '打开站点后，如遇登录、验证码、短信或 CA，请人工完成；进入公告列表或详情页后点击继续采集。')}</pre>
       </div>
     </div>
-    <div class="section">
+    <div class="section result-section">
       <div class="field">
-        <label>Agent 运行轨迹</label>
-        ${renderAgentRuns(task)}
-      </div>
-      <div class="field">
-        <label>Agent 发现入口</label>
-        ${renderDiscoveredLinks(task)}
-      </div>
-      <div class="field">
-        <label>商机卡片</label>
-        ${renderOpportunityCards(task)}
-      </div>
-      <div class="field">
-        <label>原始候选结果</label>
-        ${renderCandidates(task)}
-      </div>
-      <div class="field">
-        <label>结果摘要</label>
-        <pre>${escapeHtml(compactBlock(task.lastResultSummary || '暂无摘要'))}</pre>
+        <label>筛选结果与群聊总结</label>
+        ${renderCollectionReport(task)}
       </div>
     </div>
-    <div class="section">
-      <div class="field">
-        <label>最近截图</label>
-        <div class="value">${escapeHtml(task.lastScreenshotPath || '暂无截图')}</div>
+    <details class="process-disclosure">
+      <summary>
+        <span>Agent 思考/行动过程</span>
+        <span class="muted">工具调用、入口发现、原始候选和日志</span>
+      </summary>
+      <div class="process-body">
+        <div class="field">
+          <label>Agent 运行轨迹</label>
+          ${renderAgentRuns(task)}
+        </div>
+        <div class="field">
+          <label>Agent 发现入口</label>
+          ${renderDiscoveredLinks(task)}
+        </div>
+        <div class="field">
+          <label>原始候选结果</label>
+          ${renderCandidates(task)}
+        </div>
+        <div class="field">
+          <label>最近截图</label>
+          <div class="value">${escapeHtml(task.lastScreenshotPath || '暂无截图')}</div>
+        </div>
+        <div class="field">
+          <label>证据摘要</label>
+          <pre>${escapeHtml(renderArtifacts(task))}</pre>
+        </div>
+        <div class="field">
+          <label>最近日志</label>
+          <pre>${escapeHtml(compactBlock(task.lastLog || task.lastObservation || '暂无日志', 1600))}</pre>
+        </div>
       </div>
-      <div class="field">
-        <label>证据摘要</label>
-        <pre>${escapeHtml(renderArtifacts(task))}</pre>
-      </div>
-      <div class="field">
-        <label>最近日志</label>
-        <pre>${escapeHtml(compactBlock(task.lastLog || task.lastObservation || '暂无日志', 1600))}</pre>
-      </div>
-    </div>
+    </details>
   `;
   for (const button of detail.querySelectorAll('[data-action]')) {
     button.disabled = busy || button.hasAttribute('disabled');
@@ -792,6 +865,7 @@ const render = () => {
   renderFeedbackLearning(feedbackLearning || {});
   renderPriorityBoard(priorityBoard || {});
   renderAgentTools(agentTools || {});
+  renderLLMTestState();
   renderSchedules();
   renderList();
   renderDetail();
@@ -998,6 +1072,8 @@ const saveLLMSettings = async (event) => {
     });
     llmApiKey.value = '';
     llmSettingsInitialized = false;
+    llmTestMessage = '模型设置已保存，可点击“测试连接”确认接口可用。';
+    llmTestStatus = 'ok';
     renderLLMSettings(settings);
     showNotice('模型设置已保存。');
   } catch (err) {
@@ -1011,17 +1087,27 @@ const saveLLMSettings = async (event) => {
 const testLLMConnection = async () => {
   if (busy) return;
   busy = true;
+  llmTesting = true;
+  llmTestStatus = 'testing';
+  llmTestMessage = '正在连接模型接口…';
+  render();
   showNotice('');
   try {
     const result = await requestJson('/settings/llm/test', {
       method: 'POST',
       body: JSON.stringify(llmSettingsPayload()),
+      timeoutMs: 35_000,
     });
+    llmTestStatus = result.ok ? 'ok' : 'bad';
+    llmTestMessage = result.message || (result.ok ? 'LLM 连接成功。' : 'LLM 连接失败。');
     showNotice(result.message || (result.ok ? 'LLM 连接成功。' : 'LLM 连接失败。'), !result.ok);
   } catch (err) {
-    showNotice(`测试连接失败：${err && err.message ? err.message : err}`, true);
+    llmTestStatus = 'bad';
+    llmTestMessage = `测试连接失败：${err && err.message ? err.message : err}`;
+    showNotice(llmTestMessage, true);
   } finally {
     busy = false;
+    llmTesting = false;
     render();
   }
 };
@@ -1087,6 +1173,17 @@ const runAction = async (action, { cardIndex = '', feedbackStatus = '' } = {}) =
       );
       shouldRefresh = false;
       showNotice(message);
+    } else if (action === 'copy-collection-report') {
+      const report = await requestJson(`/tasks/${encodeURIComponent(task.id)}/collection-report`);
+      await copyTextToClipboard(report.summary || '');
+      shouldRefresh = false;
+      showNotice('筛选总结已复制。');
+    } else if (action === 'upload') {
+      const result = await requestJson(`/tasks/${encodeURIComponent(task.id)}/upload`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      showNotice(`已上传云端：${result.report?.selectedCount || 0} 条相关信息。`);
     } else if (action === 'copy-daily-report') {
       const message = await copyWechatText('/wechat/daily-report', '今日汇总已复制。');
       shouldRefresh = false;

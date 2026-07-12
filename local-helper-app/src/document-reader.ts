@@ -20,8 +20,10 @@ export type DocumentReadResult = {
 
 type FetchLike = typeof fetch;
 
-const DOCUMENT_LINK_PATTERN = /\.(?:pdf|doc|docx|txt|html?|xml)(?:[?#].*)?$/i;
+const DOCUMENT_FILE_LINK_PATTERN = /\.(?:pdf|doc|docx|txt|xml)(?:[?#].*)?$/i;
+const DOCUMENT_HTML_LINK_PATTERN = /\.html?(?:[?#].*)?$/i;
 const DOCUMENT_TEXT_PATTERN = /附件|下载|标书|采购文件|招标文件|询价文件|技术文件|规格书/i;
+const NAV_DOCUMENT_TEXT_PATTERN = /^(招标公告|资格预审公告|非招标公告|变更公告|候选人公示|中标公告|终止公告|招标计划|招标文件公示|公告信息|新闻动态|更多)$/i;
 const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_DOCUMENT_TEXT = 24_000;
 
@@ -44,10 +46,13 @@ const normalizeUrl = (href = '', baseUrl = '') => {
 
 export const extractDocumentLinks = (observation: BrowserObservation): DocumentLink[] => uniqueBy(
   (observation.links || [])
-    .filter((link) => (
-      DOCUMENT_LINK_PATTERN.test(link.href) ||
-      DOCUMENT_TEXT_PATTERN.test(`${link.text} ${link.title || ''}`)
-    ))
+    .filter((link) => {
+      const label = (link.title || link.text || '').replace(/\s+/g, ' ').trim();
+      const looksLikeDocumentText = DOCUMENT_TEXT_PATTERN.test(label) && !NAV_DOCUMENT_TEXT_PATTERN.test(label);
+      return DOCUMENT_FILE_LINK_PATTERN.test(link.href) ||
+        (DOCUMENT_HTML_LINK_PATTERN.test(link.href) && looksLikeDocumentText) ||
+        looksLikeDocumentText;
+    })
     .map((link) => ({
       title: (link.title || link.text || link.href || '附件').replace(/\s+/g, ' ').trim(),
       url: normalizeUrl(link.href, observation.url),

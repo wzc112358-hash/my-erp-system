@@ -28,6 +28,7 @@ import {
   type LocalHelperTask,
 } from './site-harness.ts';
 import { profileFor } from './site-profiles.ts';
+import { siteCollectionSkillPromptFor } from './site-skills.ts';
 
 export type ReActCollectionResult = {
   status: 'request_human' | 'completed' | 'failed';
@@ -45,6 +46,10 @@ export type ReActCollectionResult = {
 };
 
 const MAX_VISIBLE_TEXT_SNIPPET = 1200;
+const DOCUMENT_FILE_LINK_PATTERN = /\.(?:pdf|doc|docx|txt|xml)(?:[?#].*)?$/i;
+const DOCUMENT_HTML_LINK_PATTERN = /\.html?(?:[?#].*)?$/i;
+const DOCUMENT_TEXT_PATTERN = /附件|下载|标书|采购文件|招标文件|询价文件|技术文件|规格书/i;
+const NAV_DOCUMENT_TEXT_PATTERN = /^(招标公告|资格预审公告|非招标公告|变更公告|候选人公示|中标公告|终止公告|招标计划|招标文件公示|公告信息|新闻动态|更多)$/i;
 
 const emptyDiscovery = (): LinkDiscoveryResult => ({
   provider: '',
@@ -66,10 +71,13 @@ const hasDocumentSignals = (
 ) => {
   if ((bundle?.candidates || []).some((candidate) => candidate.attachments?.length)) return true;
   if ((observation?.downloadedFiles || []).length > 0) return true;
-  return (observation?.links || []).some((link) => (
-    /\.(?:pdf|doc|docx|txt|html?|xml)(?:[?#].*)?$/i.test(link.href) ||
-    /附件|下载|标书|采购文件|招标文件|询价文件|技术文件|规格书/i.test(`${link.text} ${link.title || ''}`)
-  ));
+  return (observation?.links || []).some((link) => {
+    const label = (link.title || link.text || '').replace(/\s+/g, ' ').trim();
+    const looksLikeDocumentText = DOCUMENT_TEXT_PATTERN.test(label) && !NAV_DOCUMENT_TEXT_PATTERN.test(label);
+    return DOCUMENT_FILE_LINK_PATTERN.test(link.href) ||
+      (DOCUMENT_HTML_LINK_PATTERN.test(link.href) && looksLikeDocumentText) ||
+      looksLikeDocumentText;
+  });
 };
 
 const mergeDocumentsIntoBundle = (
@@ -77,6 +85,7 @@ const mergeDocumentsIntoBundle = (
   documents: DocumentReadResult[],
 ): CandidateBundle | null => {
   if (!bundle || documents.length === 0) return bundle;
+  if ((bundle.candidates || []).length !== 1) return bundle;
   const evidence = formatDocumentEvidence(documents);
   const documentRefs = documents
     .map((document) => document.url || document.filePath || '')
@@ -132,6 +141,7 @@ const plannerStateFor = ({
   warnings: string[];
 }): ReActPlannerState => ({
   task,
+  siteSkill: siteCollectionSkillPromptFor(task.sourceName),
   iteration,
   maxIterations,
   tools,
@@ -214,6 +224,7 @@ export const runReActCollectionAgent = async ({
     runner,
   });
   const profile = profileFor(task.sourceName);
+  const siteSkill = siteCollectionSkillPromptFor(task.sourceName);
   let discovery = emptyDiscovery();
   let discoveredLinks: DiscoveredLink[] = [];
   const openedUrls = new Set<string>();
@@ -231,6 +242,7 @@ export const runReActCollectionAgent = async ({
     result: {
       maxIterations,
       tools: toolbox.manifests().map((tool) => tool.name),
+      siteSkill,
     },
   });
 
@@ -255,6 +267,7 @@ export const runReActCollectionAgent = async ({
       });
       return;
     }
+    lastHumanReason = '';
     const extracted = extractCandidateBundle(observation, task, profile);
     candidateBundle = extracted.candidates.length > 0 ? extracted : null;
     const observationArtifacts = buildObservationArtifacts(observation, task);
@@ -308,7 +321,10 @@ export const runReActCollectionAgent = async ({
     });
 
     if (action.type === 'search') {
-      discovery = await runner.call(toolbox.linkDiscovery, { limit: action.limit || 8 }, {
+      discovery = await runner.call(toolbox.linkDiscovery, {
+        limit: action.limit || 8,
+        query: action.query || '',
+      }, {
         phase: 'discover',
         action: 'react_search_links',
       });

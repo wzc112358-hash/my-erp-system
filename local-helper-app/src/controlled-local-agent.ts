@@ -17,8 +17,13 @@ import {
 import {
   buildOpportunityCards,
   summarizeOpportunityCards,
+  type OpportunityCard,
   type ProductTerm,
 } from './product-knowledge.ts';
+import {
+  collectSitePublicFeed,
+  type SitePublicFeedResult,
+} from './site-public-feed.ts';
 import {
   type BrowserHarnessRuntime,
   type LocalHelperArtifact,
@@ -44,6 +49,7 @@ export type ControlledAgentOptions = {
   recordStep?: (step: AgentHarnessStepInput) => Promise<void> | void;
   planner?: ReActPlanner;
   maxIterations?: number;
+  publicFeedCollector?: typeof collectSitePublicFeed;
 };
 
 const discoveryArtifactFor = (
@@ -57,6 +63,10 @@ const discoveryArtifactFor = (
   mime_type: 'text/plain',
 });
 
+const hasActionableOpportunity = (cards: OpportunityCard[] = []) => (
+  cards.some((card) => card.recommendedAction !== 'ignore')
+);
+
 export const runControlledLocalAgentTask = async ({
   task,
   browser,
@@ -67,6 +77,7 @@ export const runControlledLocalAgentTask = async ({
   recordStep = async () => undefined,
   planner = createDefaultReActPlanner(),
   maxIterations = 6,
+  publicFeedCollector = collectSitePublicFeed,
 }: {
   task: LocalHelperTask;
   browser: BrowserHarnessRuntime;
@@ -80,6 +91,95 @@ export const runControlledLocalAgentTask = async ({
       searchTerms: task.searchTerms || '',
     },
   });
+  const publicFeed = await publicFeedCollector({ task }).catch((error): SitePublicFeedResult => ({
+    provider: 'site-public-feed',
+    status: 'failed',
+    candidateBundle: null,
+    artifacts: [],
+    warnings: [`公开 feed 读取异常：${error instanceof Error ? error.message : String(error)}`],
+  }));
+  if (publicFeed.status !== 'unsupported') {
+    await recordStep({
+      phase: 'discover',
+      action: 'collect_site_public_feed',
+      tool: publicFeed.provider,
+      result: {
+        status: publicFeed.status,
+        candidateCount: publicFeed.candidateBundle?.candidates.length || 0,
+        artifactCount: publicFeed.artifacts.length,
+        warnings: publicFeed.warnings,
+      },
+    });
+  }
+  if (publicFeed.candidateBundle?.candidates.length) {
+    const discoveredLinks = publicFeed.candidateBundle.candidates.slice(0, 20).map((candidate) => ({
+      title: candidate.title,
+      url: candidate.url,
+      description: candidate.raw_text,
+      source: publicFeed.provider,
+      score: 90,
+    }));
+    const opportunityCards = await assessOpportunityCards({
+      task,
+      bundle: publicFeed.candidateBundle,
+      cards: buildOpportunityCards({ bundle: publicFeed.candidateBundle, task, terms }),
+      assessor,
+    });
+    await recordStep({
+      phase: 'assess',
+      action: 'assess_opportunity_cards',
+      tool: 'bid-assessor',
+      result: {
+        cardCount: opportunityCards.length,
+        topActions: opportunityCards.slice(0, 5).map((card) => card.recommendedAction),
+      },
+    });
+    const fallbackSummary = summarizeOpportunityCards(opportunityCards, summarizeCandidateBundle(publicFeed.candidateBundle));
+    if (!hasActionableOpportunity(opportunityCards)) {
+      await recordStep({
+        phase: 'complete',
+        action: 'public_feed_no_matches',
+        tool: publicFeed.provider,
+        result: {
+          publicCandidateCount: publicFeed.candidateBundle.candidates.length,
+          reason: '公开 feed 和站内产品词搜索均已完成，没有可发送信息。',
+        },
+      });
+      return {
+        status: 'completed',
+        humanReason: '',
+        candidateBundle: publicFeed.candidateBundle,
+        artifacts: publicFeed.artifacts,
+        resultSummary: `已巡检 ${publicFeed.candidateBundle.candidates.length} 条公开公告，没有筛选出与公司产品相关的当前采购信息。`,
+        discoveredLinks,
+        opportunityCards,
+      };
+    }
+    const resultSummary = await llm.summarize({
+      task,
+      discoveredLinks,
+      candidateBundle: publicFeed.candidateBundle,
+      fallbackSummary,
+    }).catch(() => fallbackSummary);
+    await recordStep({
+      phase: 'summarize',
+      action: 'summarize_agent_result',
+      tool: llm.name,
+      result: {
+        summaryLength: resultSummary.length,
+        fallbackUsed: resultSummary === fallbackSummary,
+      },
+    });
+    return {
+      status: 'completed',
+      humanReason: '',
+      candidateBundle: publicFeed.candidateBundle,
+      artifacts: publicFeed.artifacts,
+      resultSummary,
+      discoveredLinks,
+      opportunityCards,
+    };
+  }
   const result = await runReActCollectionAgent({
     task,
     browser,
@@ -171,7 +271,7 @@ export const runControlledLocalAgentTask = async ({
   await recordStep({
     phase: 'summarize',
     action: 'summarize_agent_result',
-    tool: 'llm-or-deterministic',
+    tool: llm.name,
     result: {
       summaryLength: resultSummary.length,
       fallbackUsed: resultSummary === fallbackSummary,

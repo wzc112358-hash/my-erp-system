@@ -1,17 +1,17 @@
 {
   "productName": "恒化成本地采集助手",
-  "version": "0.1.17",
-  "generatedAt": "2026-06-22T12:51:27.571Z",
+  "version": "0.1.18",
+  "generatedAt": "2026-06-27T05:38:18.703Z",
   "files": {
     "portable": {
       "name": "hcz-local-helper-app.zip",
       "url": "/downloads/hcz-local-helper-app.zip",
-      "sha256": "588df30d2a49a630d55d4ba0138f9e0ad83eabfb6998ca9e2a9e724d532e9d49"
+      "sha256": "86c6053f7d1ac8d1dbfc55e52d5b0939b2ade8bf22dbf55ea25e018ca855fa46"
     },
     "installer": {
       "name": "hcz-local-helper-setup.exe",
       "url": "/downloads/hcz-local-helper-setup.exe",
-      "sha256": "e831e6559b9e7c58e3853b0c4c690c7f6020f198f83fd5b902f4e62a2c7baf28"
+      "sha256": "39863d9f4fe7a842c3af830363ec657499dddb8c98c97a0a5d1fd6a6f47ece2c"
     }
   }
 }

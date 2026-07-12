@@ -14,6 +14,7 @@ import {
   shouldPersistOpportunity,
 } from './opportunity-persistence.js';
 import { isCloudManagedSource, resolveSourceStrategy } from './source-strategies.js';
+import { createLocalHelperApiServer } from './local-helper-api.js';
 
 export {
   buildOpportunityPayload,
@@ -507,9 +508,16 @@ if (process.argv[1]?.endsWith('/index.js')) {
     console.log(JSON.stringify(runConfirmationPackageDryRun(), null, 2));
   } else if (command === 'serve' || command === 'start' || command === 'scheduler') {
     const scheduler = startScheduler();
+    const localHelperApi = createLocalHelperApiServer();
+    void localHelperApi.start().then(() => {
+      console.log(`Local helper cloud API listening on ${localHelperApi.url()}`);
+    }).catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
     const shutdown = () => {
       scheduler.stop();
-      process.exit(0);
+      void localHelperApi.stop().finally(() => process.exit(0));
     };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
