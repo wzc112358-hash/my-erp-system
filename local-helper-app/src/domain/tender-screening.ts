@@ -1,5 +1,5 @@
-import seedTerms from './data/product-terms.seed.json' with { type: 'json' };
-import type { CandidateBundle, LocalHelperTask } from './site-harness.ts';
+import seedTerms from '../data/product-terms.seed.json' with { type: 'json' };
+import type { CandidateBundle, LocalHelperTask } from '../browser/types.ts';
 
 export type ProductTermStatus = 'active' | 'disabled';
 
@@ -30,48 +30,19 @@ export type ProductMatchResult = {
   matches: ProductTermMatch[];
 };
 
-export type OpportunityRecommendedAction =
+export type ScreeningAction =
   'send_to_group'
   | 'deep_read_document'
   | 'ignore'
   | 'ask_boss'
   | 'track_deadline';
 
-export type OpportunityBidability =
+export type BidEligibility =
   'likely_can_do'
   | 'needs_manual_check'
   | 'likely_cannot_do';
 
-export type OpportunityFeedbackStatus =
-  'valuable'
-  | 'irrelevant'
-  | 'ask_boss'
-  | 'sent_to_group'
-  | 'followed_up';
-
-export type OpportunityReviewDecision =
-  'follow'
-  | 'irrelevant'
-  | 'needs_boss'
-  | 'needs_documents'
-  | 'expired'
-  | 'approved'
-  | 'rejected';
-
-export type OpportunityReviewDraft = {
-  review_type: 'employee';
-  decision: OpportunityReviewDecision;
-  comment: string;
-};
-
-export type OpportunityFeedbackInput = {
-  status: OpportunityFeedbackStatus;
-  note?: string;
-  updatedAt?: string;
-  source?: 'employee' | 'system';
-};
-
-export type OpportunityDocumentSummary = {
+export type NoticeDocumentSummary = {
   title: string;
   url?: string;
   filePath?: string;
@@ -79,7 +50,7 @@ export type OpportunityDocumentSummary = {
   warning?: string;
 };
 
-export type OpportunityCard = {
+export type ScreenedNotice = {
   id: string;
   title: string;
   sourceName: string;
@@ -90,25 +61,18 @@ export type OpportunityCard = {
   matchedTerms: string[];
   matchedSources: string[];
   relevanceScore: number;
-  bidability: OpportunityBidability;
+  bidability: BidEligibility;
   hardRequirements: string[];
   riskFlags: string[];
   missingInfo: string[];
-  recommendedAction: OpportunityRecommendedAction;
+  recommendedAction: ScreeningAction;
   evidenceText: string;
   wechatSummary: string;
   confidence: number;
-  originalRelevanceScore?: number;
   deepReadAt?: string;
   detailUrl?: string;
   detailScreenshotPath?: string;
-  documentSummaries?: OpportunityDocumentSummary[];
-  feedbackStatus?: OpportunityFeedbackStatus;
-  feedbackNote?: string;
-  feedbackUpdatedAt?: string;
-  feedbackSource?: 'employee' | 'system';
-  feedbackWeightDelta?: number;
-  erpReviewDraft?: OpportunityReviewDraft;
+  documentSummaries?: NoticeDocumentSummary[];
 };
 
 const DEFAULT_TERMS = seedTerms as ProductTerm[];
@@ -270,7 +234,7 @@ const missingInfoFor = (text: string, match: ProductMatchResult) => {
   return missing.slice(0, 5);
 };
 
-const recommendedActionFor = (match: ProductMatchResult): OpportunityRecommendedAction => {
+const recommendedActionFor = (match: ProductMatchResult): ScreeningAction => {
   if (match.score <= 0) return 'ignore';
   if (match.score >= 85 && match.matchedSources.includes('erp_history')) return 'send_to_group';
   if (match.score >= 55) return 'deep_read_document';
@@ -282,115 +246,18 @@ const isNonActionableNotice = (candidate: CandidateBundle['candidates'][number])
     .test(candidate.title)
 );
 
-const bidabilityFor = (match: ProductMatchResult): OpportunityBidability => {
+const bidabilityFor = (match: ProductMatchResult): BidEligibility => {
   if (match.score <= 0) return 'likely_cannot_do';
   return 'needs_manual_check';
 };
 
-const actionLabel = (action: OpportunityRecommendedAction) => ({
+const actionLabel = (action: ScreeningAction) => ({
   send_to_group: '建议发群请老板确认',
   deep_read_document: '建议继续查附件/详情',
   ignore: '建议忽略',
   ask_boss: '建议人工判断后再问老板',
   track_deadline: '建议跟踪截止时间',
 }[action]);
-
-export const feedbackLabel = (status: OpportunityFeedbackStatus) => ({
-  valuable: '有价值',
-  irrelevant: '不相关',
-  ask_boss: '待老板确认',
-  sent_to_group: '已发群',
-  followed_up: '已跟进',
-}[status]);
-
-export const feedbackDecisionFor = (status: OpportunityFeedbackStatus): OpportunityReviewDecision => ({
-  valuable: 'follow',
-  irrelevant: 'irrelevant',
-  ask_boss: 'needs_boss',
-  sent_to_group: 'follow',
-  followed_up: 'follow',
-}[status]);
-
-export const feedbackWeightDeltaFor = (status: OpportunityFeedbackStatus) => ({
-  valuable: 16,
-  irrelevant: -60,
-  ask_boss: 8,
-  sent_to_group: 20,
-  followed_up: 24,
-}[status]);
-
-const feedbackActionFor = (
-  status: OpportunityFeedbackStatus,
-  current: OpportunityRecommendedAction,
-): OpportunityRecommendedAction => ({
-  valuable: 'send_to_group',
-  irrelevant: 'ignore',
-  ask_boss: 'ask_boss',
-  sent_to_group: 'send_to_group',
-  followed_up: current === 'ignore' ? 'track_deadline' : current,
-}[status]);
-
-const feedbackScoreFor = (
-  status: OpportunityFeedbackStatus,
-  score: number,
-) => {
-  if (status === 'irrelevant') return 0;
-  if (status === 'valuable' || status === 'sent_to_group') return Math.max(score, 85);
-  if (status === 'followed_up') return Math.max(score, 80);
-  if (status === 'ask_boss') return Math.max(score, 60);
-  return score;
-};
-
-export const buildOpportunityReviewDraft = (
-  card: OpportunityCard,
-  feedback: OpportunityFeedbackInput,
-): OpportunityReviewDraft => {
-  const label = feedbackLabel(feedback.status);
-  const terms = card.matchedTerms.length ? card.matchedTerms.join('、') : '未命中重点产品';
-  const lines = [
-    `员工反馈：${label}`,
-    feedback.note ? `备注：${feedback.note}` : '',
-    `产品：${terms}`,
-    `相关度：${card.relevanceScore}/100`,
-    `建议动作：${actionLabel(card.recommendedAction)}`,
-    card.url ? `链接：${card.url}` : '',
-  ].filter(Boolean);
-  return {
-    review_type: 'employee',
-    decision: feedbackDecisionFor(feedback.status),
-    comment: lines.join('\n'),
-  };
-};
-
-export const applyOpportunityFeedback = (
-  card: OpportunityCard,
-  feedback: OpportunityFeedbackInput,
-): OpportunityCard => {
-  const updatedAt = feedback.updatedAt || new Date().toISOString();
-  const originalRelevanceScore = card.originalRelevanceScore ?? card.relevanceScore;
-  const nextAction = feedbackActionFor(feedback.status, card.recommendedAction);
-  const nextScore = feedbackScoreFor(feedback.status, originalRelevanceScore);
-  const note = String(feedback.note || '').trim();
-  const feedbackRisk = `员工反馈：${feedbackLabel(feedback.status)}`;
-  const riskFlags = [feedbackRisk, ...card.riskFlags.filter((item) => !/^员工反馈：/.test(item))].slice(0, 8);
-  return {
-    ...card,
-    originalRelevanceScore,
-    relevanceScore: nextScore,
-    recommendedAction: nextAction,
-    bidability: feedback.status === 'irrelevant' ? 'likely_cannot_do' : card.bidability,
-    riskFlags,
-    feedbackStatus: feedback.status,
-    feedbackNote: note,
-    feedbackUpdatedAt: updatedAt,
-    feedbackSource: feedback.source || 'employee',
-    feedbackWeightDelta: feedbackWeightDeltaFor(feedback.status),
-    erpReviewDraft: buildOpportunityReviewDraft(card, {
-      ...feedback,
-      updatedAt,
-    }),
-  };
-};
 
 const cardIdFor = (sourceName: string, title: string, url: string) => (
   `${sourceName}|${title}|${url}`.replace(/\s+/g, '').slice(0, 240)
@@ -413,7 +280,7 @@ const wechatSummaryFor = ({
   hardRequirements: string[];
   missingInfo: string[];
   riskFlags: string[];
-  recommendedAction: OpportunityRecommendedAction;
+  recommendedAction: ScreeningAction;
 }) => [
   `【待确认】${sourceName} - ${title}`,
   `产品：${match.matchedTerms.length ? match.matchedTerms.join('、') : '未命中重点产品'}`,
@@ -424,7 +291,7 @@ const wechatSummaryFor = ({
   url ? `链接：${url}` : '',
 ].filter(Boolean).join('\n');
 
-export const buildOpportunityCards = ({
+export const buildScreenedNotices = ({
   bundle,
   task,
   terms = loadProductTerms(),
@@ -432,7 +299,7 @@ export const buildOpportunityCards = ({
   bundle: CandidateBundle | null | undefined;
   task?: Pick<LocalHelperTask, 'sourceName'>;
   terms?: ProductTerm[];
-}): OpportunityCard[] => {
+}): ScreenedNotice[] => {
   const sourceName = bundle?.source_name || task?.sourceName || '';
   return (bundle?.candidates || []).map((candidate) => {
     const text = candidateText(candidate);
@@ -473,8 +340,8 @@ export const buildOpportunityCards = ({
   });
 };
 
-export const summarizeOpportunityCards = (
-  cards: OpportunityCard[],
+export const summarizeScreenedNotices = (
+  cards: ScreenedNotice[],
   fallback = '本次采集没有识别到可入库候选，请调整搜索词或进入公告列表后继续采集。',
 ) => {
   if (!cards.length) return fallback;
@@ -482,7 +349,7 @@ export const summarizeOpportunityCards = (
   const manual = cards.filter((card) => card.recommendedAction !== 'send_to_group' && card.recommendedAction !== 'ignore');
   const ignored = cards.filter((card) => card.recommendedAction === 'ignore');
   return [
-    `本次采集识别到 ${cards.length} 条候选，生成 ${cards.length} 张商机卡片。`,
+    `本次采集识别到 ${cards.length} 条候选，保留 ${cards.length} 条筛选结果。`,
     strong.length ? `建议发群确认：${strong.length} 条。` : '',
     manual.length ? `待查附件/人工确认：${manual.length} 条。` : '',
     ignored.length ? `低相关可跳过：${ignored.length} 条。` : '',

@@ -1,4 +1,4 @@
-// 配对界面脚本（渲染层，无 node 集成）。纯逻辑见 src/pairing.ts（已单测），此处只做 UI 绑定。
+// 配对界面脚本（渲染层，无 Node 集成），只绑定本地工作台的云端配对接口。
 'use strict';
 
 const DEFAULT_CLOUD_URL = 'https://agent.henghuacheng.cn';

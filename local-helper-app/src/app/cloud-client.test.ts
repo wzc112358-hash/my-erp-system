@@ -1,82 +1,40 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 
-import {
-  cancelCloudTask,
-  continueCloudTask,
-  getReleaseInfo,
-  pairWithCloud,
-  pullCloudTasks,
-  sendHeartbeat,
-  startCloudTask,
-  uploadCloudTaskReport,
-} from './cloud-client.ts';
+import { pairWithCloud, uploadCloudTaskReport } from './cloud-client.ts';
 
-const createFetch = () => {
-  const calls: Array<{ url: string; options: RequestInit }> = [];
-  const fetchImpl = async (url: string | URL | Request, options: RequestInit = {}) => {
-    calls.push({ url: String(url), options });
-    return {
-      ok: true,
+test('cloud client pairs and uploads through the two retained cloud calls', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    return new Response(JSON.stringify({ token: 'paired-token', ok: true }), {
       status: 200,
-      json: async () => ({ ok: true, url: String(url), tasks: [{ id: 'task-huajin-1' }] }),
-    } as Response;
+      headers: { 'Content-Type': 'application/json' },
+    });
   };
-  return { calls, fetchImpl };
-};
-
-test('cloud client pairs local helper with cloud API', async () => {
-  const { calls, fetchImpl } = createFetch();
-
-  const result = await pairWithCloud({ cloudUrl: 'https://agent.example.com/', fetchImpl }, {
-    code: 'ABCD1234',
-    deviceName: 'WX-PC-01',
-    deviceFingerprint: 'fp-xw',
+  await pairWithCloud({ cloudUrl: 'https://erp.example.com/', fetchImpl }, {
+    code: 'PAIR',
+    deviceName: '测试电脑',
+    deviceFingerprint: 'pc-1',
     helperVersion: '0.2.0',
     platform: 'win32',
   });
-
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].url, 'https://agent.example.com/local-helper/pair');
-  assert.equal(calls[0].options.method, 'POST');
-  assert.deepEqual(JSON.parse(String(calls[0].options.body)).deviceName, 'WX-PC-01');
+  await uploadCloudTaskReport({
+    cloudUrl: 'https://erp.example.com/',
+    token: 'paired-token',
+    fetchImpl,
+  }, 'task-1', { status: 'no_matches' });
+  assert.equal(calls[0]?.url, 'https://erp.example.com/local-helper/pair');
+  assert.equal(calls[1]?.url, 'https://erp.example.com/local-helper/tasks/task-1/result');
+  assert.equal(new Headers(calls[1]?.init?.headers).get('authorization'), 'Bearer paired-token');
 });
 
-test('cloud client sends bearer token for task channel calls', async () => {
-  const { calls, fetchImpl } = createFetch();
-  const options = { cloudUrl: 'https://agent.example.com', token: 'token-xiaowei', fetchImpl };
-
-  await sendHeartbeat(options, { helperVersion: '0.2.0', platform: 'win32' });
-  await getReleaseInfo(options, '0.2.0');
-  await pullCloudTasks(options);
-  await startCloudTask(options, 'task-huajin-1');
-  await continueCloudTask(options, 'task-huajin-1', {
-    observation: '页面出现验证码，需要人工接管。',
-    requestHuman: true,
+test('cloud client exposes a structured cloud error', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ error: 'pair code expired' }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
   });
-  await cancelCloudTask(options, 'task-huajin-1');
-  await uploadCloudTaskReport(options, 'task-huajin-1', { summary: '筛选出 1 条信息' });
-
-  assert.equal(calls[0].url, 'https://agent.example.com/local-helper/heartbeat');
-  assert.equal(calls[1].url, 'https://agent.example.com/local-helper/release?currentVersion=0.2.0');
-  assert.equal(calls[2].url, 'https://agent.example.com/local-helper/tasks');
-  assert.equal(calls[3].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/start');
-  assert.equal(calls[4].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/continue');
-  assert.equal(calls[5].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/cancel');
-  assert.equal(calls[6].url, 'https://agent.example.com/local-helper/tasks/task-huajin-1/result');
-  assert.equal(JSON.parse(String(calls[6].options.body)).summary, '筛选出 1 条信息');
-  assert.equal((calls[4].options.headers as Record<string, string>).Authorization, 'Bearer token-xiaowei');
-});
-
-test('cloud client surfaces structured cloud errors', async () => {
-  const fetchImpl = async () => ({
-    ok: false,
-    status: 401,
-    json: async () => ({ error: 'invalid local helper token' }),
-  }) as Response;
-
-  await assert.rejects(
-    () => pullCloudTasks({ cloudUrl: 'https://agent.example.com', token: 'bad', fetchImpl }),
-    /invalid local helper token/,
-  );
+  await assert.rejects(() => pairWithCloud({ cloudUrl: 'https://erp.example.com', fetchImpl }, {
+    code: 'OLD', deviceName: '', deviceFingerprint: '', helperVersion: '', platform: '',
+  }), /pair code expired/);
 });

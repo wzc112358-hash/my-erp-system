@@ -28,5 +28,5 @@ await Promise.all([
   }),
 ]);
 
-// 配对界面是纯静态资源，直接拷贝到 app-dist（已包含在 electron-builder 的 app-dist/**/* 中）。
+// Renderer is static and intentionally framework-free.
 fs.cpSync('src/renderer', `${outputDir}/renderer`, { recursive: true });

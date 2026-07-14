@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-import type { BrowserObservation } from './site-harness.ts';
+import type { BrowserObservation } from './types.ts';
 
 export type DocumentLink = {
   title: string;
@@ -125,8 +125,7 @@ const docxText = (buffer: Buffer) => {
     .join('\n'));
 };
 
-const decodePdfString = (value = '') => value
-  .replace(/\\([nrtbf()\\])/g, (_match, code) => ({
+const PDF_ESCAPE_MAP: Record<string, string> = {
     n: '\n',
     r: '\r',
     t: '\t',
@@ -135,7 +134,10 @@ const decodePdfString = (value = '') => value
     '(': '(',
     ')': ')',
     '\\': '\\',
-  }[code] || code))
+};
+
+const decodePdfString = (value = '') => value
+  .replace(/\\([nrtbf()\\])/g, (_match, code: string) => PDF_ESCAPE_MAP[code] || code)
   .replace(/\\([0-7]{1,3})/g, (_match, code) => String.fromCharCode(parseInt(code, 8)));
 
 const cjkCount = (value = '') => (value.match(/[\u4e00-\u9fa5]/g) || []).length;

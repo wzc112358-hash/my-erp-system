@@ -1,5 +1,5 @@
-import type { CandidateBundle, LocalHelperArtifact, LocalHelperTask } from './site-harness.ts';
-import { siteCollectionSkillFor } from './site-skills.ts';
+import type { CandidateBundle, LocalHelperArtifact, LocalHelperTask } from '../browser/types.ts';
+import { definitionFor } from './registry.ts';
 
 export type SitePublicFeedResult = {
   provider: string;
@@ -37,7 +37,6 @@ const GUONENG_EGOU_SEARCH_NOTICE_TYPES = [
   { name: '紧急/直接/零星采购公告', noticeType: 7 },
 ];
 const SINOPEC_NOTICE_URL = 'https://ec.sinopec.com/supp/index.shtml';
-const GUONENG_EZHAO_NOTICE_URL = 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html';
 const PUBLIC_HTML_CANDIDATE_LIMIT = 30;
 const PUBLIC_FEED_SEARCH_TERM_LIMIT = 10;
 const PUBLIC_FEED_SEARCH_PAGE_SIZE = 10;
@@ -154,19 +153,14 @@ const parseMaybeJsonp = (text = '') => {
 };
 
 const guonengEgouSearchTermsFor = (task: LocalHelperTask) => {
-  const skill = siteCollectionSkillFor(task.sourceName);
+  const site = definitionFor(task.sourceName);
   return unique([
     ...splitSearchTerms(task.searchTerms || ''),
-    ...(skill.deepSearchTerms?.length ? skill.deepSearchTerms : skill.productFocus || []),
+    ...site.deepSearchTerms,
   ])
     .filter((term) => term.length >= 2)
     .filter((term) => !/^(国能|国能E购|询价|竞价|竞争性谈判|采购|公告|化工助剂)$/.test(term))
     .slice(0, PUBLIC_FEED_SEARCH_TERM_LIMIT);
-};
-
-const htmlAttribute = (tag = '', name = '') => {
-  const match = tag.match(new RegExp(`${name}=["']([^"']+)["']`, 'i'));
-  return match?.[1] || '';
 };
 
 const collectPublicHtmlFeed = async ({
@@ -256,35 +250,6 @@ const parseSinopecPublicHtml = (
   return candidates;
 };
 
-const parseGuonengEzhaoPublicHtml = (
-  html: string,
-  baseUrl: string,
-): CandidateBundle['candidates'] => {
-  const candidates: CandidateBundle['candidates'] = [];
-  const rowPattern = /<li\b[^>]*class=["'][^"']*right-item[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
-  for (const match of html.matchAll(rowPattern)) {
-    const rowHtml = match[1] || '';
-    const anchor = rowHtml.match(/<a\b(?=[^>]*class=["'][^"']*infolink[^"']*["'])[^>]*>/i)?.[0] || '';
-    const href = htmlAttribute(anchor, 'href');
-    const title = normalizeText(htmlAttribute(anchor, 'title'));
-    if (!href || !title) continue;
-    if (!shouldKeepPublicNotice(title)) continue;
-    const publishedAt = normalizeDate(normalizeText(
-      rowHtml.match(/<span\b[^>]*class=["'][^"']*\br\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || '',
-    ));
-    candidates.push({
-      title,
-      url: normalizeUrl(href, baseUrl),
-      published_at: publishedAt,
-      deadline_at: '',
-      buyer_name: '国家能源集团',
-      raw_text: normalizeText([title, publishedAt ? `发布时间：${publishedAt}` : ''].filter(Boolean).join(' ')),
-      attachments: [],
-    });
-  }
-  return candidates;
-};
-
 export const collectSinopecPublicHtml = async ({
   task,
   fetchImpl = fetch,
@@ -296,20 +261,6 @@ export const collectSinopecPublicHtml = async ({
   feedName: 'sinopec-public-html',
   url: task.entryUrl || SINOPEC_NOTICE_URL,
   parse: parseSinopecPublicHtml,
-  fetchImpl,
-});
-
-export const collectGuonengEzhaoHtml = async ({
-  task,
-  fetchImpl = fetch,
-}: {
-  task: LocalHelperTask;
-  fetchImpl?: FetchLike;
-}): Promise<SitePublicFeedResult> => collectPublicHtmlFeed({
-  task,
-  feedName: 'guoneng-ezhao-html',
-  url: task.entryUrl || GUONENG_EZHAO_NOTICE_URL,
-  parse: parseGuonengEzhaoPublicHtml,
   fetchImpl,
 });
 
@@ -445,9 +396,6 @@ export const collectSitePublicFeed = async ({
 }): Promise<SitePublicFeedResult> => {
   if (task.sourceName === '易派克') {
     return collectSinopecPublicHtml({ task, fetchImpl });
-  }
-  if (task.sourceName === '国能E招' || task.sourceName === '国能网') {
-    return collectGuonengEzhaoHtml({ task, fetchImpl });
   }
   if (task.sourceName === '国能E购') {
     return collectGuonengEgouFeeds({ task, fetchImpl });

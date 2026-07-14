@@ -2,12 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  applyOpportunityFeedback,
-  buildOpportunityCards,
+  buildScreenedNotices,
   loadProductTerms,
   matchProductTerms,
-  summarizeOpportunityCards,
-} from './product-knowledge.ts';
+  summarizeScreenedNotices,
+} from './tender-screening.ts';
 
 test('product knowledge loads seeded ERP and chat terms', () => {
   const terms = loadProductTerms();
@@ -44,8 +43,8 @@ test('product matcher recognizes ERP model aliases from contract history', () =>
   assert.ok(result.score >= 90);
 });
 
-test('opportunity cards ignore product aliases inside signed URLs', () => {
-  const [urlOnly] = buildOpportunityCards({
+test('screening ignores product aliases inside signed URLs', () => {
+  const [urlOnly] = buildScreenedNotices({
     bundle: {
       source_name: '中化',
       candidates: [{
@@ -59,7 +58,7 @@ test('opportunity cards ignore product aliases inside signed URLs', () => {
       }],
     },
   });
-  const [realBht] = buildOpportunityCards({
+  const [realBht] = buildScreenedNotices({
     bundle: {
       source_name: '中化',
       candidates: [{
@@ -119,8 +118,8 @@ test('product matcher rejects catalyst lab equipment while keeping catalyst mate
   assert.ok(material.matchedTerms.includes('催化剂'));
 });
 
-test('opportunity cards treat award results as non-actionable even when product words match', () => {
-  const [card] = buildOpportunityCards({
+test('screening treats award results as non-actionable even when product words match', () => {
+  const [card] = buildScreenedNotices({
     bundle: {
       source_name: '易派克',
       candidates: [{
@@ -139,8 +138,8 @@ test('opportunity cards treat award results as non-actionable even when product 
   assert.equal(card.recommendedAction, 'ignore');
 });
 
-test('opportunity cards carry product evidence and group-ready summary', () => {
-  const cards = buildOpportunityCards({
+test('screened notices carry product evidence and group-ready summary', () => {
+  const cards = buildScreenedNotices({
     bundle: {
       source_name: '能源一号',
       candidates: [{
@@ -160,41 +159,5 @@ test('opportunity cards carry product evidence and group-ready summary', () => {
   assert.ok(cards[0].relevanceScore >= 80);
   assert.equal(cards[0].bidability, 'needs_manual_check');
   assert.match(cards[0].wechatSummary, /需确认|阻聚剂|链接/);
-  assert.match(summarizeOpportunityCards(cards), /商机卡片/);
-});
-
-test('opportunity feedback updates card status and prepares ERP review draft', () => {
-  const [card] = buildOpportunityCards({
-    bundle: {
-      source_name: '能源一号',
-      candidates: [{
-        title: '阻聚剂采购询源公告',
-        url: 'https://example.com/notice/1',
-        published_at: '2026-06-20',
-        deadline_at: '2026-06-25',
-        buyer_name: '中化',
-        raw_text: '阻聚剂采购询源公告',
-        attachments: [],
-      }],
-    },
-  });
-
-  const valuable = applyOpportunityFeedback(card, {
-    status: 'valuable',
-    note: '老板之前关注过',
-    updatedAt: '2026-06-22T10:00:00.000Z',
-  });
-  const irrelevant = applyOpportunityFeedback(card, {
-    status: 'irrelevant',
-    updatedAt: '2026-06-22T11:00:00.000Z',
-  });
-
-  assert.equal(valuable.feedbackStatus, 'valuable');
-  assert.equal(valuable.recommendedAction, 'send_to_group');
-  assert.equal(valuable.erpReviewDraft?.decision, 'follow');
-  assert.match(valuable.erpReviewDraft?.comment || '', /老板之前关注过/);
-  assert.equal(irrelevant.feedbackStatus, 'irrelevant');
-  assert.equal(irrelevant.relevanceScore, 0);
-  assert.equal(irrelevant.recommendedAction, 'ignore');
-  assert.equal(irrelevant.erpReviewDraft?.decision, 'irrelevant');
+  assert.match(summarizeScreenedNotices(cards), /筛选结果/);
 });

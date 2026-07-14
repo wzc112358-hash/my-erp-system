@@ -1,71 +1,36 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 
 import {
-  SITE_PROFILES,
   actionStepsForSourceName,
+  definitionFor,
   entryUrlForSourceName,
-  profileFor,
+  PILOT_SITE_NAMES,
   searchTermsForSourceName,
-} from './site-profiles.ts';
+  sitePromptFor,
+} from './registry.ts';
 
-test('profileFor returns the registered profile for second-batch sites', () => {
-  assert.equal(profileFor('华锦兵器网').buyerName, '华锦兵器网');
-  assert.equal(profileFor('金能招标网').buyerName, '金能');
-  assert.equal(profileFor('能源一号（天津宜远）').sourceName, '能源一号（天津宜远）');
-  assert.equal(profileFor('国能E招').sourceName, '国能E招');
-  assert.equal(profileFor('东华能源网').entryUrl, undefined);
-  assert.ok(profileFor('易派克').buyerMatch?.test('中石化'));
+test('registry contains only the three current pilot sites', () => {
+  assert.deepEqual(PILOT_SITE_NAMES, ['国能E购', '易派克', '裕龙招投标网']);
 });
 
-test('profileFor falls back to a generic profile for unknown sites', () => {
-  const profile = profileFor('某个未注册的招标网');
-  assert.equal(profile.sourceName, '某个未注册的招标网');
-  assert.equal(profile.buyerName, undefined);
+test('registry selects the right collection mode and browser engine', () => {
+  assert.equal(definitionFor('国能E购').collectionMode, 'public-feed');
+  assert.equal(definitionFor('易派克').collectionMode, 'public-feed');
+  assert.equal(definitionFor('裕龙招投标网').collectionMode, 'browser-agent');
+  assert.equal(definitionFor('裕龙招投标网').browserEngine, 'electron-cdp');
 });
 
-test('profileFor returns a usable default when given an empty name', () => {
-  assert.equal(profileFor('').sourceName, '本地采集站点');
-});
-
-test('known local-helper sites expose fallback entry URLs', () => {
-  assert.equal(entryUrlForSourceName('中石油招投标网'), 'https://www.cnpcbidding.com/#/tenders');
-  assert.equal(entryUrlForSourceName('华锦兵器网'), 'https://www.norincogroup-ebuy.com/');
-  assert.equal(entryUrlForSourceName('隆道云'), 'https://www.longdaoyun.com/');
-  assert.equal(entryUrlForSourceName('金能招标网'), 'http://www.jinnengtech.com:6789/');
-  assert.equal(entryUrlForSourceName('国能E购'), 'https://neep.shop/html/portal/index-Inquiries.html');
-  assert.equal(entryUrlForSourceName('能源一号（兰州恒化成）'), 'https://www.energyahead.com/');
-  assert.equal(entryUrlForSourceName('裕龙招投标网'), 'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96');
-  assert.equal(entryUrlForSourceName('东华能源网'), '');
-  assert.equal(entryUrlForSourceName('某个未注册的招标网'), '');
-});
-
-test('known local-helper sites expose default search terms and action steps', () => {
+test('registry centralizes task defaults and the LLM site prompt', () => {
+  assert.match(entryUrlForSourceName('裕龙招投标网'), /ctbpsp/);
   assert.match(searchTermsForSourceName('裕龙招投标网'), /裕龙石化/);
-  assert.match(searchTermsForSourceName('中石油招投标网'), /白油/);
-  assert.match(searchTermsForSourceName('中石油招投标网'), /TCP2/);
-  assert.match(searchTermsForSourceName('国能E招'), /焦亚硫酸钠/);
-  assert.match(searchTermsForSourceName('某个未注册的招标网'), /凡士林脂/);
   assert.match(actionStepsForSourceName('裕龙招投标网'), /安全验证/);
-  assert.match(actionStepsForSourceName('东华能源网'), /未提供入口 URL/);
-  assert.match(actionStepsForSourceName('某个未注册的招标网'), /继续采集/);
+  assert.match(sitePromptFor('裕龙招投标网'), /页面抽取提示/);
 });
 
-test('all second-batch login sites are registered', () => {
-  for (const site of [
-    '华锦兵器网',
-    '易派克',
-    '云梦泽询价网',
-    '能源一号（兰州恒化成）',
-    '能源一号（北京恒化成）',
-    '能源一号（天津宜远）',
-    '隆道云',
-    '金能招标网',
-    '国能E招',
-    '国能E购',
-    '国能网',
-    '东华能源网',
-  ]) {
-    assert.ok(SITE_PROFILES[site], `${site} 应在 SITE_PROFILES 中注册`);
-  }
+test('unknown sites receive one conservative browser-agent definition', () => {
+  const site = definitionFor('临时站点');
+  assert.equal(site.sourceName, '临时站点');
+  assert.equal(site.collectionMode, 'browser-agent');
+  assert.ok(site.productFocus.length > 10);
 });

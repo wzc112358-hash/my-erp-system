@@ -3,10 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   collectGuonengEgouFeeds,
-  collectGuonengEzhaoHtml,
   collectSinopecPublicHtml,
   collectSitePublicFeed,
-} from './site-public-feed.ts';
+} from './public-collectors.ts';
 
 const task = {
   id: 'task-egou',
@@ -116,30 +115,6 @@ test('collectSinopecPublicHtml extracts active notice rows and filters result no
   assert.equal(result.candidateBundle?.candidates.length, 1);
   assert.match(result.candidateBundle?.candidates[0].title || '', /二甲基硅油/);
   assert.equal(result.candidateBundle?.candidates[0].published_at, '2026-06-26');
-});
-
-test('collectGuonengEzhaoHtml extracts public list rows', async () => {
-  const result = await collectGuonengEzhaoHtml({
-    task: {
-      id: 'task-ezhao',
-      sourceName: '国能E招',
-      entryUrl: 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html',
-    },
-    fetchImpl: (async () => new Response(`
-      <li class="right-item clearfix">
-        <div class="r-block l">
-          <a href="/bidweb/001/001002/20260626/a.html" class="infolink" title="宁夏煤业焦亚硫酸钠采购公开招标项目招标公告">宁夏煤业焦亚硫酸钠采购公开招标项目招标公告</a>
-        </div>
-        <span class="r">2026-06-26</span>
-      </li>
-    `, { status: 200 })) as typeof fetch,
-  });
-
-  assert.equal(result.status, 'success');
-  assert.equal(result.candidateBundle?.source_name, '国能E招');
-  assert.equal(result.candidateBundle?.candidates.length, 1);
-  assert.match(result.candidateBundle?.candidates[0].title || '', /焦亚硫酸钠/);
-  assert.equal(result.candidateBundle?.candidates[0].buyer_name, '国家能源集团');
 });
 
 test('collectSitePublicFeed returns unsupported for generic sites', async () => {

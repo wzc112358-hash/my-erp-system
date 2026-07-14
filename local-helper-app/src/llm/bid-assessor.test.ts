@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  assessOpportunityCards,
+  assessScreenedNotices,
   createDefaultBidAssessor,
   createOpenAIBidAssessor,
   mergeAssessmentIntoCard,
-} from './bid-assessment.ts';
-import { buildOpportunityCards } from './product-knowledge.ts';
+} from './bid-assessor.ts';
+import { buildScreenedNotices } from '../domain/tender-screening.ts';
 
 const bundle = {
   source_name: '能源一号',
@@ -29,7 +29,7 @@ const task = {
 };
 
 test('mergeAssessmentIntoCard validates enum values and keeps rule evidence', () => {
-  const [baseCard] = buildOpportunityCards({ bundle, task });
+  const [baseCard] = buildScreenedNotices({ bundle, task });
   const merged = mergeAssessmentIntoCard(baseCard, {
     relevanceScore: 91,
     bidability: 'needs_manual_check',
@@ -49,9 +49,9 @@ test('mergeAssessmentIntoCard validates enum values and keeps rule evidence', ()
 });
 
 test('default bid assessor stays deterministic without LLM key', async () => {
-  const [baseCard] = buildOpportunityCards({ bundle, task });
+  const [baseCard] = buildScreenedNotices({ bundle, task });
   const assessor = createDefaultBidAssessor({ env: {}, config: null });
-  const [assessed] = await assessOpportunityCards({
+  const [assessed] = await assessScreenedNotices({
     task,
     bundle,
     cards: [baseCard],
@@ -62,7 +62,7 @@ test('default bid assessor stays deterministic without LLM key', async () => {
   assert.equal(assessed.wechatSummary, baseCard.wechatSummary);
 });
 
-test('assessOpportunityCards skips LLM for zero-score irrelevant cards', async () => {
+test('assessScreenedNotices skips LLM for zero-score irrelevant cards', async () => {
   const irrelevantBundle = {
     source_name: '国能E购',
     candidates: [{
@@ -75,12 +75,12 @@ test('assessOpportunityCards skips LLM for zero-score irrelevant cards', async (
       attachments: [],
     }],
   };
-  const [baseCard] = buildOpportunityCards({
+  const [baseCard] = buildScreenedNotices({
     bundle: irrelevantBundle,
-    task: { id: 'task-2', sourceName: '国能E购', entryUrl: 'https://example.com' },
+    task: { sourceName: '国能E购' },
   });
   let calls = 0;
-  const [assessed] = await assessOpportunityCards({
+  const [assessed] = await assessScreenedNotices({
     task: { id: 'task-2', sourceName: '国能E购', entryUrl: 'https://example.com' },
     bundle: irrelevantBundle,
     cards: [baseCard],
@@ -123,7 +123,7 @@ test('OpenAI bid assessor batch-checks zero-score notices and can retain a new c
     ],
   };
   const batchTask = { id: 'batch-1', sourceName: '易派克', entryUrl: 'https://example.com' };
-  const cards = buildOpportunityCards({ bundle: batchBundle, task: batchTask });
+  const cards = buildScreenedNotices({ bundle: batchBundle, task: batchTask });
   let calls = 0;
   const assessor = createOpenAIBidAssessor({
     env: {},
@@ -179,7 +179,7 @@ test('OpenAI bid assessor batch-checks zero-score notices and can retain a new c
     }) as typeof fetch,
   });
 
-  const assessed = await assessOpportunityCards({ task: batchTask, bundle: batchBundle, cards, assessor });
+  const assessed = await assessScreenedNotices({ task: batchTask, bundle: batchBundle, cards, assessor });
   assert.equal(calls, 2);
   assert.equal(assessed[0].recommendedAction, 'deep_read_document');
   assert.ok(assessed[0].matchedTerms.includes('硼系清净剂X99'));
@@ -187,7 +187,7 @@ test('OpenAI bid assessor batch-checks zero-score notices and can retain a new c
 });
 
 test('OpenAI bid assessor merges structured JSON and falls back on invalid JSON', async () => {
-  const [baseCard] = buildOpportunityCards({ bundle, task });
+  const [baseCard] = buildScreenedNotices({ bundle, task });
   const okAssessor = createOpenAIBidAssessor({
     env: {},
     config: {
@@ -236,7 +236,7 @@ test('OpenAI bid assessor merges structured JSON and falls back on invalid JSON'
 });
 
 test('OpenAI bid assessor retries without response_format when provider rejects JSON mode', async () => {
-  const [baseCard] = buildOpportunityCards({ bundle, task });
+  const [baseCard] = buildScreenedNotices({ bundle, task });
   let callCount = 0;
   const assessor = createOpenAIBidAssessor({
     env: {},

@@ -1,18 +1,3 @@
-import type { DiscoveredLink } from './agent-search-adapter.ts';
-import type { CandidateBundle, LocalHelperTask } from './site-harness.ts';
-
-export type AgentSummaryInput = {
-  task: LocalHelperTask;
-  discoveredLinks: DiscoveredLink[];
-  candidateBundle: CandidateBundle | null;
-  fallbackSummary: string;
-};
-
-export type LLMAgentAdapter = {
-  name: string;
-  summarize(input: AgentSummaryInput): Promise<string>;
-};
-
 export type LocalLLMConfig = {
   enabled?: boolean;
   baseUrl?: string;
@@ -43,10 +28,6 @@ export type ChatCompletionCallResult = {
 };
 
 const DEFAULT_LLM_TIMEOUT_MS = 30_000;
-
-const firstLines = (value = '', limit = 1800) => (
-  value.length > limit ? `${value.slice(0, limit)}\n...[truncated]` : value
-);
 
 export const resolveLLMSettings = ({
   env = process.env,
@@ -159,91 +140,6 @@ export const callOpenAICompatibleChatCompletion = async ({
   } catch (error) {
     throw new Error(errorMessageFor(error));
   }
-};
-
-export const buildWechatCandidateSummary = (bundle: CandidateBundle | null) => {
-  const candidates = bundle?.candidates || [];
-  if (!candidates.length) return '未识别到可发送到微信群的招投标候选。';
-  return [
-    `发现 ${candidates.length} 条招投标候选：`,
-    ...candidates.slice(0, 10).map((candidate, index) => [
-      `${index + 1}. ${candidate.title}`,
-      candidate.buyer_name ? `采购方：${candidate.buyer_name}` : '',
-      candidate.published_at ? `发布日期：${candidate.published_at}` : '',
-      candidate.deadline_at ? `截止：${candidate.deadline_at}` : '',
-      candidate.url ? `链接：${candidate.url}` : '',
-    ].filter(Boolean).join('\n')),
-  ].join('\n\n');
-};
-
-export const createDeterministicLLMAgent = (): LLMAgentAdapter => ({
-  name: 'deterministic-summary',
-  async summarize({ fallbackSummary }) {
-    return fallbackSummary;
-  },
-});
-
-export const createOpenAICompatibleLLMAgent = ({
-  env = process.env,
-  config = null,
-  fetchImpl = fetch,
-}: {
-  env?: Record<string, string | undefined>;
-  config?: LocalLLMConfig | null;
-  fetchImpl?: FetchLike;
-} = {}): LLMAgentAdapter => ({
-  name: 'openai-compatible-chat',
-
-  async summarize(input) {
-    const { enabled, apiKey, baseUrl, model } = resolveLLMSettings({ env, config });
-    if (!enabled || !apiKey || !baseUrl || !model) return input.fallbackSummary;
-    const candidateText = JSON.stringify(input.candidateBundle?.candidates || [], null, 2);
-    const linkText = input.discoveredLinks
-      .slice(0, 8)
-      .map((link, index) => `${index + 1}. ${link.title}\n${link.url}`)
-      .join('\n');
-    try {
-      const result = await callOpenAICompatibleChatCompletion({
-        env,
-        config,
-        fetchImpl,
-        temperature: 0.2,
-        messages: [
-          {
-            role: 'system',
-            content: '你是恒化成的本地招投标采集 Agent。只根据给定候选和链接生成简洁、可发微信群的中文摘要，不编造日期、采购方或链接。',
-          },
-          {
-            role: 'user',
-            content: [
-              `站点：${input.task.sourceName}`,
-              `搜索词：${input.task.searchTerms || ''}`,
-              `发现链接：\n${firstLines(linkText)}`,
-              `候选 JSON：\n${firstLines(candidateText)}`,
-              `兜底摘要：${input.fallbackSummary}`,
-            ].join('\n\n'),
-          },
-        ],
-      });
-      return result.content || input.fallbackSummary;
-    } catch {
-      return input.fallbackSummary;
-    }
-  },
-});
-
-export const createDefaultLLMAgent = ({
-  env = process.env,
-  config = null,
-  fetchImpl = fetch,
-}: {
-  env?: Record<string, string | undefined>;
-  config?: LocalLLMConfig | null;
-  fetchImpl?: FetchLike;
-} = {}) => {
-  const settings = resolveLLMSettings({ env, config });
-  if (settings.enabled && settings.apiKey) return createOpenAICompatibleLLMAgent({ env, config, fetchImpl });
-  return createDeterministicLLMAgent();
 };
 
 export const testOpenAICompatibleLLMConfig = async ({

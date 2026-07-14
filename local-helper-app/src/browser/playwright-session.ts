@@ -2,22 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type {
-  BrowserHarnessRuntime,
   BrowserLink,
   BrowserNetworkResponse,
   BrowserObservation,
-} from './site-harness.ts';
+  BrowserSession,
+} from './types.ts';
 
 type PageLike = {
   goto?: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
-  waitForLoadState?: (state?: string, options?: Record<string, unknown>) => Promise<unknown>;
   waitForTimeout?: (timeout: number) => Promise<unknown>;
   title: () => Promise<string>;
   url: () => string;
   content?: () => Promise<string>;
   locator: (selector: string) => {
     innerText: (options?: Record<string, unknown>) => Promise<string>;
-    evaluateAll?: <T>(fn: (elements: Element[]) => T) => Promise<T>;
+    evaluateAll?: (fn: (elements: Element[]) => unknown) => Promise<unknown>;
   };
   screenshot?: (options: { path: string; fullPage?: boolean }) => Promise<unknown>;
   on?: (event: 'response' | 'download', handler: (payload: unknown) => void) => void;
@@ -33,7 +32,7 @@ type ChromiumLike = {
   launchPersistentContext: (profileDir: string, options: Record<string, unknown>) => Promise<ContextLike>;
 };
 
-export type PlaywrightRuntimeOptions = {
+export type PlaywrightSessionOptions = {
   chromium?: ChromiumLike;
   profileDir: string;
   screenshotDir?: string;
@@ -42,15 +41,23 @@ export type PlaywrightRuntimeOptions = {
   settleTimeoutMs?: number;
   browserChannels?: string[];
   proxyServer?: string;
+  captureDomSnapshot?: boolean;
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
 };
 
+const MAX_NETWORK_RESPONSES = 16;
+const MAX_RESPONSE_BODY = 24_000;
+const MAX_DOM_SNAPSHOT = 60_000;
+const MAX_LINKS = 120;
+const RESPONSE_INTEREST_PATTERN = /招标|采购|询价|询比|竞价|谈判|公告|notice|bid|tender|bulletin|query|search|page|list/i;
+const CHALLENGE_PATTERN = /sigchl|punish-type|网易盾|安全验证|访问验证|captcha|traceid|访问过于频繁/i;
+const SAFE_RESPONSE_HEADERS = new Set(['content-type', 'punish-type', 'location', 'retry-after']);
+
 const ensureDir = (dir: string) => fs.mkdirSync(dir, { recursive: true });
-const MAX_NETWORK_RESPONSES = 30;
-const MAX_RESPONSE_BODY = 40_000;
-const MAX_DOM_SNAPSHOT = 180_000;
-const RESPONSE_INTEREST_PATTERN = /招标|采购|询价|询比|竞价|谈判|公告|notice|bid|tender|bulletin|query|page|list/i;
+const trim = (value = '', limit: number) => value.length > limit
+  ? `${value.slice(0, limit)}\n...[truncated]`
+  : value;
 
 export const browserChannelCandidatesFor = ({
   env = process.env,
@@ -65,8 +72,7 @@ export const browserChannelCandidatesFor = ({
     if (normalized === 'bundled' || normalized === 'chromium') return [''];
     return [configured, ''];
   }
-  if (['win32', 'darwin', 'linux'].includes(platform)) return ['chrome', 'msedge', ''];
-  return [''];
+  return ['win32', 'darwin', 'linux'].includes(platform) ? ['chrome', 'msedge', ''] : [''];
 };
 
 export const proxyServerFor = (env: Record<string, string | undefined> = process.env) => (
@@ -79,18 +85,22 @@ export const proxyServerFor = (env: Record<string, string | undefined> = process
 ).trim();
 
 const loadChromium = async (): Promise<ChromiumLike> => {
-  const playwright = await import('playwright');
-  return playwright.chromium;
+  const { chromium } = await import('playwright');
+  return {
+    launchPersistentContext: async (profileDir, options) => (
+      chromium.launchPersistentContext(profileDir, options) as unknown as Promise<ContextLike>
+    ),
+  };
 };
 
-const trim = (value = '', limit: number) => (
-  value.length > limit ? `${value.slice(0, limit)}\n...[truncated]` : value
+const safeHeaders = (headers: Record<string, string>) => Object.fromEntries(
+  Object.entries(headers).filter(([name]) => SAFE_RESPONSE_HEADERS.has(name.toLowerCase())),
 );
 
 const collectLinks = async (target: PageLike): Promise<BrowserLink[]> => {
   const locator = target.locator('a');
   if (!locator.evaluateAll) return [];
-  return locator.evaluateAll((anchors) => anchors
+  const result = await locator.evaluateAll((anchors) => anchors
     .map((anchor) => {
       const element = anchor as HTMLAnchorElement;
       return {
@@ -100,21 +110,23 @@ const collectLinks = async (target: PageLike): Promise<BrowserLink[]> => {
       };
     })
     .filter((link) => link.text || link.title || link.href)
-    .slice(0, 240));
+    .slice(0, MAX_LINKS));
+  return Array.isArray(result) ? result as BrowserLink[] : [];
 };
 
-export const createPlaywrightRuntime = ({
+export const createPlaywrightSession = ({
   chromium,
   profileDir,
   screenshotDir = path.join(profileDir, 'artifacts'),
   headless = false,
   env = process.env,
-  navigationTimeoutMs = 45000,
-  settleTimeoutMs = Number(env.HCZ_LOCAL_HELPER_SETTLE_TIMEOUT_MS || 3000),
+  navigationTimeoutMs = 45_000,
+  settleTimeoutMs = Number(env.HCZ_LOCAL_HELPER_SETTLE_TIMEOUT_MS || 700),
   browserChannels,
   proxyServer,
+  captureDomSnapshot = false,
   platform = process.platform,
-}: PlaywrightRuntimeOptions): BrowserHarnessRuntime => {
+}: PlaywrightSessionOptions): BrowserSession => {
   let contextPromise: Promise<ContextLike> | null = null;
   let activePage: PageLike | null = null;
   const networkResponses: BrowserNetworkResponse[] = [];
@@ -143,6 +155,7 @@ export const createPlaywrightRuntime = ({
         const headers = response.headers?.() || {};
         const contentType = headers['content-type'] || headers['Content-Type'] || '';
         if (!RESPONSE_INTEREST_PATTERN.test(`${url} ${contentType}`)) return;
+        const selectedHeaders = safeHeaders(headers);
         let bodySnippet = '';
         if (/json|text|html|xml|javascript/i.test(contentType)) {
           bodySnippet = trim(await response.text?.().catch(() => '') || '', MAX_RESPONSE_BODY);
@@ -152,6 +165,8 @@ export const createPlaywrightRuntime = ({
           status: response.status?.() || 0,
           contentType,
           bodySnippet,
+          responseHeaders: selectedHeaders,
+          challenge: CHALLENGE_PATTERN.test(`${url} ${JSON.stringify(selectedHeaders)} ${bodySnippet.slice(0, 1000)}`),
         });
       })();
     });
@@ -205,44 +220,37 @@ export const createPlaywrightRuntime = ({
   };
 
   const observePage = async (target: PageLike, screenshotPath = ''): Promise<BrowserObservation> => ({
-    title: await target.title(),
+    title: await target.title().catch(() => ''),
     url: target.url(),
-    visibleText: await target.locator('body').innerText({ timeout: 5000 }).catch(() => ''),
-    domSnapshot: trim(await target.content?.().catch(() => '') || '', MAX_DOM_SNAPSHOT),
+    visibleText: await target.locator('body').innerText({ timeout: 3_000 }).catch(() => ''),
+    domSnapshot: captureDomSnapshot
+      ? trim(await target.content?.().catch(() => '') || '', MAX_DOM_SNAPSHOT)
+      : '',
     links: await collectLinks(target).catch(() => []),
     networkResponses: [...networkResponses],
     downloadedFiles: [...downloadedFiles],
     screenshotPath,
   });
 
-  const settlePage = async (target: PageLike) => {
-    if (settleTimeoutMs <= 0) return;
-    await target.waitForLoadState?.('networkidle', { timeout: settleTimeoutMs }).catch(() => undefined);
-    await target.waitForTimeout?.(150).catch(() => undefined);
-  };
-
   return {
+    engine: 'playwright',
     async open(url: string) {
       const target = await page();
-      await target.goto?.(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: navigationTimeoutMs,
-      });
-      await settlePage(target);
+      await target.goto?.(url, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs });
+      if (settleTimeoutMs > 0) await target.waitForTimeout?.(settleTimeoutMs).catch(() => undefined);
       return observePage(target);
     },
-
     async observe() {
-      return observePage(await page());
+      const target = await page();
+      if (settleTimeoutMs > 0) await target.waitForTimeout?.(Math.min(350, settleTimeoutMs)).catch(() => undefined);
+      return observePage(target);
     },
-
     async screenshot() {
       const target = await page();
       const file = path.join(screenshotDir, `${Date.now()}-screenshot.png`);
-      await target.screenshot?.({ path: file, fullPage: true });
+      await target.screenshot?.({ path: file, fullPage: false });
       return file;
     },
-
     async close() {
       const existingContext = await contextPromise?.catch(() => null);
       contextPromise = null;
@@ -251,3 +259,7 @@ export const createPlaywrightRuntime = ({
     },
   };
 };
+
+// Temporary compatibility export for callers being migrated to BrowserSession.
+export const createPlaywrightRuntime = createPlaywrightSession;
+export type PlaywrightRuntimeOptions = PlaywrightSessionOptions;

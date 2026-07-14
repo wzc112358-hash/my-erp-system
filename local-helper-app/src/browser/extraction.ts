@@ -1,91 +1,21 @@
-// 通用的本地采集 harness：把原先写死在华锦的逻辑抽成"按站点配置"的形式，
-// 第二批站点（云梦泽、能源一号、隆道云、金能、易派克等）只需提供一个 profile 即可复用。
+import type {
+  BrowserObservation,
+  CandidateBundle,
+  LocalHelperArtifact,
+  LocalHelperTask,
+  SiteHarnessProfile,
+} from './types.ts';
 
-export type BrowserObservation = {
-  title: string;
-  url: string;
-  visibleText: string;
-  screenshotPath?: string;
-  domSnapshot?: string;
-  links?: BrowserLink[];
-  networkResponses?: BrowserNetworkResponse[];
-  downloadedFiles?: string[];
-};
-
-export type BrowserHarnessRuntime = {
-  open(url: string): Promise<BrowserObservation>;
-  observe(): Promise<BrowserObservation>;
-  screenshot?(): Promise<string>;
-  close?(): Promise<void>;
-};
-
-export type LocalHelperTask = {
-  id: string;
-  sourceName: string;
-  entryUrl: string;
-  searchTerms?: string;
-};
-
-export type BrowserLink = {
-  text: string;
-  href: string;
-  title?: string;
-};
-
-export type BrowserNetworkResponse = {
-  url: string;
-  status: number;
-  contentType?: string;
-  bodySnippet?: string;
-};
-
-export type LocalHelperArtifact = {
-  artifact_type: 'dom_snapshot' | 'network_response' | 'attachment' | 'manual_text' | 'log';
-  title: string;
-  url?: string;
-  content: string;
-  mime_type?: string;
-};
-
-export type CandidateBundle = {
-  source_name: string;
-  candidates: Array<{
-    title: string;
-    url: string;
-    published_at: string;
-    deadline_at: string;
-    buyer_name: string;
-    raw_text: string;
-    attachments: string[];
-  }>;
-};
-
-export type SiteHarnessProfile = {
-  sourceName: string;
-  // 任务未携带入口 URL 时，本地助手用 profile 入口兜底，避免打开空白 URL。
-  entryUrl?: string;
-  // 创建本地任务时默认带入的站内搜索词。
-  defaultSearchTerms?: string;
-  // 创建本地任务时默认带入的人工操作提示。
-  defaultActionSteps?: string;
-  // 出现登录/验证码/CA/短信等时暂停交人；默认覆盖大多数登录站点。
-  humanRequiredPattern?: RegExp;
-  // 空白页/加载失败时也交人确认。
-  emptyPagePattern?: RegExp;
-  // 命中即视为公告标题。
-  noticeTitlePattern?: RegExp;
-  // 命中即排除（导航/登录等噪声行）。
-  excludePattern?: RegExp;
-  // 个别门户的真实业务条目不含"公告/采购/询价"等通用词，可用该规则补充识别。
-  candidateLinePattern?: RegExp;
-  // 命中即排除的站点级门户公告/操作手册等噪声。
-  noisePattern?: RegExp;
-  // 采购方名称：buyerMatch 命中该行时附加 buyerName；buyerMatch 缺省时始终附加 buyerName。
-  buyerName?: string;
-  buyerMatch?: RegExp;
-  // 单次最多提取的候选数。
-  maxCandidates?: number;
-};
+export type {
+  BrowserHarnessRuntime,
+  BrowserLink,
+  BrowserNetworkResponse,
+  BrowserObservation,
+  CandidateBundle,
+  LocalHelperArtifact,
+  LocalHelperTask,
+  SiteHarnessProfile,
+} from './types.ts';
 
 export const DEFAULT_HUMAN_REQUIRED_PATTERN =
   /验证码|短信|手机验证码|安全验证|滑块|请先登录|未登录|登录超时|登录已失效|重新登录|CA证书|数字证书|access verification|slide to verify|not a robot|traceid|robot|(?:账号|用户名|手机号|邮箱).{0,20}密码|密码.{0,20}(?:账号|用户名|手机号|邮箱)/i;
@@ -156,6 +86,13 @@ export const analyzeObservation = (
   const visibleText = observation.visibleText || '';
   const authText = `${observation.title}\n${visibleText}`;
   const pageText = `${authText}\n${observation.url}`;
+  const networkChallenge = (observation.networkResponses || []).find((response) => response.challenge);
+  if (networkChallenge) {
+    return {
+      status: 'request_human',
+      reason: '站点搜索接口返回安全挑战，需要员工在当前浏览器完成验证后继续。',
+    };
+  }
   if (!visibleText.trim() || emptyPattern.test(pageText)) {
     return {
       status: 'request_human',
@@ -399,94 +336,3 @@ export const extractCandidateBundle = (
     candidates,
   };
 };
-
-export const createSiteHarness = ({
-  browser,
-  profile,
-}: {
-  browser: BrowserHarnessRuntime;
-  profile: SiteHarnessProfile;
-}) => ({
-  buildCandidateResult(
-    status: 'ready' | 'completed',
-    observation: BrowserObservation,
-    task: LocalHelperTask,
-  ) {
-    const candidateBundle = extractCandidateBundle(observation, task, profile);
-    if (candidateBundle.candidates.length === 0) {
-      return {
-        status: 'request_human',
-        observation,
-        humanReason: '当前页面没有识别到公告列表或搜索结果。请在本机浏览器进入招标/询价/采购公告列表，或按搜索词检索后再点击继续采集。',
-        candidateBundle: null,
-      };
-    }
-    return {
-      status,
-      observation,
-      humanReason: '',
-      candidateBundle,
-    };
-  },
-
-  async openTask(task: LocalHelperTask) {
-    const entryUrl = task.entryUrl || profile.entryUrl || '';
-    if (!entryUrl) {
-      const observation = {
-        title: profile.sourceName,
-        url: '',
-        visibleText: '任务缺少入口 URL，请先在 ERP 监测源中补充入口网址，或联系管理员完善站点配置。',
-      };
-      return {
-        status: 'request_human',
-        observation,
-        humanReason: '任务缺少入口 URL，无法打开采集浏览器。',
-        candidateBundle: null,
-      };
-    }
-
-    let observation: BrowserObservation;
-    try {
-      observation = await browser.open(entryUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const dnsHint = /ERR_NAME_NOT_RESOLVED/i.test(message)
-        ? '检测到 DNS 解析失败。请确认本机普通 Chrome/Edge 能打开该网址；如果公司网络必须走代理/VPN，请先连接代理/VPN 后重试。'
-        : '采集浏览器打开站点失败。请确认本机网络、代理/VPN、杀毒软件或站点访问权限。';
-      return {
-        status: 'request_human',
-        observation: {
-          title: `${profile.sourceName} 打开失败`,
-          url: entryUrl,
-          visibleText: `${dnsHint}\n\n入口 URL：${entryUrl}\n\n错误信息：${message}`,
-        },
-        humanReason: dnsHint,
-        candidateBundle: null,
-      };
-    }
-    const analysis = analyzeObservation(observation, profile);
-    if (analysis.status === 'request_human') {
-      return {
-        status: 'request_human',
-        observation,
-        humanReason: analysis.reason,
-        candidateBundle: null,
-      };
-    }
-    return this.buildCandidateResult('ready', observation, task);
-  },
-
-  async continueTask(task: LocalHelperTask) {
-    const observation = await browser.observe();
-    const analysis = analyzeObservation(observation, profile);
-    if (analysis.status === 'request_human') {
-      return {
-        status: 'request_human',
-        observation,
-        humanReason: analysis.reason,
-        candidateBundle: null,
-      };
-    }
-    return this.buildCandidateResult('completed', observation, task);
-  },
-});

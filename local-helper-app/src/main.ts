@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createLocalApiServer } from './local-api.ts';
-import { createTaskStore } from './task-store.ts';
+import { createLocalApiServer } from './app/local-api.ts';
+import { createTaskStore } from './app/task-store.ts';
 
 const port = Number(process.env.HCZ_LOCAL_HELPER_PORT || 17321);
 const store = createTaskStore();

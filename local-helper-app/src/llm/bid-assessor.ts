@@ -2,18 +2,18 @@ import {
   callOpenAICompatibleChatCompletion,
   resolveLLMSettings,
   type LocalLLMConfig,
-} from './local-llm-agent.ts';
-import type { OpportunityCard, OpportunityRecommendedAction, OpportunityBidability } from './product-knowledge.ts';
-import type { CandidateBundle, LocalHelperTask } from './site-harness.ts';
+} from './client.ts';
+import type { ScreenedNotice, ScreeningAction, BidEligibility } from '../domain/tender-screening.ts';
+import type { CandidateBundle, LocalHelperTask } from '../browser/types.ts';
 
-export type OpportunityAssessment = {
+export type NoticeAssessment = {
   relevanceScore: number;
   matchedTerms?: string[];
-  bidability: OpportunityBidability;
+  bidability: BidEligibility;
   hardRequirements: string[];
   riskFlags: string[];
   missingInfo: string[];
-  recommendedAction: OpportunityRecommendedAction;
+  recommendedAction: ScreeningAction;
   evidenceText: string;
   wechatSummary: string;
   confidence: number;
@@ -22,23 +22,23 @@ export type OpportunityAssessment = {
 export type AssessmentInput = {
   task: LocalHelperTask;
   candidate: CandidateBundle['candidates'][number];
-  baseCard: OpportunityCard;
+  baseCard: ScreenedNotice;
 };
 
 export type BidAssessor = {
   name: string;
-  assess(input: AssessmentInput): Promise<OpportunityCard>;
-  assessBatch?(inputs: AssessmentInput[]): Promise<OpportunityCard[]>;
+  assess(input: AssessmentInput): Promise<ScreenedNotice>;
+  assessBatch?(inputs: AssessmentInput[]): Promise<ScreenedNotice[]>;
 };
 
 type FetchLike = typeof fetch;
 
-const VALID_BIDABILITY = new Set<OpportunityBidability>([
+const VALID_BIDABILITY = new Set<BidEligibility>([
   'likely_can_do',
   'needs_manual_check',
   'likely_cannot_do',
 ]);
-const VALID_ACTION = new Set<OpportunityRecommendedAction>([
+const VALID_ACTION = new Set<ScreeningAction>([
   'send_to_group',
   'deep_read_document',
   'ignore',
@@ -78,15 +78,15 @@ const firstJsonObject = (content = '') => {
 };
 
 export const mergeAssessmentIntoCard = (
-  baseCard: OpportunityCard,
-  assessment: Partial<OpportunityAssessment> | null | undefined,
-): OpportunityCard => {
+  baseCard: ScreenedNotice,
+  assessment: Partial<NoticeAssessment> | null | undefined,
+): ScreenedNotice => {
   if (!assessment) return baseCard;
-  const bidability = VALID_BIDABILITY.has(assessment.bidability as OpportunityBidability)
-    ? assessment.bidability as OpportunityBidability
+  const bidability = VALID_BIDABILITY.has(assessment.bidability as BidEligibility)
+    ? assessment.bidability as BidEligibility
     : baseCard.bidability;
-  const recommendedAction = VALID_ACTION.has(assessment.recommendedAction as OpportunityRecommendedAction)
-    ? assessment.recommendedAction as OpportunityRecommendedAction
+  const recommendedAction = VALID_ACTION.has(assessment.recommendedAction as ScreeningAction)
+    ? assessment.recommendedAction as ScreeningAction
     : baseCard.recommendedAction;
   return {
     ...baseCard,
@@ -200,19 +200,19 @@ const batchAssessmentsFrom = (content: string, expectedCount: number) => {
   const parsed = firstJsonObject(content);
   const items = Array.isArray(parsed?.items) ? parsed.items : [];
   if (items.length !== expectedCount) throw new Error('LLM batch assessment returned incomplete items');
-  const byIndex = new Map<number, Partial<OpportunityAssessment>>();
+  const byIndex = new Map<number, Partial<NoticeAssessment>>();
   for (const item of items) {
     const index = Number(item?.index);
     if (!Number.isInteger(index) || index < 0 || index >= expectedCount || byIndex.has(index)) {
       throw new Error('LLM batch assessment returned invalid indexes');
     }
-    byIndex.set(index, item as Partial<OpportunityAssessment>);
+    byIndex.set(index, item as Partial<NoticeAssessment>);
   }
   if (byIndex.size !== expectedCount) throw new Error('LLM batch assessment did not cover every candidate');
   return byIndex;
 };
 
-const shouldSkipLLMAssessment = (card: OpportunityCard) => (
+const shouldSkipLLMAssessment = (card: ScreenedNotice) => (
   card.relevanceScore <= 0 &&
   card.matchedTerms.length === 0 &&
   card.recommendedAction === 'ignore'
@@ -317,7 +317,7 @@ export const createOpenAIBidAssessor = ({
       ],
     });
     const assessments = batchAssessmentsFrom(detailResult.content, selectedInputs.length);
-    const assessedByOriginalIndex = new Map<number, OpportunityCard>();
+    const assessedByOriginalIndex = new Map<number, ScreenedNotice>();
     selectedIndexes.forEach((originalIndex, selectedIndex) => {
       assessedByOriginalIndex.set(
         originalIndex,
@@ -342,7 +342,7 @@ export const createDefaultBidAssessor = ({
   return createDeterministicBidAssessor();
 };
 
-export const assessOpportunityCards = async ({
+export const assessScreenedNotices = async ({
   task,
   bundle,
   cards,
@@ -350,7 +350,7 @@ export const assessOpportunityCards = async ({
 }: {
   task: LocalHelperTask;
   bundle: CandidateBundle | null | undefined;
-  cards: OpportunityCard[];
+  cards: ScreenedNotice[];
   assessor?: BidAssessor;
 }) => {
   const candidates = bundle?.candidates || [];
@@ -361,7 +361,7 @@ export const assessOpportunityCards = async ({
     .filter((input): input is AssessmentInput => Boolean(input));
   if (assessor.assessBatch && inputs.length === cards.length) {
     try {
-      const batch: OpportunityCard[] = [];
+      const batch: ScreenedNotice[] = [];
       for (let index = 0; index < inputs.length; index += 40) {
         batch.push(...await assessor.assessBatch(inputs.slice(index, index + 40)));
       }
@@ -370,7 +370,7 @@ export const assessOpportunityCards = async ({
       // Keep the conservative per-item fallback when a provider rejects or truncates the batch.
     }
   }
-  const assessed: OpportunityCard[] = [];
+  const assessed: ScreenedNotice[] = [];
   for (const [index, baseCard] of cards.entries()) {
     const candidate = candidates[index];
     if (!candidate) {

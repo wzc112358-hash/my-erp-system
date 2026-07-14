@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   buildRendererFileUrl,
@@ -8,6 +10,8 @@ import {
   buildStartupFailureMessage,
   chromiumStartupFallbackSwitches,
   decideStartupMode,
+  resolveExistingRendererFilePath,
+  resolveRendererFileCandidates,
   resolveAppConfig,
   resolveRendererFilePath,
 } from './electron-shell.ts';
@@ -54,7 +58,7 @@ test('electron shell tray menu exposes status, ERP, and exit actions', () => {
   });
 
   assert.equal(menu[0].label, '恒化成本地采集助手');
-  assert.match(menu[1].label, /云端上传已配置/);
+  assert.match(menu[1]?.label || '', /云端上传已配置/);
   assert.ok(menu.some((item) => item.label === '打开 ERP'));
   assert.ok(menu.some((item) => item.label === '打开本地任务台'));
   assert.ok(menu.some((item) => item.click === 'tasks'));
@@ -77,23 +81,46 @@ test('electron shell tray menu keeps local task desk available when not paired',
   assert.equal(taskItem.enabled, undefined);
 });
 
-test('electron shell loads renderer files outside app.asar when packaged', () => {
+test('electron shell loads packaged renderer files from the app-dist output', () => {
+  const resourcesPath = path.resolve('opt', 'hcz', 'resources');
   const filePath = resolveRendererFilePath({
     isPackaged: true,
-    appPath: '/opt/hcz/resources/app.asar',
-    resourcesPath: '/opt/hcz/resources',
+    appPath: path.join(resourcesPath, 'app.asar'),
+    resourcesPath,
     fileName: 'pair.html',
   });
 
-  assert.equal(filePath, '/opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html');
+  assert.equal(filePath, path.join(resourcesPath, 'app.asar.unpacked', 'app-dist', 'renderer', 'pair.html'));
+});
+
+test('electron shell can fall back to renderer files inside app.asar', () => {
+  const resourcesPath = path.resolve('opt', 'hcz', 'resources');
+  const input = {
+    isPackaged: true,
+    appPath: path.join(resourcesPath, 'app.asar'),
+    resourcesPath,
+    fileName: 'tasks.html',
+  };
+  const candidates = resolveRendererFileCandidates(input);
+  const unpackedFile = path.join(resourcesPath, 'app.asar.unpacked', 'app-dist', 'renderer', 'tasks.html');
+  const asarFile = path.join(resourcesPath, 'app.asar', 'app-dist', 'renderer', 'tasks.html');
+
+  assert.deepEqual(candidates, [unpackedFile, asarFile]);
+  assert.equal(
+    resolveExistingRendererFilePath(input, (filePath) => filePath === asarFile),
+    asarFile,
+  );
 });
 
 test('electron shell builds encoded file URLs for renderer pages', () => {
-  const url = buildRendererFileUrl('/opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html', {
+  const filePath = path.resolve('opt', 'hcz', 'resources', 'app.asar.unpacked', 'app-dist', 'renderer', 'pair.html');
+  const url = buildRendererFileUrl(filePath, {
     api: 'http://127.0.0.1:17321',
   });
 
-  assert.equal(url, 'file:///opt/hcz/resources/app.asar.unpacked/dist/renderer/pair.html?api=http%3A%2F%2F127.0.0.1%3A17321');
+  const expected = pathToFileURL(filePath);
+  expected.searchParams.set('api', 'http://127.0.0.1:17321');
+  assert.equal(url, expected.toString());
 });
 
 test('electron shell exits a secondary instance only when an existing local API is healthy', () => {

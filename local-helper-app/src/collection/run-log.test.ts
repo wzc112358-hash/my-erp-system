@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createAgentHarnessStore } from './agent-harness.ts';
+import { createAgentHarnessStore } from './run-log.ts';
 
 test('agent harness store persists runs and ordered steps with redaction', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hcz-agent-harness-'));

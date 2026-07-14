@@ -12,8 +12,15 @@ const downloadsDir = process.env.HCZ_DOWNLOADS_DIR
   : path.resolve(root, '..', 'frontend', 'public', 'downloads');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-const run = (command, args) => {
-  execFileSync(command, args, { stdio: 'inherit', cwd: root });
+const run = (command, args, options = {}) => {
+  execFileSync(command, args, {
+    stdio: 'inherit',
+    cwd: root,
+    env: {
+      ...process.env,
+      ...(options.env || {}),
+    },
+  });
 };
 
 const commandExists = (command) => {
@@ -74,6 +81,7 @@ if (shouldBuildInstaller) {
 } else {
   console.warn('Skipping NSIS installer because HCZ_SKIP_NSIS=1.');
 }
+run('npm', ['run', 'verify:package'], { env: { HCZ_RELEASE_DIR: releaseDir } });
 
 fs.mkdirSync(downloadsDir, { recursive: true });
 

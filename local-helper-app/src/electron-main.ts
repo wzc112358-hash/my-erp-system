@@ -3,7 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-import { parseDeepLink } from './deep-link.ts';
+import { createElectronCdpSession } from './browser/electron-cdp-session.ts';
+import { createPlaywrightSession } from './browser/playwright-session.ts';
+import { parseDeepLink } from './shell/deep-link.ts';
 import {
   buildProtocolRegistration,
   buildRendererFileUrl,
@@ -11,13 +13,14 @@ import {
   buildTrayMenuTemplate,
   chromiumStartupFallbackSwitches,
   decideStartupMode,
+  resolveExistingRendererFilePath,
   resolveAppConfig,
-  resolveRendererFilePath,
   type TrayMenuItem,
-} from './electron-shell.ts';
-import { createJsonFileConfigStore } from './local-config-store.ts';
-import { createLocalApiServer } from './local-api.ts';
-import { createTaskStore } from './task-store.ts';
+} from './shell/electron-shell.ts';
+import { createJsonFileConfigStore } from './app/config-store.ts';
+import { createLocalApiServer, resolveRuntimeDirs } from './app/local-api.ts';
+import { createTaskStore } from './app/task-store.ts';
+import { definitionFor } from './sites/registry.ts';
 
 const electron = await import('electron');
 const { app, BrowserWindow, Menu, shell, Tray, nativeImage, dialog } = electron;
@@ -89,18 +92,55 @@ void localApiReady.catch(() => null);
 const electronReady = app.whenReady();
 void electronReady.catch((error) => appendStartupLog('app.whenReady rejected', error));
 
-const rendererPath = (fileName: string) => resolveRendererFilePath({
+const rendererPath = (fileName: string) => resolveExistingRendererFilePath({
   isPackaged: app.isPackaged,
   appPath: app.getAppPath(),
   resourcesPath: process.resourcesPath || path.dirname(app.getAppPath()),
   fileName,
-});
+}, fs.existsSync);
 const rendererDir = path.dirname(rendererPath('pair.html'));
+const createSiteBrowserSession = (task: { sourceName?: string }) => {
+  const site = definitionFor(task.sourceName || '');
+  const runtimeDirs = resolveRuntimeDirs(task);
+  if (site.browserEngine !== 'electron-cdp') {
+    return createPlaywrightSession({
+      ...runtimeDirs,
+      headless: process.env.HCZ_LOCAL_HELPER_HEADLESS === '1',
+    });
+  }
+  const partition = `persist:hcz-site-${Buffer.from(site.sourceName).toString('hex').slice(0, 32)}`;
+  return createElectronCdpSession({
+    screenshotDir: runtimeDirs.screenshotDir,
+    createWindow: () => {
+      const window = new BrowserWindow({
+        width: 1180,
+        height: 820,
+        minWidth: 900,
+        minHeight: 640,
+        show: false,
+        title: `采集浏览器 · ${site.sourceName}`,
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          partition,
+        },
+      });
+      const userAgent = window.webContents.getUserAgent()
+        .replace(/\sElectron\/\S+/i, '')
+        .replace(/\shcz-local-helper-app\/\S+/i, '');
+      window.webContents.setUserAgent(userAgent);
+      return window;
+    },
+  });
+};
 const server = createLocalApiServer({
   store,
   port: config.port,
   helperVersion,
   rendererDir,
+  createBrowserSession: createSiteBrowserSession,
 });
 let serverStopped = false;
 let gracefulQuitStarted = false;
@@ -285,7 +325,6 @@ const handleDeepLink = async (rawUrl = '') => {
     return;
   }
   if (link.type === 'task') {
-    await fetch(`${config.localUrl}/cloud/tasks`).catch(() => null);
     afterElectronReady('open task window from deep link', () => openTaskWindow(link.taskId));
   }
 };
@@ -435,7 +474,7 @@ setTimeout(() => {
   );
 }, 30000);
 
-app.on('window-all-closed', (event) => {
+app.on('window-all-closed', () => {
   appendStartupLog('window-all-closed; quitting helper process');
   if (!gracefulQuitStarted) app.quit();
 });

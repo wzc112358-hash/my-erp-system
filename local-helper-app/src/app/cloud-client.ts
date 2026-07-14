@@ -43,54 +43,6 @@ export const pairWithCloud = async (
   body: JSON.stringify(payload),
 });
 
-export const sendHeartbeat = async (
-  options: CloudClientOptions,
-  payload: { helperVersion: string; platform: string },
-) => requestJson(options, '/local-helper/heartbeat', {
-  method: 'POST',
-  body: JSON.stringify(payload),
-});
-
-export const getReleaseInfo = async (
-  options: CloudClientOptions,
-  currentVersion = '',
-) => requestJson(
-  options,
-  `/local-helper/release${currentVersion ? `?currentVersion=${encodeURIComponent(currentVersion)}` : ''}`,
-);
-
-export const pullCloudTasks = async (options: CloudClientOptions) => requestJson(
-  options,
-  '/local-helper/tasks',
-);
-
-export const startCloudTask = async (
-  options: CloudClientOptions,
-  taskId: string,
-  payload: Record<string, unknown> = {},
-) => requestJson(options, `/local-helper/tasks/${encodeURIComponent(taskId)}/start`, {
-  method: 'POST',
-  body: JSON.stringify(payload),
-});
-
-export const continueCloudTask = async (
-  options: CloudClientOptions,
-  taskId: string,
-  payload: Record<string, unknown>,
-) => requestJson(options, `/local-helper/tasks/${encodeURIComponent(taskId)}/continue`, {
-  method: 'POST',
-  body: JSON.stringify(payload),
-});
-
-export const cancelCloudTask = async (
-  options: CloudClientOptions,
-  taskId: string,
-  payload: Record<string, unknown> = {},
-) => requestJson(options, `/local-helper/tasks/${encodeURIComponent(taskId)}/cancel`, {
-  method: 'POST',
-  body: JSON.stringify(payload),
-});
-
 export const uploadCloudTaskReport = async (
   options: CloudClientOptions,
   taskId: string,

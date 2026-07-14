@@ -1,291 +1,307 @@
+import type {
+  BrowserObservation,
+  BrowserSession,
+  CandidateBundle,
+  LocalHelperArtifact,
+  LocalHelperTask,
+  TenderCandidate,
+} from '../browser/types.ts';
 import {
-  createDefaultSearchAdapter,
-  formatDiscoveredLinks,
-  type LinkDiscoveryResult,
-  type SearchAdapter,
-} from './agent-search-adapter.ts';
-import type { AgentHarnessStepInput } from './agent-harness.ts';
+  analyzeObservation,
+  buildObservationArtifacts,
+  extractCandidateBundle,
+} from '../browser/extraction.ts';
 import {
-  assessOpportunityCards,
+  buildScreenedNotices,
+  summarizeScreenedNotices,
+  type ScreenedNotice,
+  type ProductTerm,
+} from '../domain/tender-screening.ts';
+import {
+  assessScreenedNotices,
   createDeterministicBidAssessor,
   type BidAssessor,
-} from './bid-assessment.ts';
-import {
-  createDefaultLLMAgent,
-  type LLMAgentAdapter,
-} from './local-llm-agent.ts';
-import {
-  buildOpportunityCards,
-  summarizeOpportunityCards,
-  type OpportunityCard,
-  type ProductTerm,
-} from './product-knowledge.ts';
+} from '../llm/bid-assessor.ts';
+import { extractCandidatesWithLLM } from '../llm/candidate-extractor.ts';
+import type { LocalLLMConfig } from '../llm/client.ts';
 import {
   collectSitePublicFeed,
   type SitePublicFeedResult,
-} from './site-public-feed.ts';
-import {
-  type BrowserHarnessRuntime,
-  type LocalHelperArtifact,
-  type LocalHelperTask,
-} from './site-harness.ts';
-import {
-  summarizeCandidateBundle,
-  type LocalAgentRunResult,
-} from './local-agent-runner.ts';
-import {
-  runReActCollectionAgent,
-} from './react-collection-agent.ts';
-import {
-  createDefaultReActPlanner,
-  type ReActPlanner,
-} from './react-planner.ts';
+} from '../sites/public-collectors.ts';
+import { definitionFor } from '../sites/registry.ts';
+import type { AgentHarnessStepInput } from './run-log.ts';
 
-export type ControlledAgentOptions = {
-  search?: SearchAdapter;
-  llm?: LLMAgentAdapter;
-  assessor?: BidAssessor;
-  terms?: ProductTerm[];
-  recordStep?: (step: AgentHarnessStepInput) => Promise<void> | void;
-  planner?: ReActPlanner;
-  maxIterations?: number;
-  publicFeedCollector?: typeof collectSitePublicFeed;
+export type CollectionRunResult = {
+  status: 'request_human' | 'completed' | 'failed';
+  humanReason: string;
+  observation?: BrowserObservation;
+  candidateBundle: CandidateBundle | null;
+  artifacts: LocalHelperArtifact[];
+  resultSummary: string;
+  discoveredLinks: Array<{ title: string; url: string }>;
+  screenedNotices?: ScreenedNotice[];
 };
 
-const discoveryArtifactFor = (
-  discovery: LinkDiscoveryResult,
-  task: LocalHelperTask,
-): LocalHelperArtifact => ({
-  artifact_type: 'log',
-  title: `${task.sourceName || '本地 Agent'} 链接发现`,
-  url: task.entryUrl,
-  content: formatDiscoveredLinks(discovery),
-  mime_type: 'text/plain',
-});
+export type CollectionRunOptions = {
+  llmConfig?: LocalLLMConfig | null;
+  assessor?: BidAssessor;
+  terms?: ProductTerm[];
+  resume?: boolean;
+  recordStep?: (step: AgentHarnessStepInput) => Promise<void> | void;
+  publicFeedCollector?: typeof collectSitePublicFeed;
+  llmCandidateExtractor?: typeof extractCandidatesWithLLM;
+};
 
-const hasActionableOpportunity = (cards: OpportunityCard[] = []) => (
+const candidateKey = (candidate: TenderCandidate) => (
+  `${candidate.title.replace(/\s+/g, '')}|${candidate.url}`
+);
+
+const mergeBundles = (
+  sourceName: string,
+  ...bundles: Array<CandidateBundle | null | undefined>
+): CandidateBundle | null => {
+  const candidates = bundles.flatMap((bundle) => bundle?.candidates || []);
+  const unique = candidates.filter((candidate, index, all) => (
+    index === all.findIndex((item) => candidateKey(item) === candidateKey(candidate))
+  )).slice(0, 40);
+  return unique.length ? { source_name: sourceName, candidates: unique } : null;
+};
+
+const summaryForBundle = (bundle: CandidateBundle | null) => {
+  const candidates = bundle?.candidates || [];
+  if (!candidates.length) return '未识别到招投标候选公告。';
+  return [
+    `识别到 ${candidates.length} 条候选公告：`,
+    ...candidates.slice(0, 10).map((candidate, index) => `${index + 1}. ${candidate.title}`),
+  ].join('\n');
+};
+
+const discoveredLinksFor = (
+  observation: BrowserObservation | undefined,
+  bundle: CandidateBundle | null,
+) => {
+  const links = [
+    ...(bundle?.candidates || []).map((candidate) => ({ title: candidate.title, url: candidate.url })),
+    ...(observation?.links || []).map((link) => ({ title: link.title || link.text || link.href, url: link.href })),
+  ].filter((link) => link.url);
+  return links.filter((link, index, all) => index === all.findIndex((item) => item.url === link.url)).slice(0, 30);
+};
+
+const hasActionableNotice = (cards: ScreenedNotice[]) => (
   cards.some((card) => card.recommendedAction !== 'ignore')
 );
 
-export const runControlledLocalAgentTask = async ({
+const finalizeCandidates = async ({
   task,
-  browser,
-  search = createDefaultSearchAdapter(),
-  llm = createDefaultLLMAgent(),
-  assessor = createDeterministicBidAssessor(),
+  bundle,
+  observation,
+  artifacts,
+  assessor,
   terms,
-  recordStep = async () => undefined,
-  planner = createDefaultReActPlanner(),
-  maxIterations = 6,
-  publicFeedCollector = collectSitePublicFeed,
+  recordStep,
 }: {
   task: LocalHelperTask;
-  browser: BrowserHarnessRuntime;
-} & ControlledAgentOptions): Promise<LocalAgentRunResult> => {
-  await recordStep({
-    phase: 'plan',
-    action: 'start_controlled_agent',
-    result: {
-      sourceName: task.sourceName,
-      entryUrl: task.entryUrl,
-      searchTerms: task.searchTerms || '',
-    },
-  });
-  const publicFeed = await publicFeedCollector({ task }).catch((error): SitePublicFeedResult => ({
-    provider: 'site-public-feed',
-    status: 'failed',
-    candidateBundle: null,
-    artifacts: [],
-    warnings: [`公开 feed 读取异常：${error instanceof Error ? error.message : String(error)}`],
-  }));
-  if (publicFeed.status !== 'unsupported') {
-    await recordStep({
-      phase: 'discover',
-      action: 'collect_site_public_feed',
-      tool: publicFeed.provider,
-      result: {
-        status: publicFeed.status,
-        candidateCount: publicFeed.candidateBundle?.candidates.length || 0,
-        artifactCount: publicFeed.artifacts.length,
-        warnings: publicFeed.warnings,
-      },
-    });
-  }
-  if (publicFeed.candidateBundle?.candidates.length) {
-    const discoveredLinks = publicFeed.candidateBundle.candidates.slice(0, 20).map((candidate) => ({
-      title: candidate.title,
-      url: candidate.url,
-      description: candidate.raw_text,
-      source: publicFeed.provider,
-      score: 90,
-    }));
-    const opportunityCards = await assessOpportunityCards({
-      task,
-      bundle: publicFeed.candidateBundle,
-      cards: buildOpportunityCards({ bundle: publicFeed.candidateBundle, task, terms }),
-      assessor,
-    });
-    await recordStep({
-      phase: 'assess',
-      action: 'assess_opportunity_cards',
-      tool: 'bid-assessor',
-      result: {
-        cardCount: opportunityCards.length,
-        topActions: opportunityCards.slice(0, 5).map((card) => card.recommendedAction),
-      },
-    });
-    const fallbackSummary = summarizeOpportunityCards(opportunityCards, summarizeCandidateBundle(publicFeed.candidateBundle));
-    if (!hasActionableOpportunity(opportunityCards)) {
-      await recordStep({
-        phase: 'complete',
-        action: 'public_feed_no_matches',
-        tool: publicFeed.provider,
-        result: {
-          publicCandidateCount: publicFeed.candidateBundle.candidates.length,
-          reason: '公开 feed 和站内产品词搜索均已完成，没有可发送信息。',
-        },
-      });
-      return {
-        status: 'completed',
-        humanReason: '',
-        candidateBundle: publicFeed.candidateBundle,
-        artifacts: publicFeed.artifacts,
-        resultSummary: `已巡检 ${publicFeed.candidateBundle.candidates.length} 条公开公告，没有筛选出与公司产品相关的当前采购信息。`,
-        discoveredLinks,
-        opportunityCards,
-      };
-    }
-    const resultSummary = await llm.summarize({
-      task,
-      discoveredLinks,
-      candidateBundle: publicFeed.candidateBundle,
-      fallbackSummary,
-    }).catch(() => fallbackSummary);
-    await recordStep({
-      phase: 'summarize',
-      action: 'summarize_agent_result',
-      tool: llm.name,
-      result: {
-        summaryLength: resultSummary.length,
-        fallbackUsed: resultSummary === fallbackSummary,
-      },
-    });
-    return {
-      status: 'completed',
-      humanReason: '',
-      candidateBundle: publicFeed.candidateBundle,
-      artifacts: publicFeed.artifacts,
-      resultSummary,
-      discoveredLinks,
-      opportunityCards,
-    };
-  }
-  const result = await runReActCollectionAgent({
+  bundle: CandidateBundle;
+  observation?: BrowserObservation;
+  artifacts: LocalHelperArtifact[];
+  assessor: BidAssessor;
+  terms?: ProductTerm[];
+  recordStep: (step: AgentHarnessStepInput) => Promise<void>;
+}): Promise<CollectionRunResult> => {
+  const cards = await assessScreenedNotices({
     task,
-    browser,
-    search,
-    planner,
-    recordStep,
-    maxIterations,
-  });
-  const discoveredLinks = result.discoveredLinks || [];
-  const observation = result.observation;
-  const artifacts = result.artifacts.length > 0
-    ? result.artifacts
-    : [
-      discoveryArtifactFor({
-        provider: search.name,
-        query: task.searchTerms || '',
-        links: discoveredLinks,
-        warnings: [],
-      }, task),
-    ];
-  await recordStep({
-    phase: 'extract',
-    action: 'analyze_observation',
-    tool: 'react-collection-agent',
-    observation: {
-      status: result.status,
-      title: observation?.title || '',
-      url: observation?.url || '',
-      screenshotPath: observation?.screenshotPath || '',
-    },
-    result: {
-      candidateCount: result.candidateBundle?.candidates?.length || 0,
-      artifactCount: artifacts.length,
-      humanReason: result.status === 'request_human' ? result.humanReason || '' : '',
-    },
-  });
-
-  if (result.status === 'request_human') {
-    await recordStep({
-      phase: 'human',
-      action: 'request_human_takeover',
-      result: {
-        reason: result.humanReason || '请员工完成登录/验证或手动进入公告列表后继续采集。',
-        currentUrl: observation?.url || '',
-      },
-    });
-    return {
-      status: 'request_human',
-      humanReason: [
-        `ReAct Agent 已完成 ${result.iterations.length} 轮采集尝试。`,
-        result.humanReason || '请员工完成登录/验证或手动进入公告列表后继续采集。',
-      ].join(' '),
-      observation,
-      candidateBundle: null,
-      artifacts,
-      resultSummary: [
-        `发现 ${discoveredLinks.length} 个候选入口。`,
-        result.resultSummary,
-      ].filter(Boolean).join('\n'),
-      discoveredLinks,
-    };
-  }
-
-  const opportunityCards = await assessOpportunityCards({
-    task,
-    bundle: result.candidateBundle,
-    cards: buildOpportunityCards({ bundle: result.candidateBundle, task, terms }),
+    bundle,
+    cards: buildScreenedNotices({ bundle, task, terms }),
     assessor,
   });
   await recordStep({
     phase: 'assess',
-    action: 'assess_opportunity_cards',
-    tool: 'bid-assessor',
+    action: 'assess_candidates',
+    tool: assessor.name,
     result: {
-      cardCount: opportunityCards.length,
-      topActions: opportunityCards.slice(0, 5).map((card) => card.recommendedAction),
-    },
-  });
-  const fallbackSummary = summarizeOpportunityCards(
-    opportunityCards,
-    summarizeCandidateBundle(result.candidateBundle),
-  );
-  const resultSummary = await llm.summarize({
-    task,
-    discoveredLinks,
-    candidateBundle: result.candidateBundle,
-    fallbackSummary,
-  }).catch(() => fallbackSummary);
-  await recordStep({
-    phase: 'summarize',
-    action: 'summarize_agent_result',
-    tool: llm.name,
-    result: {
-      summaryLength: resultSummary.length,
-      fallbackUsed: resultSummary === fallbackSummary,
+      candidateCount: bundle.candidates.length,
+      actionableCount: cards.filter((card) => card.recommendedAction !== 'ignore').length,
     },
   });
 
+  const discoveredLinks = discoveredLinksFor(observation, bundle);
+  if (!hasActionableNotice(cards)) {
+    return {
+      status: 'completed',
+      humanReason: '',
+      observation,
+      candidateBundle: bundle,
+      artifacts,
+      resultSummary: `已巡检 ${bundle.candidates.length} 条公告，没有筛选出与公司产品相关的当前采购信息。`,
+      discoveredLinks,
+      screenedNotices: cards,
+    };
+  }
+
+  const resultSummary = summarizeScreenedNotices(cards, summaryForBundle(bundle));
   return {
     status: 'completed',
     humanReason: '',
     observation,
-    candidateBundle: result.candidateBundle,
+    candidateBundle: bundle,
     artifacts,
     resultSummary,
     discoveredLinks,
-    opportunityCards,
+    screenedNotices: cards,
   };
 };
+
+export const runCollection = async ({
+  task,
+  browser,
+  llmConfig = null,
+  assessor = createDeterministicBidAssessor(),
+  terms,
+  resume = false,
+  recordStep: record = async () => undefined,
+  publicFeedCollector = collectSitePublicFeed,
+  llmCandidateExtractor = extractCandidatesWithLLM,
+}: {
+  task: LocalHelperTask;
+  browser: BrowserSession;
+} & CollectionRunOptions): Promise<CollectionRunResult> => {
+  const recordStep = async (step: AgentHarnessStepInput) => {
+    await record(step);
+  };
+  const site = definitionFor(task.sourceName);
+  await recordStep({
+    phase: 'plan',
+    action: resume ? 'resume_collection' : 'start_collection',
+    result: {
+      sourceName: task.sourceName,
+      collectionMode: site.collectionMode,
+      browserEngine: browser.engine,
+      entryUrl: task.entryUrl,
+    },
+  });
+
+  if (!resume && site.collectionMode === 'public-feed') {
+    const feed = await publicFeedCollector({ task }).catch((error): SitePublicFeedResult => ({
+      provider: 'site-public-feed',
+      status: 'failed',
+      candidateBundle: null,
+      artifacts: [],
+      warnings: [error instanceof Error ? error.message : String(error)],
+    }));
+    await recordStep({
+      phase: 'discover',
+      action: 'collect_public_feed',
+      tool: feed.provider,
+      result: {
+        status: feed.status,
+        candidateCount: feed.candidateBundle?.candidates.length || 0,
+        warnings: feed.warnings,
+      },
+    });
+    if (feed.candidateBundle?.candidates.length) {
+      return finalizeCandidates({
+        task,
+        bundle: feed.candidateBundle,
+        artifacts: feed.artifacts,
+        assessor,
+        terms,
+        recordStep,
+      });
+    }
+    if (feed.status === 'no_new') {
+      return {
+        status: 'completed',
+        humanReason: '',
+        candidateBundle: null,
+        artifacts: feed.artifacts,
+        resultSummary: '公开公告源读取完成，本次没有新公告。',
+        discoveredLinks: [],
+        screenedNotices: [],
+      };
+    }
+  }
+
+  const observation = resume
+    ? await browser.observe()
+    : await browser.open(task.entryUrl || site.entryUrl || '');
+  const analysis = analyzeObservation(observation, site);
+  const artifacts = buildObservationArtifacts(observation, task);
+  await recordStep({
+    phase: 'browser',
+    action: resume ? 'observe_after_human' : 'open_site',
+    tool: browser.engine,
+    observation: {
+      title: observation.title,
+      url: observation.url,
+      visibleTextLength: observation.visibleText.length,
+      networkResponseCount: observation.networkResponses?.length || 0,
+    },
+    result: { status: analysis.status, reason: analysis.reason },
+  });
+
+  if (analysis.status === 'request_human') {
+    const screenshotPath = await browser.screenshot?.().catch(() => '') || '';
+    return {
+      status: 'request_human',
+      humanReason: analysis.reason,
+      observation: { ...observation, screenshotPath },
+      candidateBundle: null,
+      artifacts,
+      resultSummary: analysis.reason,
+      discoveredLinks: discoveredLinksFor(observation, null),
+    };
+  }
+
+  const deterministicBundle = extractCandidateBundle(observation, task, site);
+  const llmBundle = await llmCandidateExtractor({
+    task,
+    observation,
+    config: llmConfig,
+  }).catch(async (error) => {
+    await recordStep({
+      phase: 'error',
+      action: 'llm_extract_candidates_failed',
+      tool: 'openai-compatible-chat',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  // LLM candidates are normalized against observed URLs and carry richer row
+  // context, so they take precedence over broad line-regex candidates.
+  const bundle = mergeBundles(task.sourceName, llmBundle, deterministicBundle);
+  await recordStep({
+    phase: 'extract',
+    action: 'extract_candidates',
+    tool: llmBundle ? 'deterministic+llm' : 'deterministic',
+    result: {
+      deterministicCount: deterministicBundle.candidates.length,
+      llmCount: llmBundle?.candidates.length || 0,
+      mergedCount: bundle?.candidates.length || 0,
+    },
+  });
+
+  if (!bundle?.candidates.length) {
+    return {
+      status: 'request_human',
+      humanReason: '当前页面没有稳定识别到公告结果，请确认已完成验证并停留在正确的公告列表。',
+      observation,
+      candidateBundle: null,
+      artifacts,
+      resultSummary: '页面已读取，但没有稳定识别到公告候选。',
+      discoveredLinks: discoveredLinksFor(observation, null),
+    };
+  }
+
+  return finalizeCandidates({
+    task,
+    bundle,
+    observation,
+    artifacts,
+    assessor,
+    terms,
+    recordStep,
+  });
+};
+
+export const runControlledLocalAgentTask = runCollection;
+export type LocalAgentRunResult = CollectionRunResult;

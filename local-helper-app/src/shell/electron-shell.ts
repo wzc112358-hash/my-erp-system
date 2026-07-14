@@ -77,14 +77,30 @@ export const buildTrayMenuTemplate = ({
   { label: '退出', click: 'quit' },
 ];
 
-export const resolveRendererFilePath = ({
+export const resolveRendererFileCandidates = ({
   isPackaged,
   appPath,
   resourcesPath,
   fileName,
 }: RendererPathInput) => (isPackaged
-  ? path.join(resourcesPath, 'app.asar.unpacked', 'dist', 'renderer', fileName)
-  : path.join(appPath, 'dist', 'renderer', fileName));
+  ? [
+    path.join(resourcesPath, 'app.asar.unpacked', 'app-dist', 'renderer', fileName),
+    path.join(appPath, 'app-dist', 'renderer', fileName),
+  ]
+  : [
+    path.join(appPath, 'app-dist', 'renderer', fileName),
+    path.join(appPath, 'dist', 'renderer', fileName),
+  ]);
+
+export const resolveExistingRendererFilePath = (
+  input: RendererPathInput,
+  exists: (filePath: string) => boolean,
+) => {
+  const candidates = resolveRendererFileCandidates(input);
+  return candidates.find((filePath) => exists(filePath)) || candidates[0];
+};
+
+export const resolveRendererFilePath = (input: RendererPathInput) => resolveRendererFileCandidates(input)[0];
 
 export const buildRendererFileUrl = (
   filePath: string,

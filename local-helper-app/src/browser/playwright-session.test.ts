@@ -5,7 +5,7 @@ import {
   browserChannelCandidatesFor,
   createPlaywrightRuntime,
   proxyServerFor,
-} from './playwright-runtime.ts';
+} from './playwright-session.ts';
 
 test('playwright runtime opens urls in persistent profile and captures visible text', async () => {
   const calls: string[] = [];
@@ -55,12 +55,13 @@ test('playwright runtime opens urls in persistent profile and captures visible t
     profileDir: 'profiles/huajin',
     screenshotDir: 'artifacts',
     headless: false,
+    captureDomSnapshot: true,
   });
 
   const observation = await runtime.open('https://www.norincogroup-ebuy.com/');
   await new Promise((resolve) => setTimeout(resolve, 0));
   const enrichedObservation = await runtime.observe();
-  const screenshotPath = await runtime.screenshot();
+  const screenshotPath = await runtime.screenshot?.() || '';
 
   assert.equal(observation.title, '华锦兵器网');
   assert.equal(observation.visibleText, '2026-05-27 华锦化工液氮采购询价公告');
@@ -108,12 +109,9 @@ test('playwright runtime waits briefly for SPA content after navigation', async 
     goto: async () => {
       calls.push('goto');
     },
-    waitForLoadState: async (state: string, options: Record<string, unknown>) => {
-      calls.push(`wait:${state}:${options.timeout}`);
-      settled = true;
-    },
     waitForTimeout: async (timeout: number) => {
       calls.push(`timeout:${timeout}`);
+      settled = true;
     },
     title: async () => '裕龙招投标网',
     url: () => 'https://ctbpsp.com/#/bulletinList',
@@ -137,7 +135,7 @@ test('playwright runtime waits briefly for SPA content after navigation', async 
   const observation = await runtime.open('https://ctbpsp.com/#/bulletinList');
 
   assert.equal(observation.visibleText, '2026-06-26 裕龙石化阻聚剂采购招标公告');
-  assert.deepEqual(calls, ['goto', 'wait:networkidle:1200', 'timeout:150']);
+  assert.deepEqual(calls, ['goto', 'timeout:1200']);
 });
 
 test('playwright runtime prefers system browsers before bundled Chromium on desktop platforms', () => {
@@ -189,9 +187,9 @@ test('playwright runtime falls back when the preferred system browser is unavail
   });
 
   assert.equal((await runtime.observe()).title, '询价交易');
-  assert.equal(launchOptions[0].channel, 'chrome');
-  assert.equal(launchOptions[1].channel, 'msedge');
-  assert.deepEqual(launchOptions[1].args, ['--disable-features=AsyncDns']);
+  assert.equal(launchOptions[0]?.channel, 'chrome');
+  assert.equal(launchOptions[1]?.channel, 'msedge');
+  assert.deepEqual(launchOptions[1]?.args, ['--disable-features=AsyncDns']);
 });
 
 test('playwright runtime resolves proxy server from local helper env first', () => {

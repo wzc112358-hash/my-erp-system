@@ -1,5 +1,5 @@
-import type { OpportunityCard } from './product-knowledge.ts';
-import type { HelperTask } from './task-store.ts';
+import type { ScreenedNotice } from './tender-screening.ts';
+import type { HelperTask } from '../app/task-store.ts';
 
 export type CollectionReportStatus =
   | 'pending'
@@ -36,7 +36,7 @@ export type CollectionReport = {
   summary: string;
 };
 
-const actionLabel = (card: OpportunityCard) => ({
+const actionLabel = (card: ScreenedNotice) => ({
   send_to_group: '建议发群确认',
   deep_read_document: '建议继续查看详情或附件',
   ask_boss: '建议人工判断后询问负责人',
@@ -77,22 +77,22 @@ const deadlineTimestamp = (value = '') => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
-const isExpired = (card: OpportunityCard, now: number) => {
+const isExpired = (card: ScreenedNotice, now: number) => {
   const deadline = deadlineTimestamp(card.deadlineAt);
   return deadline !== null && deadline < now;
 };
 
-const isNonActionableStage = (card: OpportunityCard) => (
+const isNonActionableStage = (card: ScreenedNotice) => (
   /(?:评标|招标|中标候选|中标|成交|采购|入围)结果(?:公告|公示|通知)?|结果公示|候选人公示|废(?:旧|物|料).{0,8}(?:销售|处置)/.test(card.title)
 );
 
-const selectedCards = (task: Pick<HelperTask, 'lastOpportunityCards'>, now: number) => (
-  (task.lastOpportunityCards || []).filter((card) => (
+const selectedCards = (task: Pick<HelperTask, 'lastScreenedNotices'>, now: number) => (
+  (task.lastScreenedNotices || []).filter((card) => (
     card.recommendedAction !== 'ignore' && !isExpired(card, now) && !isNonActionableStage(card)
   ))
 );
 
-const itemFromCard = (card: OpportunityCard): CollectionReportItem => ({
+const itemFromCard = (card: ScreenedNotice): CollectionReportItem => ({
   id: card.id,
   title: card.title,
   sourceName: card.sourceName,
@@ -147,7 +147,7 @@ export const buildCollectionReport = (
 ): CollectionReport => {
   const generatedTimestamp = Date.parse(generatedAt);
   const now = Number.isFinite(generatedTimestamp) ? generatedTimestamp : Date.now();
-  const nonIgnoredCards = (task.lastOpportunityCards || [])
+  const nonIgnoredCards = (task.lastScreenedNotices || [])
     .filter((card) => card.recommendedAction !== 'ignore');
   const items = selectedCards(task, now).map(itemFromCard);
   const expiredCount = nonIgnoredCards.filter((card) => isExpired(card, now)).length;

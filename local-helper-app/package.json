@@ -1,10 +1,68 @@
 {
   "name": "hcz-local-helper-app",
-  "version": "0.1.19",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "main": "app-dist/electron-main.js",
+  "scripts": {
+    "start": "node --experimental-strip-types src/main.ts",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build",
+    "build": "node scripts/build.mjs",
+    "start:electron": "npm run build && electron .",
+    "verify:package": "node scripts/verify-package.mjs",
+    "package:win-unpacked": "npm run build && electron-builder --win dir --x64 && npm run verify:package",
+    "package:win-portable": "npm run build && electron-builder --win zip --x64 && npm run verify:package",
+    "package:win": "npm run build && electron-builder --win nsis --x64 && npm run verify:package",
+    "package:release": "node scripts/release.mjs",
+    "deploy:downloads": "node scripts/deploy-downloads.mjs"
+  },
   "dependencies": {
     "playwright": "1.60.0"
+  },
+  "devDependencies": {
+    "electron": "42.3.0",
+    "electron-builder": "26.8.1",
+    "esbuild": "0.28.0",
+    "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "cn.henghuacheng.local-helper",
+    "productName": "恒化成本地采集助手",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "app-dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "app-dist/renderer/**"
+    ],
+    "protocols": [
+      {
+        "name": "HCZ Local Helper",
+        "schemes": [
+          "hcz-helper"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "恒化成本地采集助手"
+    }
   }
 }
