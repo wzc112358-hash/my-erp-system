@@ -61,6 +61,24 @@ const outputConfigArg = () => {
   return `--config.directories.output=${relative && !relative.startsWith('..') ? relative : releaseDir}`;
 };
 
+const buildNsisWithWindowsNode = () => {
+  const distro = String(process.env.WSL_DISTRO_NAME || '').trim();
+  if (!distro || !commandExists('cmd.exe')) return false;
+  const uncRoot = `\\\\wsl.localhost\\${distro}${root.replace(/\//g, '\\')}`;
+  const command = [
+    `pushd ${uncRoot} &&`,
+    'C:\\Progra~1\\nodejs\\node.exe node_modules\\electron-builder\\cli.js',
+    '--win nsis --x64',
+    outputConfigArg(),
+  ].join(' ');
+  execFileSync('cmd.exe', ['/d', '/s', '/c', command], {
+    stdio: 'inherit',
+    cwd: root,
+    env: process.env,
+  });
+  return true;
+};
+
 const copyReplacing = (source, target) => {
   fs.rmSync(target, { force: true });
   fs.copyFileSync(source, target);
@@ -76,7 +94,13 @@ if (shouldBuildInstaller) {
     run('npx', ['electron-builder', '--win', 'nsis', '--x64', outputConfigArg()]);
     installerBuilt = true;
   } catch (error) {
-    console.warn(`Skipping NSIS installer after build failure: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`Native NSIS build failed: ${error instanceof Error ? error.message : String(error)}`);
+    try {
+      installerBuilt = buildNsisWithWindowsNode();
+    } catch (windowsError) {
+      console.warn(`Windows NSIS fallback failed: ${windowsError instanceof Error ? windowsError.message : String(windowsError)}`);
+    }
+    if (!installerBuilt) console.warn('Skipping NSIS installer; portable ZIP remains available.');
   }
 } else {
   console.warn('Skipping NSIS installer because HCZ_SKIP_NSIS=1.');

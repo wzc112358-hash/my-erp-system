@@ -43,7 +43,14 @@ test('local workbench exposes only the current product surface', async () => {
     const sites = await requestJson(server.url(), '/site-profiles');
     const removed = await requestJson(server.url(), '/schedules');
     assert.equal(health.body.helperVersion, '0.2.0');
-    assert.deepEqual(sites.body.profiles.map((site: any) => site.sourceName), ['国能E购', '易派克', '裕龙招投标网']);
+    assert.deepEqual(sites.body.profiles.map((site: any) => site.sourceName), [
+      '国能E购',
+      '易派克',
+      '裕龙招投标网',
+      '中国石油招标投标网',
+      '中化采购供应链平台',
+      '云梦泽智慧平台',
+    ]);
     assert.equal(removed.status, 404);
   } finally {
     await server.stop();
@@ -81,6 +88,25 @@ test('local workbench runs one browser collection path and returns a report', as
     assert.equal(report.body.status, 'has_matches');
     assert.equal(report.body.selectedCount, 1);
     assert.equal(runs.body.runs.length, 1);
+  } finally {
+    await server.stop();
+    await fs.rm(harness.rootDir, { recursive: true, force: true });
+  }
+});
+
+test('local workbench deletes one recent inspection record', async () => {
+  const harness = await testHarness();
+  const store = createTaskStore();
+  const task = store.createTask({ sourceName: '易派克' });
+  store.continueTask(task.id, { status: 'completed' });
+  const server = createLocalApiServer({ store, port: 0, agentHarness: harness.store });
+  await server.start();
+  try {
+    const deleted = await requestJson(server.url(), `/tasks/${task.id}`, { method: 'DELETE' });
+    const remaining = await requestJson(server.url(), '/tasks');
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.body.deleted, true);
+    assert.equal(remaining.body.tasks.length, 0);
   } finally {
     await server.stop();
     await fs.rm(harness.rootDir, { recursive: true, force: true });
@@ -151,6 +177,41 @@ test('local workbench stores and tests OpenAI-compatible LLM settings', async ()
     const tested = await requestJson(server.url(), '/settings/llm/test', { method: 'POST', body: '{}' });
     assert.equal(saved.body.hasApiKey, true);
     assert.equal(saved.body.apiKey, undefined);
+    assert.equal(tested.body.ok, true);
+  } finally {
+    await server.stop();
+    await fs.rm(harness.rootDir, { recursive: true, force: true });
+  }
+});
+
+test('local workbench stores and tests OCR settings without returning credentials', async () => {
+  const harness = await testHarness();
+  const store = createTaskStore();
+  const server = createLocalApiServer({
+    store,
+    port: 0,
+    agentHarness: harness.store,
+    testOCRConnection: async ({ config }) => ({
+      ok: Boolean(config?.baiduApiKey && config?.baiduSecretKey),
+      provider: config?.provider || 'disabled',
+      message: '百度 OCR 配置可用',
+    }),
+  });
+  await server.start();
+  try {
+    const saved = await requestJson(server.url(), '/settings/ocr', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: true,
+        provider: 'baidu',
+        baiduApiKey: 'api-secret',
+        baiduSecretKey: 'key-secret',
+      }),
+    });
+    const tested = await requestJson(server.url(), '/settings/ocr/test', { method: 'POST', body: '{}' });
+    assert.equal(saved.body.hasBaiduCredentials, true);
+    assert.equal(saved.body.baiduApiKey, undefined);
+    assert.equal(saved.body.baiduSecretKey, undefined);
     assert.equal(tested.body.ok, true);
   } finally {
     await server.stop();

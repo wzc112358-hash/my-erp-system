@@ -34,6 +34,8 @@ const ATTACHMENT_TEXT_PATTERN = /附件|下载|标书|采购文件|招标文件|
 const NOTICE_NAV_TEXT_PATTERN = /^(招标公示\/公告|非招标公示\/公告|招标公告|投标邀请书|资格预审公告|外部招标机构公告|非招标公告|变更公告|候选人公示|中标公告|中标结果公告|终止公告|招标计划|招标文件公示|邀请招标事项公示|可不招标事项公示|谈判采购|竞价采购|询比采购|直接采购|拟成交结果公示|成交结果公告|公告信息|新闻动态|更多|查看全部)$/;
 const NOTICE_NAV_TOKEN_PATTERN = /(招标公示\/公告|非招标公示\/公告|招标公告|投标邀请书|资格预审公告|外部招标机构公告|非招标公告|变更公告|候选人公示|中标公告|中标结果公告|终止公告|招标计划|招标文件公示|邀请招标事项公示|可不招标事项公示|谈判采购|竞价采购|询比采购|直接采购|拟成交结果公示|成交结果公告|公告信息|新闻动态|更多|查看全部)/g;
 const PORTAL_CONTROL_TEXT_PATTERN = /^(全部)?招标人招标代理机构$|^搜索$|^搜标题$|^加载中\.{0,3}$|TenderSeek|全网标讯智能搜索引擎|招标计划资格预审公告招标公告|谈判采购竞价采购询比采购|培训通知|投标人培训|线上直播|操作实务|实战技能专项培训|系统发版|域名变更|平台升级|平台通知|新闻通知|操作指南|中国石油中国招标投标公共服务平台|中国招标投标公共服务平台|中国石油采购与招标网|全国企业采购交易|中国招标投标协会|国有企业采购供应信用管理平台|国家企业信用信息公示系统|采购与招标相关网站|典型招标文件|京ICP备|版权所有|法律声明|联系我们|网站使用帮助|客服咨询|客户服务|政策法规|操作说明|操作手册|常见问题|下载专区|用户手册|培训课件|工具下载|常用网站|集团公司网站|登录信息定制|开启更多服务|发布工具|发布媒介|问题清单|搜索引擎|增值服务|专栏首页/;
+const NOTICE_FIELD_LABEL_PATTERN = /^(?:类型|公告类型|公告结束时间|发布时间|发布日期|开标时间|项目单位|招标编号|计划编号|招标人|采购人|截止时间|报价截止)[:：]/;
+const NOTICE_CATEGORY_LABEL_PATTERN = /^(?:公开招标公告\/资格预审公告|邀请招标事项公示|可不招事项公示|中标候选人公示\/评标结果公示|中标结果公告)$/;
 const ARTIFACT_TEXT_LIMIT = 120_000;
 const NETWORK_RESPONSE_LIMIT = 20;
 const NETWORK_TITLE_FIELDS = [
@@ -46,10 +48,19 @@ const NETWORK_TITLE_FIELDS = [
   'bidName',
   'name',
 ];
-const NETWORK_URL_FIELDS = ['url', 'link', 'href', 'noticeUrl', 'detailUrl'];
-const NETWORK_DATE_FIELDS = ['published_at', 'publishDate', 'publishTime', 'noticeSendTime', 'createTime', 'releaseTime'];
-const NETWORK_DEADLINE_FIELDS = ['deadline_at', 'deadline', 'quotDeadline', 'endTime', 'bidEndTime'];
-const NETWORK_BUYER_FIELDS = ['buyer_name', 'buyerName', 'purchaseUnit', 'purchaser', 'tenderer', 'publishArea'];
+const NETWORK_URL_FIELDS = [
+  'url', 'link', 'href', 'noticeUrl', 'detailUrl', 'pdfUrl',
+  'preSupFileId', 'aftSupFileId', 'systemSourceUrl',
+];
+const NETWORK_DATE_FIELDS = [
+  'published_at', 'publishDate', 'publishTime', 'publishTimeStr', 'noticeSendTime',
+  'createTime', 'createTimeStr', 'releaseTime', 'startTime', 'startTimeStr',
+];
+const NETWORK_DEADLINE_FIELDS = ['deadline_at', 'deadline', 'quotDeadline', 'endTime', 'endTimeStr', 'bidEndTime'];
+const NETWORK_BUYER_FIELDS = [
+  'buyer_name', 'buyerName', 'purchaseUnit', 'purchaseCompanyName', 'buName',
+  'purchaser', 'tenderer', 'publishArea',
+];
 
 const visibleLines = (text = '') => text
   .split(/\n+/)
@@ -63,6 +74,9 @@ const looksLikeNoticeTitle = (line: string, profile: SiteHarnessProfile) => {
   const noisePattern = profile.noisePattern;
   const compactLine = line.replace(/\s+/g, '');
   if (NOTICE_NAV_TEXT_PATTERN.test(compactLine)) return false;
+  if (compactLine === '全部招标采购非招标采购' ||
+    NOTICE_FIELD_LABEL_PATTERN.test(line) ||
+    NOTICE_CATEGORY_LABEL_PATTERN.test(line)) return false;
   if (PORTAL_CONTROL_TEXT_PATTERN.test(compactLine) || PORTAL_CONTROL_TEXT_PATTERN.test(line)) return false;
   if (!compactLine.replace(NOTICE_NAV_TOKEN_PATTERN, '')) return false;
   if (compactLine.length < 8 && !DATE_PATTERN.test(line)) return false;
@@ -77,6 +91,31 @@ const hasNoticeContent = (
   (observation.links || []).some((link) => looksLikeNoticeTitle(link.title || link.text || link.href, profile)) ||
   networkCandidatesFor(observation, profile).length > 0;
 
+const isBlockingNetworkChallenge = (
+  response: NonNullable<BrowserObservation['networkResponses']>[number],
+  pageUrl: string,
+) => {
+  if (!response.challenge) return false;
+  if (response.responseHeaders?.['punish-type']) return true;
+  let pageHost = '';
+  let responseHost = '';
+  try {
+    pageHost = new URL(pageUrl).hostname;
+    responseHost = new URL(response.url).hostname;
+  } catch {
+    return /sigchl|punish-type|安全验证|访问验证|访问过于频繁/i.test(response.bodySnippet || '');
+  }
+  const sameSite = pageHost === responseHost ||
+    pageHost.endsWith(`.${responseHost}`) ||
+    responseHost.endsWith(`.${pageHost}`);
+  if (sameSite) return true;
+  // Third-party captcha SDK config and telemetry are present during successful
+  // visits. They only block collection when they return an actual HTML
+  // challenge document, not merely because the provider name contains captcha.
+  return /text\/html/i.test(response.contentType || '') &&
+    /sigchl|punish-type|安全验证|访问验证|访问过于频繁/i.test(response.bodySnippet || '');
+};
+
 export const analyzeObservation = (
   observation: BrowserObservation,
   profile: SiteHarnessProfile,
@@ -86,7 +125,8 @@ export const analyzeObservation = (
   const visibleText = observation.visibleText || '';
   const authText = `${observation.title}\n${visibleText}`;
   const pageText = `${authText}\n${observation.url}`;
-  const networkChallenge = (observation.networkResponses || []).find((response) => response.challenge);
+  const networkChallenge = (observation.networkResponses || [])
+    .find((response) => isBlockingNetworkChallenge(response, observation.url));
   if (networkChallenge) {
     return {
       status: 'request_human',
@@ -118,14 +158,9 @@ export const analyzeObservation = (
 };
 
 const normalizeDate = (value = '') => {
-  const raw = value
-    .replace(/[年月/.]/g, '-')
-    .replace(/日/g, '')
-    .replace(/--+/g, '-')
-    .replace(/-$/g, '');
-  if (!raw) return '';
-  const [year, month, day] = raw.split('-');
-  if (!year || !month || !day) return '';
+  const match = String(value || '').match(/(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})/);
+  if (!match) return '';
+  const [, year, month, day] = match;
   return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 };
 
@@ -185,12 +220,53 @@ const linkCandidatesFor = (
   })
   .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
 
+const listItemCandidatesFor = (
+  observation: BrowserObservation,
+  profile: SiteHarnessProfile,
+) => (observation.listItems || [])
+  .map((item) => {
+    const title = String(item.title || '').replace(/\s+/g, ' ').trim();
+    if (!looksLikeNoticeTitle(title, profile)) return null;
+    if (profile.noisePattern?.test(title + ' ' + (item.rawText || ''))) return null;
+    const buyerName = item.buyerName || (profile.buyerMatch
+      ? (profile.buyerMatch.test(`${title} ${item.rawText || ''}`) ? profile.buyerName || '' : '')
+      : (profile.buyerName || ''));
+    return {
+      title: title.slice(0, 220),
+      url: item.url ? normalizeUrl(item.url, observation.url) : observation.url,
+      published_at: normalizeDate(item.publishedAt || ''),
+      deadline_at: normalizeDate(item.deadlineAt || ''),
+      buyer_name: buyerName,
+      raw_text: String(item.rawText || title).trim().slice(0, 3000),
+      attachments: attachmentLinksFor(observation),
+      browser_ref: item.elementId || undefined,
+      search_query: observation.searchQuery || undefined,
+      notice_type: item.noticeType || undefined,
+    };
+  })
+  .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+
 const fieldValue = (row: Record<string, unknown>, fields: string[]) => {
   for (const field of fields) {
     const value = row[field];
     if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
   }
   return '';
+};
+
+const rowAttachmentUrls = (row: Record<string, unknown>, baseUrl: string) => {
+  const direct = [
+    row.pdfUrl, row.preSupFileId, row.aftSupFileId, row.preCaFileid, row.aftCaFileid,
+  ];
+  const nested = Array.isArray(row.attachmentsDTOs)
+    ? row.attachmentsDTOs.flatMap((item) => item && typeof item === 'object'
+      ? [item.url, item.fileUrl, item.downloadUrl, item.filePath]
+      : [])
+    : [];
+  return [...direct, ...nested]
+    .map((value) => normalizeUrl(String(value || ''), baseUrl))
+    .filter((value) => /^https?:/i.test(value))
+    .filter((value, index, all) => all.indexOf(value) === index);
 };
 
 const walkJsonRows = (value: unknown, rows: Record<string, unknown>[] = []) => {
@@ -223,7 +299,7 @@ const networkCandidatesFor = (
   observation: BrowserObservation,
   profile: SiteHarnessProfile,
 ) => {
-  const attachments = attachmentLinksFor(observation);
+  const pageAttachments = attachmentLinksFor(observation);
   return (observation.networkResponses || [])
     .flatMap((response) => parseNetworkRows(response.bodySnippet || '').map((row) => ({ row, response })))
     .map(({ row, response }) => {
@@ -237,14 +313,16 @@ const networkCandidatesFor = (
           ? (profile.buyerMatch.test(title) ? profile.buyerName || '' : '')
           : (profile.buyerName || '')
       );
+      const rowAttachments = rowAttachmentUrls(row, response.url || observation.url);
       return {
         title: title.slice(0, 180),
         url,
         published_at: publishedAt,
         deadline_at: deadlineAt,
         buyer_name: buyerName,
-        raw_text: JSON.stringify(row).slice(0, 3000),
-        attachments,
+        raw_text: JSON.stringify(row).slice(0, 5000),
+        attachments: [...new Set([...rowAttachments, ...pageAttachments])],
+        notice_type: fieldValue(row, ['noticeTypeName', 'plateTypeName', 'purchaseMethodDesc']) || undefined,
       };
     })
     .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
@@ -322,7 +400,17 @@ export const extractCandidateBundle = (
       };
     })
     .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
-  const candidates = [...networkCandidatesFor(observation, profile), ...linkCandidatesFor(observation, profile), ...textCandidates]
+  const listCandidates = listItemCandidatesFor(observation, profile);
+  const hasStructuredList = (observation.listItems || []).length > 0;
+  const networkCandidates = hasStructuredList ? [] : networkCandidatesFor(observation, profile);
+  const fallbackCandidates = hasStructuredList || networkCandidates.length > 0
+    ? []
+    : [...linkCandidatesFor(observation, profile), ...textCandidates];
+  const candidates = [
+    ...listCandidates,
+    ...networkCandidates,
+    ...fallbackCandidates,
+  ]
     .filter((candidate, index, all) => {
       const key = `${candidate.url || ''}|${candidate.title}`;
       const titleKey = candidateIdentityTitle(candidate.title);

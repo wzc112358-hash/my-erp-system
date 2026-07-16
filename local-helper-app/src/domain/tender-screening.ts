@@ -48,6 +48,7 @@ export type NoticeDocumentSummary = {
   filePath?: string;
   textSnippet?: string;
   warning?: string;
+  ocrProvider?: 'baidu' | 'paddle';
 };
 
 export type ScreenedNotice = {

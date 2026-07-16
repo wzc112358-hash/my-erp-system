@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { LocalLLMConfig } from '../llm/client.ts';
+import type { LocalOCRConfig } from '../browser/ocr.ts';
 import type { CloudPairing, TaskStoreConfigStore } from './task-store.ts';
 
 export type LocalHelperConfig = {
   cloudPairing?: CloudPairing;
   llm?: LocalLLMConfig;
+  ocr?: LocalOCRConfig;
 };
 
 export type LocalConfigStore = TaskStoreConfigStore;
@@ -42,6 +44,15 @@ export const createJsonFileConfigStore = (filePath: string): LocalConfigStore =>
   clearLLMConfig() {
     const config = readJson(filePath);
     delete config.llm;
+    writeJson(filePath, config);
+  },
+  readOCRConfig: () => readJson(filePath).ocr || null,
+  writeOCRConfig(ocr) {
+    writeJson(filePath, { ...readJson(filePath), ocr });
+  },
+  clearOCRConfig() {
+    const config = readJson(filePath);
+    delete config.ocr;
     writeJson(filePath, config);
   },
 });

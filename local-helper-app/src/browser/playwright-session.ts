@@ -2,11 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type {
+  BrowserAction,
+  BrowserActionResult,
+  BrowserDocumentObservation,
   BrowserLink,
   BrowserNetworkResponse,
   BrowserObservation,
   BrowserSession,
 } from './types.ts';
+import {
+  CLICK_FIRST_NOTICE_SCRIPT,
+  NEXT_PAGE_SCRIPT,
+  PAGE_OBSERVATION_SCRIPT,
+  READ_DOCUMENT_SCRIPT,
+  SEARCH_SCRIPT,
+} from './electron-cdp-session.ts';
 
 type PageLike = {
   goto?: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
@@ -14,6 +24,8 @@ type PageLike = {
   title: () => Promise<string>;
   url: () => string;
   content?: () => Promise<string>;
+  evaluate?: <T>(expression: string) => Promise<T>;
+  goBack?: (options?: Record<string, unknown>) => Promise<unknown>;
   locator: (selector: string) => {
     innerText: (options?: Record<string, unknown>) => Promise<string>;
     evaluateAll?: (fn: (elements: Element[]) => unknown) => Promise<unknown>;
@@ -220,17 +232,45 @@ export const createPlaywrightSession = ({
   };
 
   const observePage = async (target: PageLike, screenshotPath = ''): Promise<BrowserObservation> => ({
-    title: await target.title().catch(() => ''),
-    url: target.url(),
-    visibleText: await target.locator('body').innerText({ timeout: 3_000 }).catch(() => ''),
+    ...await (async () => {
+      const evaluated = target.evaluate
+        ? await target.evaluate<BrowserObservation>(PAGE_OBSERVATION_SCRIPT).catch(() => undefined)
+        : undefined;
+      if (evaluated?.url) return evaluated;
+      return {
+        title: await target.title().catch(() => ''),
+        url: target.url(),
+        visibleText: await target.locator('body').innerText({ timeout: 3_000 }).catch(() => ''),
+        links: await collectLinks(target).catch(() => []),
+      };
+    })(),
     domSnapshot: captureDomSnapshot
       ? trim(await target.content?.().catch(() => '') || '', MAX_DOM_SNAPSHOT)
       : '',
-    links: await collectLinks(target).catch(() => []),
     networkResponses: [...networkResponses],
     downloadedFiles: [...downloadedFiles],
     screenshotPath,
   });
+
+  const finishAction = async (
+    target: PageLike,
+    performed: boolean,
+    detail = '',
+    delayMs = settleTimeoutMs,
+  ): Promise<BrowserActionResult> => {
+    if (delayMs > 0) await target.waitForTimeout?.(Math.min(delayMs, 5_000)).catch(() => undefined);
+    const pages = (await context()).pages();
+    const newest = [...pages].reverse().find((candidate) => candidate.url() && candidate.url() !== 'about:blank');
+    if (newest) {
+      activePage = newest;
+      wirePage(newest);
+    }
+    return {
+      performed,
+      detail,
+      observation: await observePage(activePage || target),
+    };
+  };
 
   return {
     engine: 'playwright',
@@ -244,6 +284,42 @@ export const createPlaywrightSession = ({
       const target = await page();
       if (settleTimeoutMs > 0) await target.waitForTimeout?.(Math.min(350, settleTimeoutMs)).catch(() => undefined);
       return observePage(target);
+    },
+    async act(action: BrowserAction) {
+      const target = await page();
+      if (action.type === 'navigate') {
+        await target.goto?.(action.url, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs });
+        return finishAction(target, true, action.url);
+      }
+      if (action.type === 'back') {
+        const result = target.goBack
+          ? await target.goBack({ waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs }).catch(() => null)
+          : null;
+        return finishAction(target, Boolean(result), result ? 'back' : 'no history');
+      }
+      if (action.type === 'wait') {
+        return finishAction(target, true, 'wait', Math.max(0, Math.min(action.milliseconds, 5_000)));
+      }
+      if (!target.evaluate) return finishAction(target, false, 'page evaluate unavailable');
+      if (action.type === 'read_document') {
+        const document = await target.evaluate<BrowserDocumentObservation>(READ_DOCUMENT_SCRIPT).catch(() => undefined);
+        const result = await finishAction(target, Boolean(document), document ? 'document read' : 'document unavailable', 0);
+        return document ? { ...result, observation: { ...result.observation, document } } : result;
+      }
+      const script = action.type === 'click'
+        ? `(() => {
+          const target = document.querySelector('[data-hcz-agent-id="${action.elementId.replace(/[^a-zA-Z0-9_-]/g, '')}"]');
+          if (!target) return { performed: false, detail: 'element missing' };
+          target.click();
+          return { performed: true, detail: String(target.innerText || target.textContent || '').trim() };
+        })()`
+        : action.type === 'click_first_notice'
+          ? CLICK_FIRST_NOTICE_SCRIPT
+          : action.type === 'search'
+            ? SEARCH_SCRIPT(action.query)
+            : NEXT_PAGE_SCRIPT;
+      const executed = await target.evaluate<{ performed?: boolean; detail?: string }>(script).catch(() => undefined);
+      return finishAction(target, Boolean(executed?.performed), executed?.detail || '');
     },
     async screenshot() {
       const target = await page();

@@ -25,8 +25,15 @@ test('JSON config store preserves cloud pairing while updating LLM settings', ()
     apiKey: 'secret',
     model: 'deepseek-v4-pro',
   });
+  store.writeOCRConfig({
+    enabled: true,
+    provider: 'baidu',
+    baiduApiKey: 'baidu-api',
+    baiduSecretKey: 'baidu-secret',
+  });
   assert.equal(store.readCloudPairing()?.deviceId, 'device-1');
   assert.equal(store.readLLMConfig()?.model, 'deepseek-v4-pro');
+  assert.equal(store.readOCRConfig()?.provider, 'baidu');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -37,5 +44,6 @@ test('JSON config store tolerates missing and broken files', () => {
   assert.equal(store.readCloudPairing(), null);
   fs.writeFileSync(file, '{broken', 'utf8');
   assert.equal(store.readLLMConfig(), null);
+  assert.equal(store.readOCRConfig(), null);
   fs.rmSync(dir, { recursive: true, force: true });
 });

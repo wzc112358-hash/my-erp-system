@@ -11,6 +11,7 @@ let selectedTaskId = params.get('taskId') || '';
 let busy = false;
 let cloudPaired = false;
 let llmSettings = {};
+let ocrSettings = {};
 
 const $ = (id) => document.getElementById(id);
 const siteLauncher = $('siteLauncher');
@@ -25,6 +26,17 @@ const llmModel = $('llmModel');
 const llmApiKey = $('llmApiKey');
 const llmState = $('llmState');
 const testLLM = $('testLLM');
+const ocrSettingsForm = $('ocrSettingsForm');
+const ocrProvider = $('ocrProvider');
+const baiduOCRFields = $('baiduOCRFields');
+const paddleOCRFields = $('paddleOCRFields');
+const baiduApiKey = $('baiduApiKey');
+const baiduSecretKey = $('baiduSecretKey');
+const paddleCommand = $('paddleCommand');
+const paddleConfigPath = $('paddleConfigPath');
+const paddleDevice = $('paddleDevice');
+const ocrState = $('ocrState');
+const testOCR = $('testOCR');
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -114,7 +126,14 @@ const copyText = async (text) => {
 };
 
 const renderProfiles = () => {
-  const pilotOrder = ['国能E购', '易派克', '裕龙招投标网'];
+  const pilotOrder = [
+    '国能E购',
+    '易派克',
+    '裕龙招投标网',
+    '中国石油招标投标网',
+    '中化采购供应链平台',
+    '云梦泽智慧平台',
+  ];
   const pilotProfiles = profiles
     .filter((profile) => profile.pilot || pilotOrder.includes(profile.sourceName))
     .sort((left, right) => pilotOrder.indexOf(left.sourceName) - pilotOrder.indexOf(right.sourceName));
@@ -136,11 +155,14 @@ const renderTaskList = () => {
       ? `${report.selectedCount || 0} 条相关信息`
       : reportStatusLabel(report.status);
     return `
-      <button class="task-row${task.id === selectedTaskId ? ' selected' : ''}" type="button" data-task-id="${escapeHtml(task.id)}">
-        <strong>${escapeHtml(task.sourceName || '未命名站点')}</strong>
-        <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
-        <small>${escapeHtml(result)}，${escapeHtml(formatTime(task.updatedAt))}</small>
-      </button>
+      <div class="task-entry">
+        <button class="task-row${task.id === selectedTaskId ? ' selected' : ''}" type="button" data-task-id="${escapeHtml(task.id)}">
+          <strong>${escapeHtml(task.sourceName || '未命名站点')}</strong>
+          <span class="status ${escapeHtml(task.status)}">${escapeHtml(statusLabel(task.status))}</span>
+          <small>${escapeHtml(result)}，${escapeHtml(formatTime(task.updatedAt))}</small>
+        </button>
+        <button class="task-delete" type="button" data-delete-task-id="${escapeHtml(task.id)}" aria-label="删除 ${escapeHtml(task.sourceName || '巡检')} 记录"${task.status === 'running' ? ' disabled' : ''}>删除</button>
+      </div>
     `;
   }).join('');
 };
@@ -152,6 +174,7 @@ const renderResultItems = (items = []) => {
       <strong>${escapeHtml(item.title)}</strong>
       <div class="result-meta">${escapeHtml((item.matchedProducts || []).join('、') || '产品待确认')}，截止 ${escapeHtml(item.deadlineAt || '待确认')}</div>
       <div class="result-meta">${escapeHtml(item.judgment || '建议人工确认')}</div>
+      ${item.detailReadMethod ? `<div class="result-meta">详情读取：${escapeHtml(item.detailReadMethod)}</div>` : ''}
       ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">查看原公告</a>` : ''}
     </li>
   `).join('')}</ul>`;
@@ -172,7 +195,7 @@ const renderDetail = () => {
   const task = selectedTask();
   if (!task) {
     detail.className = 'empty-state';
-    detail.innerHTML = '<h1>从左侧开始一次巡检</h1><p>选择国能 E 购、易派客或裕龙。系统会自动采集并只保留值得关注的信息。</p>';
+    detail.innerHTML = '<h1>从左侧开始一次巡检</h1><p>选择负责站点，系统会自动查询、读取相关详情，并只保留值得关注的信息。</p>';
     return;
   }
 
@@ -253,12 +276,33 @@ const renderLLMSettings = () => {
   llmState.className = `settings-state${llmSettings.hasApiKey ? ' ok' : ''}`;
 };
 
+const renderOCRSettings = () => {
+  const provider = ocrSettings.provider || 'disabled';
+  ocrProvider.value = provider;
+  baiduOCRFields.hidden = provider !== 'baidu';
+  paddleOCRFields.hidden = provider !== 'paddle';
+  paddleCommand.value = ocrSettings.paddleCommand || '';
+  paddleConfigPath.value = ocrSettings.paddleConfigPath || '';
+  paddleDevice.value = ocrSettings.paddleDevice || '';
+  const configured = provider === 'baidu'
+    ? ocrSettings.hasBaiduCredentials
+    : provider === 'paddle'
+      ? Boolean(ocrSettings.paddleCommand)
+      : false;
+  ocrState.textContent = provider === 'disabled'
+    ? 'OCR 已关闭'
+    : configured
+      ? `已配置 ${provider === 'baidu' ? '百度 OCR' : 'PaddleOCR'}`
+      : '请完成 OCR 配置';
+  ocrState.className = `settings-state${configured ? ' ok' : ''}`;
+};
+
 const render = () => {
   renderProfiles();
   renderTaskList();
   renderDetail();
   siteSelect.disabled = busy;
-  for (const button of document.querySelectorAll('.nav-tab, #siteLauncher button, #llmSettingsForm button')) {
+  for (const button of document.querySelectorAll('.nav-tab, #siteLauncher button, #llmSettingsForm button, #ocrSettingsForm button')) {
     button.disabled = busy;
   }
   for (const button of document.querySelectorAll('button')) {
@@ -268,19 +312,22 @@ const render = () => {
 
 const refresh = async () => {
   try {
-    const [health, profileBody, taskBody, settings] = await Promise.all([
+    const [health, profileBody, taskBody, settings, ocr] = await Promise.all([
       requestJson('/health'),
       requestJson('/site-profiles'),
       requestJson('/tasks'),
       requestJson('/settings/llm'),
+      requestJson('/settings/ocr'),
     ]);
     cloudPaired = Boolean(health.cloudPaired);
     connectionState.textContent = health.cloudPaired ? '本机服务正常，云端上传已连接' : '本机服务正常，云端上传未配置';
     profiles = profileBody.profiles || [];
     tasks = (taskBody.tasks || []).sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
     llmSettings = settings || {};
+    ocrSettings = ocr || {};
     if (!selectedTaskId && tasks[0]) selectedTaskId = tasks[0].id;
     renderLLMSettings();
+    renderOCRSettings();
     render();
   } catch (error) {
     connectionState.textContent = '无法连接本地服务';
@@ -346,7 +393,26 @@ siteLauncher.addEventListener('submit', async (event) => {
   }
 });
 
-taskList.addEventListener('click', (event) => {
+taskList.addEventListener('click', async (event) => {
+  const deleteButton = event.target.closest('[data-delete-task-id]');
+  if (deleteButton && !deleteButton.disabled && !busy) {
+    const id = deleteButton.dataset.deleteTaskId || '';
+    const task = tasks.find((item) => item.id === id);
+    if (!task || !window.confirm(`删除“${task.sourceName}”这条巡检记录？\n本操作不会删除已经上传到云端的数据。`)) return;
+    setBusy(true);
+    try {
+      await requestJson(`/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (selectedTaskId === id) selectedTaskId = '';
+      await refresh();
+      showNotice('巡检记录已删除。');
+    } catch (error) {
+      showNotice(`删除失败：${error.message || error}`, true);
+    } finally {
+      setBusy(false);
+      render();
+    }
+    return;
+  }
   const row = event.target.closest('[data-task-id]');
   if (!row) return;
   selectedTaskId = row.dataset.taskId || '';
@@ -402,6 +468,64 @@ testLLM.addEventListener('click', async () => {
     llmState.className = 'settings-state bad';
     llmState.textContent = `连接失败：${error.message || error}`;
     showNotice(llmState.textContent, true);
+  } finally {
+    setBusy(false);
+    render();
+  }
+});
+
+ocrProvider.addEventListener('change', () => {
+  ocrSettings = { ...ocrSettings, provider: ocrProvider.value };
+  renderOCRSettings();
+});
+
+const ocrPayload = () => {
+  const payload = {
+    enabled: ocrProvider.value !== 'disabled',
+    provider: ocrProvider.value,
+    paddleCommand: paddleCommand.value.trim(),
+    paddleConfigPath: paddleConfigPath.value.trim(),
+    paddleDevice: paddleDevice.value.trim(),
+  };
+  if (baiduApiKey.value.trim()) payload.baiduApiKey = baiduApiKey.value.trim();
+  if (baiduSecretKey.value.trim()) payload.baiduSecretKey = baiduSecretKey.value.trim();
+  return payload;
+};
+
+ocrSettingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (busy) return;
+  setBusy(true);
+  try {
+    ocrSettings = await requestJson('/settings/ocr', { method: 'POST', body: JSON.stringify(ocrPayload()) });
+    baiduApiKey.value = '';
+    baiduSecretKey.value = '';
+    renderOCRSettings();
+    showNotice('OCR 配置已保存。');
+  } catch (error) {
+    showNotice(`保存失败：${error.message || error}`, true);
+  } finally {
+    setBusy(false);
+    render();
+  }
+});
+
+testOCR.addEventListener('click', async () => {
+  if (busy) return;
+  setBusy(true);
+  ocrState.className = 'settings-state testing';
+  ocrState.textContent = '正在测试连接';
+  try {
+    const result = await requestJson('/settings/ocr/test', {
+      method: 'POST', body: JSON.stringify(ocrPayload()), timeoutMs: 35_000,
+    });
+    ocrState.className = `settings-state ${result.ok ? 'ok' : 'bad'}`;
+    ocrState.textContent = result.message || (result.ok ? '连接正常' : '连接失败');
+    showNotice(ocrState.textContent, !result.ok);
+  } catch (error) {
+    ocrState.className = 'settings-state bad';
+    ocrState.textContent = `连接失败：${error.message || error}`;
+    showNotice(ocrState.textContent, true);
   } finally {
     setBusy(false);
     render();

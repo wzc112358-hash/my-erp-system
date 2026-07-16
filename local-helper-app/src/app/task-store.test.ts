@@ -6,6 +6,7 @@ import { createTaskStore, type CloudPairing } from './task-store.ts';
 const memoryConfig = () => {
   let pairing: CloudPairing | null = null;
   let llm: any = null;
+  let ocr: any = null;
   return {
     readCloudPairing: () => pairing,
     writeCloudPairing: (value: CloudPairing) => { pairing = value; },
@@ -13,6 +14,9 @@ const memoryConfig = () => {
     readLLMConfig: () => llm,
     writeLLMConfig: (value: any) => { llm = value; },
     clearLLMConfig: () => { llm = null; },
+    readOCRConfig: () => ocr,
+    writeOCRConfig: (value: any) => { ocr = value; },
+    clearOCRConfig: () => { ocr = null; },
   };
 };
 
@@ -44,6 +48,18 @@ test('task store owns the complete collection lifecycle', () => {
   assert.equal(store.listTasks()[0]?.id, created.id);
 });
 
+test('task store deletes a finished inspection but protects an active run', () => {
+  const store = createTaskStore();
+  const finished = store.createTask({ sourceName: '裕龙招投标网' });
+  store.continueTask(finished.id, { status: 'completed' });
+  assert.equal(store.deleteTask(finished.id).id, finished.id);
+  assert.equal(store.listTasks().length, 0);
+
+  const running = store.createTask({ sourceName: '易派克' });
+  store.startTask(running.id);
+  assert.throws(() => store.deleteTask(running.id), /正在采集/);
+});
+
 test('task store persists cloud pairing and hides the LLM key from health', () => {
   const configStore = memoryConfig();
   const store = createTaskStore({ configStore, helperVersion: '0.2.0' });
@@ -65,4 +81,23 @@ test('task store persists cloud pairing and hides the LLM key from health', () =
   assert.equal(publicConfig.hasApiKey, true);
   assert.equal('apiKey' in publicConfig, false);
   assert.equal(privateConfig?.apiKey, 'secret');
+});
+
+test('task store hides Baidu OCR credentials from public settings and health', () => {
+  const store = createTaskStore({ configStore: memoryConfig() });
+  store.setOCRConfig({
+    enabled: true,
+    provider: 'baidu',
+    baiduApiKey: 'baidu-api-secret',
+    baiduSecretKey: 'baidu-key-secret',
+  });
+
+  const publicConfig = store.getOCRConfig() as Record<string, unknown>;
+  const privateConfig = store.getOCRConfig({ includeSecrets: true });
+  assert.equal(publicConfig.provider, 'baidu');
+  assert.equal(publicConfig.hasBaiduCredentials, true);
+  assert.equal('baiduApiKey' in publicConfig, false);
+  assert.equal('baiduSecretKey' in publicConfig, false);
+  assert.equal((privateConfig as { baiduApiKey?: string } | null)?.baiduApiKey, 'baidu-api-secret');
+  assert.equal(store.health().ocr.hasBaiduCredentials, true);
 });

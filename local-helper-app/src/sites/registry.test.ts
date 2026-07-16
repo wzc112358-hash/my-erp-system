@@ -10,8 +10,11 @@ import {
   sitePromptFor,
 } from './registry.ts';
 
-test('registry contains only the three current pilot sites', () => {
-  assert.deepEqual(PILOT_SITE_NAMES, ['国能E购', '易派克', '裕龙招投标网']);
+test('registry contains the three stable and three next-stage sites', () => {
+  assert.deepEqual(PILOT_SITE_NAMES, [
+    '国能E购', '易派克', '裕龙招投标网',
+    '中国石油招标投标网', '中化采购供应链平台', '云梦泽智慧平台',
+  ]);
 });
 
 test('registry selects the right collection mode and browser engine', () => {
@@ -19,6 +22,9 @@ test('registry selects the right collection mode and browser engine', () => {
   assert.equal(definitionFor('易派克').collectionMode, 'public-feed');
   assert.equal(definitionFor('裕龙招投标网').collectionMode, 'browser-agent');
   assert.equal(definitionFor('裕龙招投标网').browserEngine, 'electron-cdp');
+  assert.equal(definitionFor('中国石油招标投标网').browserJourney?.strategy, 'keyword');
+  assert.equal(definitionFor('中化采购供应链平台').browserJourney?.strategy, 'latest');
+  assert.equal(definitionFor('云梦泽智慧平台').browserJourney?.strategy, 'keyword');
 });
 
 test('registry centralizes task defaults and the LLM site prompt', () => {

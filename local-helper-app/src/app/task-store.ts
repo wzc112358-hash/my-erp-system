@@ -7,6 +7,7 @@ import type {
 import type { ScreenedNotice, ProductTerm } from '../domain/tender-screening.ts';
 import { loadProductTerms } from '../domain/tender-screening.ts';
 import type { LocalLLMConfig } from '../llm/client.ts';
+import type { LocalOCRConfig, OCRProvider } from '../browser/ocr.ts';
 import {
   actionStepsForSourceName,
   entryUrlForSourceName,
@@ -59,6 +60,9 @@ export type TaskStoreConfigStore = {
   readLLMConfig(): LocalLLMConfig | null;
   writeLLMConfig(config: LocalLLMConfig): void;
   clearLLMConfig(): void;
+  readOCRConfig(): LocalOCRConfig | null;
+  writeOCRConfig(config: LocalOCRConfig): void;
+  clearOCRConfig(): void;
 };
 
 export const createTaskStore = ({
@@ -72,6 +76,7 @@ export const createTaskStore = ({
 } = {}) => {
   let cloudPairing = configStore?.readCloudPairing() || null;
   let llmConfig = configStore?.readLLMConfig() || null;
+  let ocrConfig = configStore?.readOCRConfig() || null;
   const tasks = new Map<string, HelperTask>();
 
   const timestamp = () => now().toISOString();
@@ -92,6 +97,15 @@ export const createTaskStore = ({
     hasApiKey: Boolean(llmConfig?.apiKey),
     updatedAt: llmConfig?.updatedAt || '',
   });
+  const publicOCRConfig = () => ({
+    enabled: ocrConfig?.enabled !== false && Boolean(ocrConfig) && ocrConfig?.provider !== 'disabled',
+    provider: ocrConfig?.provider || 'disabled',
+    hasBaiduCredentials: Boolean(ocrConfig?.baiduApiKey && ocrConfig?.baiduSecretKey),
+    paddleCommand: ocrConfig?.paddleCommand || '',
+    paddleConfigPath: ocrConfig?.paddleConfigPath || '',
+    paddleDevice: ocrConfig?.paddleDevice || '',
+    updatedAt: ocrConfig?.updatedAt || '',
+  });
 
   return {
     health() {
@@ -104,6 +118,7 @@ export const createTaskStore = ({
         cloudOwnerName: cloudPairing?.ownerName || '',
         cloudDeviceName: cloudPairing?.deviceName || '',
         llm: publicLLMConfig(),
+        ocr: publicOCRConfig(),
         taskCount: tasks.size,
       };
     },
@@ -154,6 +169,34 @@ export const createTaskStore = ({
       return publicLLMConfig();
     },
 
+    getOCRConfig({ includeSecrets = false }: { includeSecrets?: boolean } = {}) {
+      return includeSecrets ? ocrConfig : publicOCRConfig();
+    },
+
+    setOCRConfig(input: LocalOCRConfig = {}) {
+      const requestedProvider = String(input.provider || ocrConfig?.provider || 'disabled');
+      const provider: OCRProvider = ['disabled', 'baidu', 'paddle'].includes(requestedProvider)
+        ? requestedProvider as OCRProvider
+        : 'disabled';
+      const next: LocalOCRConfig = {
+        enabled: input.enabled !== false && provider !== 'disabled',
+        provider,
+        baiduApiKey: input.baiduApiKey === undefined
+          ? ocrConfig?.baiduApiKey || ''
+          : String(input.baiduApiKey || '').trim(),
+        baiduSecretKey: input.baiduSecretKey === undefined
+          ? ocrConfig?.baiduSecretKey || ''
+          : String(input.baiduSecretKey || '').trim(),
+        paddleCommand: String(input.paddleCommand ?? ocrConfig?.paddleCommand ?? '').trim(),
+        paddleConfigPath: String(input.paddleConfigPath ?? ocrConfig?.paddleConfigPath ?? '').trim(),
+        paddleDevice: String(input.paddleDevice ?? ocrConfig?.paddleDevice ?? '').trim(),
+        updatedAt: timestamp(),
+      };
+      ocrConfig = next;
+      configStore?.writeOCRConfig(next);
+      return publicOCRConfig();
+    },
+
     getProductTerms(baseTerms: ProductTerm[] = loadProductTerms()) {
       return baseTerms;
     },
@@ -176,6 +219,13 @@ export const createTaskStore = ({
     },
 
     getTask,
+
+    deleteTask(id: string) {
+      const task = getTask(id);
+      if (task.status === 'running') throw new Error('该巡检正在采集，暂时不能删除');
+      tasks.delete(id);
+      return task;
+    },
 
     startTask(id: string) {
       return save({ ...getTask(id), status: 'running' });

@@ -13,6 +13,46 @@ export type BrowserNetworkResponse = {
   challenge?: boolean;
 };
 
+export type BrowserInteractiveElement = {
+  id: string;
+  role: string;
+  text: string;
+  value?: string;
+  placeholder?: string;
+};
+
+export type BrowserListItem = {
+  title: string;
+  elementId?: string;
+  url?: string;
+  publishedAt?: string;
+  deadlineAt?: string;
+  buyerName?: string;
+  noticeType?: string;
+  rawText?: string;
+};
+
+export type BrowserAction =
+  | { type: 'navigate'; url: string }
+  | { type: 'click'; elementId: string }
+  | { type: 'click_first_notice' }
+  | { type: 'search'; query: string }
+  | { type: 'next_page' }
+  | { type: 'read_document' }
+  | { type: 'back' }
+  | { type: 'wait'; milliseconds: number };
+
+export type BrowserDocumentObservation = {
+  title: string;
+  noticeType?: string;
+  publishedAt?: string;
+  buyerName?: string;
+  pdfUrl?: string;
+  attachmentUrls?: string[];
+  text: string;
+  pageCount?: number;
+};
+
 export type BrowserObservation = {
   title: string;
   url: string;
@@ -22,6 +62,22 @@ export type BrowserObservation = {
   links?: BrowserLink[];
   networkResponses?: BrowserNetworkResponse[];
   downloadedFiles?: string[];
+  interactiveElements?: BrowserInteractiveElement[];
+  listItems?: BrowserListItem[];
+  searchQuery?: string;
+  currentPage?: number;
+  totalPages?: number;
+  noticeType?: number;
+  noticeTypes?: string[];
+  searchReady?: boolean;
+  humanChallengeVisible?: boolean;
+  document?: BrowserDocumentObservation;
+};
+
+export type BrowserActionResult = {
+  performed: boolean;
+  observation: BrowserObservation;
+  detail?: string;
 };
 
 /**
@@ -33,6 +89,7 @@ export type BrowserSession = {
   engine: 'playwright' | 'electron-cdp' | 'test';
   open(url: string): Promise<BrowserObservation>;
   observe(): Promise<BrowserObservation>;
+  act?(action: BrowserAction): Promise<BrowserActionResult>;
   screenshot?(): Promise<string>;
   close?(): Promise<void>;
 };
@@ -46,7 +103,10 @@ export type CollectionTask = {
   searchTerms?: string;
 };
 
-export type LocalHelperTask = CollectionTask;
+export type LocalHelperTask = CollectionTask & {
+  lastCandidateBundle?: CandidateBundle | null;
+  lastScreenedNotices?: unknown[];
+};
 
 export type LocalHelperArtifact = {
   artifact_type: 'dom_snapshot' | 'network_response' | 'attachment' | 'manual_text' | 'log';
@@ -64,6 +124,9 @@ export type TenderCandidate = {
   buyer_name: string;
   raw_text: string;
   attachments: string[];
+  browser_ref?: string;
+  search_query?: string;
+  notice_type?: string;
 };
 
 export type CandidateBundle = {

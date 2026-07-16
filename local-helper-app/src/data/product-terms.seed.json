@@ -112,6 +112,13 @@
     "status": "active"
   },
   {
+    "term": "引发剂",
+    "aliases": ["聚合引发剂", "自由基引发剂"],
+    "sources": ["erp_history"],
+    "weight": 74,
+    "status": "active"
+  },
+  {
     "term": "分散剂",
     "aliases": ["水处理分散剂", "分散剂A970", "丁二烯分散剂"],
     "sources": ["erp_history"],

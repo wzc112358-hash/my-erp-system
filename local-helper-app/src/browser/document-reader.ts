@@ -3,6 +3,11 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 import type { BrowserObservation } from './types.ts';
+import {
+  recognizeDocumentWithOCR,
+  type LocalOCRConfig,
+  type OCRResult,
+} from './ocr.ts';
 
 export type DocumentLink = {
   title: string;
@@ -15,10 +20,12 @@ export type DocumentReadResult = {
   filePath?: string;
   contentType?: string;
   text: string;
+  ocrProvider?: OCRResult['provider'];
   warning?: string;
 };
 
 type FetchLike = typeof fetch;
+type OCRRecognizer = typeof recognizeDocumentWithOCR;
 
 const DOCUMENT_FILE_LINK_PATTERN = /\.(?:pdf|doc|docx|txt|xml)(?:[?#].*)?$/i;
 const DOCUMENT_HTML_LINK_PATTERN = /\.html?(?:[?#].*)?$/i;
@@ -26,6 +33,13 @@ const DOCUMENT_TEXT_PATTERN = /附件|下载|标书|采购文件|招标文件|�
 const NAV_DOCUMENT_TEXT_PATTERN = /^(招标公告|资格预审公告|非招标公告|变更公告|候选人公示|中标公告|终止公告|招标计划|招标文件公示|公告信息|新闻动态|更多)$/i;
 const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_DOCUMENT_TEXT = 24_000;
+
+export const hasUsableDocumentText = (value = '') => {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (/^%PDF-|\/FlateDecode|\b\d+\s+\d+\s+obj\b|endstream\b/.test(compact.slice(0, 4000))) return false;
+  const cjk = (compact.match(/[\u3400-\u9fff]/g) || []).length;
+  return cjk >= 8 || compact.length >= 160;
+};
 
 const uniqueBy = <T>(items: T[], keyFor: (item: T) => string) => (
   items.filter((item, index, all) => index === all.findIndex((other) => keyFor(other) === keyFor(item)))
@@ -42,6 +56,22 @@ const normalizeUrl = (href = '', baseUrl = '') => {
   } catch {
     return href;
   }
+};
+
+const contentTypeForFile = (fileName = '') => {
+  const extension = path.extname(fileName.split(/[?#]/)[0] || '').toLowerCase();
+  return ({
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.bmp': 'image/bmp',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.txt': 'text/plain',
+  } as Record<string, string>)[extension] || '';
 };
 
 export const extractDocumentLinks = (observation: BrowserObservation): DocumentLink[] => uniqueBy(
@@ -158,7 +188,7 @@ const pdfText = (buffer: Buffer) => {
     .map(decodePdfString)
     .join(' ');
   if (extracted.trim()) return trimText(repairUtf8ReadAsLatin1(extracted));
-  return trimText([...raw.matchAll(/[ -~\u00a0-\u00ff]{6,}/g)].map((match) => match[0]).join('\n'));
+  return '';
 };
 
 const binaryWordText = (buffer: Buffer) => trimText(
@@ -178,6 +208,7 @@ export const extractTextFromDocumentBuffer = ({
   contentType?: string;
 }) => {
   const marker = `${fileName} ${contentType}`.toLowerCase();
+  if (/image\/(?:png|jpe?g|bmp|tiff?)|\.(?:png|jpe?g|bmp|tiff?)\b/.test(marker)) return '';
   if (/\.docx\b|wordprocessingml|officedocument\.wordprocessingml/.test(marker)) return docxText(buffer);
   if (/\.pdf\b|application\/pdf/.test(marker)) return pdfText(buffer);
   if (/\.doc\b|msword/.test(marker)) return binaryWordText(buffer);
@@ -185,21 +216,79 @@ export const extractTextFromDocumentBuffer = ({
   return trimText(buffer.toString('utf8'));
 };
 
-const readLocalDocument = async (filePath: string): Promise<DocumentReadResult> => {
+const readLocalDocument = async ({
+  filePath,
+  fetchImpl,
+  ocrConfig,
+  ocrRecognizer,
+}: {
+  filePath: string;
+  fetchImpl: FetchLike;
+  ocrConfig?: LocalOCRConfig | null;
+  ocrRecognizer: OCRRecognizer;
+}): Promise<DocumentReadResult> => {
   const buffer = await fs.readFile(filePath);
+  const contentType = contentTypeForFile(filePath);
+  const extracted = extractTextFromDocumentBuffer({ buffer, fileName: filePath, contentType });
+  const supportsOCR = /application\/pdf|image\//i.test(contentType);
+  let ocr: OCRResult | null = null;
+  let warning = '';
+  if (supportsOCR && !hasUsableDocumentText(extracted) && ocrConfig?.enabled !== false && ocrConfig?.provider !== 'disabled') {
+    try {
+      ocr = await ocrRecognizer({
+        buffer,
+        fileName: filePath,
+        contentType,
+        pageCount: 1,
+        config: ocrConfig,
+        fetchImpl,
+      });
+    } catch (error) {
+      warning = `OCR 识别失败：${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
   return {
     title: path.basename(filePath),
     filePath,
-    text: extractTextFromDocumentBuffer({ buffer, fileName: filePath }),
+    contentType,
+    text: ocr?.text || extracted,
+    ocrProvider: ocr?.provider,
+    warning: warning || (!ocr && supportsOCR && !hasUsableDocumentText(extracted) ? '文档没有可用文本，需要启用 OCR。' : undefined),
   };
+};
+
+const isSiteShellHtml = (urlValue: string, contentType: string, buffer: Buffer) => {
+  if (!/text\/html|application\/xhtml/i.test(contentType)) return false;
+  let rootPath = false;
+  try {
+    const url = new URL(urlValue);
+    rootPath = (url.pathname === '/' || url.pathname === '') && !url.search;
+  } catch {
+    // Invalid URLs are handled by the response content checks below.
+  }
+  const sample = buffer.subarray(0, 48_000).toString('utf8');
+  const visibleText = sample
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const emptyAppShell = /<div[^>]+id=["']app["']/i.test(sample) && visibleText.length < 120;
+  return rootPath || /doesn['’]t work properly without JavaScript/i.test(sample) || emptyAppShell;
 };
 
 const fetchDocument = async ({
   link,
   fetchImpl,
+  ocrConfig,
+  ocrRecognizer,
+  pageCount = 1,
 }: {
   link: DocumentLink;
   fetchImpl: FetchLike;
+  ocrConfig?: LocalOCRConfig | null;
+  ocrRecognizer: OCRRecognizer;
+  pageCount?: number;
 }): Promise<DocumentReadResult> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12_000);
@@ -222,11 +311,40 @@ const fetchDocument = async ({
     }
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer).subarray(0, MAX_DOCUMENT_BYTES);
+    if (isSiteShellHtml(link.url, contentType, buffer)) {
+      return {
+        title: link.title,
+        url: link.url,
+        contentType,
+        text: '',
+        warning: '该链接返回的是站点页面，不是可识别的公告文档。',
+      };
+    }
+    const extracted = extractTextFromDocumentBuffer({ buffer, fileName: link.url, contentType });
+    let ocr: OCRResult | null = null;
+    let warning = '';
+    const supportsOCR = /application\/pdf|image\//i.test(contentType) || /\.(?:pdf|png|jpe?g|bmp|tiff?)(?:[?#].*)?$/i.test(link.url);
+    if (supportsOCR && !hasUsableDocumentText(extracted) && ocrConfig?.enabled !== false && ocrConfig?.provider !== 'disabled') {
+      try {
+        ocr = await ocrRecognizer({
+          buffer,
+          fileName: link.url,
+          contentType,
+          pageCount,
+          config: ocrConfig,
+          fetchImpl,
+        });
+      } catch (error) {
+        warning = `OCR 识别失败：${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
     return {
       title: link.title,
       url: link.url,
       contentType,
-      text: extractTextFromDocumentBuffer({ buffer, fileName: link.url, contentType }),
+      text: ocr?.text || extracted,
+      ocrProvider: ocr?.provider,
+      warning: warning || undefined,
     };
   } catch (error) {
     return {
@@ -244,24 +362,58 @@ export const readDocumentsFromObservation = async ({
   observation,
   fetchImpl = fetch,
   maxDocuments = 3,
+  ocrConfig = null,
+  ocrRecognizer = recognizeDocumentWithOCR,
 }: {
   observation: BrowserObservation;
   fetchImpl?: FetchLike;
   maxDocuments?: number;
+  ocrConfig?: LocalOCRConfig | null;
+  ocrRecognizer?: OCRRecognizer;
 }): Promise<DocumentReadResult[]> => {
+  const browserDocument = observation.document;
+  const browserResults: DocumentReadResult[] = browserDocument?.text
+    ? [{
+      title: browserDocument.title || observation.title || '公告正文',
+      url: browserDocument.pdfUrl,
+      contentType: browserDocument.pdfUrl ? 'application/pdf' : undefined,
+      text: trimText(browserDocument.text),
+    }]
+    : [];
   const localFiles = uniqueBy(observation.downloadedFiles || [], (item) => item)
-    .slice(0, maxDocuments);
-  const localResults = await Promise.all(localFiles.map((filePath) => readLocalDocument(filePath)
+    .slice(0, Math.max(0, maxDocuments - browserResults.length));
+  const localResults = await Promise.all(localFiles.map((filePath) => readLocalDocument({
+    filePath,
+    fetchImpl,
+    ocrConfig,
+    ocrRecognizer,
+  })
     .catch((error) => ({
       title: path.basename(filePath),
       filePath,
       text: '',
       warning: `本地附件读取失败：${error instanceof Error ? error.message : String(error)}`,
     }))));
-  const remaining = Math.max(0, maxDocuments - localResults.length);
-  const links = extractDocumentLinks(observation).slice(0, remaining);
-  const remoteResults = await Promise.all(links.map((link) => fetchDocument({ link, fetchImpl })));
-  return [...localResults, ...remoteResults];
+  const remaining = Math.max(0, maxDocuments - browserResults.length - localResults.length);
+  const browserLinks: DocumentLink[] = [
+    ...(!browserResults.length && browserDocument?.pdfUrl
+      ? [{ title: browserDocument.title || '公告 PDF', url: browserDocument.pdfUrl }]
+      : []),
+    ...(browserDocument?.attachmentUrls || []).map((url, index) => ({
+      title: `公告附件 ${index + 1}`,
+      url,
+    })),
+  ];
+  const links = uniqueBy([...browserLinks, ...extractDocumentLinks(observation)], (link) => link.url)
+    .slice(0, remaining);
+  const remoteResults = await Promise.all(links.map((link) => fetchDocument({
+    link,
+    fetchImpl,
+    ocrConfig,
+    ocrRecognizer,
+    pageCount: browserDocument?.pageCount || 1,
+  })));
+  return [...browserResults, ...localResults, ...remoteResults];
 };
 
 export const formatDocumentEvidence = (documents: DocumentReadResult[]) => documents
@@ -270,6 +422,7 @@ export const formatDocumentEvidence = (documents: DocumentReadResult[]) => docum
     document.url ? `链接：${document.url}` : '',
     document.filePath ? `本地文件：${document.filePath}` : '',
     document.warning ? `提示：${document.warning}` : '',
+    document.ocrProvider ? `识别方式：${document.ocrProvider === 'baidu' ? '百度 OCR' : 'PaddleOCR'}` : '',
     document.text ? `文本：${trimText(document.text, 6000)}` : '',
   ].filter(Boolean).join('\n'))
   .join('\n\n');

@@ -21,6 +21,7 @@ export type CollectionReportItem = {
   requirements: string[];
   missingInfo: string[];
   evidence: string;
+  detailReadMethod?: string;
 };
 
 export type CollectionReport = {
@@ -92,6 +93,15 @@ const selectedCards = (task: Pick<HelperTask, 'lastScreenedNotices'>, now: numbe
   ))
 );
 
+const detailReadMethodFor = (card: ScreenedNotice) => {
+  const ocrProvider = (card.documentSummaries || []).find((document) => document.ocrProvider)?.ocrProvider;
+  if (ocrProvider === 'baidu') return '百度 OCR';
+  if (ocrProvider === 'paddle') return 'PaddleOCR';
+  if (card.deepReadAt) return 'PDF/网页正文';
+  if (card.detailUrl || card.documentSummaries?.length) return '未读取到有效正文';
+  return undefined;
+};
+
 const itemFromCard = (card: ScreenedNotice): CollectionReportItem => ({
   id: card.id,
   title: card.title,
@@ -105,6 +115,7 @@ const itemFromCard = (card: ScreenedNotice): CollectionReportItem => ({
   requirements: unique([...(card.hardRequirements || []), ...(card.riskFlags || [])]),
   missingInfo: unique(card.missingInfo || []),
   evidence: String(card.evidenceText || '').trim(),
+  detailReadMethod: detailReadMethodFor(card),
 });
 
 const summaryFor = ({
@@ -134,6 +145,7 @@ const summaryFor = ({
       item.matchedProducts.length ? `产品：${item.matchedProducts.join('、')}` : '',
       item.deadlineAt ? `截止：${item.deadlineAt}` : '截止：待确认',
       `判断：${item.judgment}`,
+      item.detailReadMethod ? `详情读取：${item.detailReadMethod}` : '',
       item.requirements.length ? `要求/风险：${item.requirements.slice(0, 3).join('；')}` : '',
       item.missingInfo.length ? `需确认：${item.missingInfo.slice(0, 3).join('；')}` : '',
       item.url ? `链接：${item.url}` : '',

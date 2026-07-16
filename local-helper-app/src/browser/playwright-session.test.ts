@@ -102,6 +102,49 @@ test('playwright runtime reuses existing page for observe', async () => {
   assert.equal((await runtime.observe()).visibleText, '公告 2');
 });
 
+test('playwright adapter executes the shared search and document actions', async () => {
+  const evaluated: string[] = [];
+  const fakePage = {
+    goto: async () => {},
+    waitForTimeout: async () => {},
+    title: async () => '中国石油招标投标网',
+    url: () => 'https://www.cnpcbidding.com/#/tenders',
+    locator: () => ({ innerText: async () => '' }),
+    evaluate: async <T>(script: string): Promise<T> => {
+      evaluated.push(script);
+      if (script.includes('HCZ_PAGE_OBSERVATION')) {
+        return {
+          title: '中国石油招标投标网',
+          url: 'https://www.cnpcbidding.com/#/tenders',
+          visibleText: '阻聚剂采购招标公告',
+          links: [],
+          interactiveElements: [],
+          listItems: [{ title: '阻聚剂采购招标公告', elementId: 'hcz-3' }],
+        } as T;
+      }
+      if (script.includes('HCZ_READ_DOCUMENT')) {
+        return { title: '阻聚剂采购招标公告', text: '采购阻聚剂 20 吨，投标截止时间 2026-07-30。' } as T;
+      }
+      return { performed: true, detail: 'search button' } as T;
+    },
+  };
+  const runtime = createPlaywrightRuntime({
+    chromium: {
+      launchPersistentContext: async () => ({ pages: () => [fakePage], newPage: async () => fakePage }),
+    },
+    profileDir: 'profiles/cnpc',
+    settleTimeoutMs: 0,
+  });
+
+  const searched = await runtime.act?.({ type: 'search', query: '阻聚剂' });
+  const read = await runtime.act?.({ type: 'read_document' });
+
+  assert.equal(searched?.performed, true);
+  assert.equal(searched?.observation.listItems?.[0]?.elementId, 'hcz-3');
+  assert.match(read?.observation.document?.text || '', /20 吨/);
+  assert.ok(evaluated.some((script) => script.includes('阻聚剂')));
+});
+
 test('playwright runtime waits briefly for SPA content after navigation', async () => {
   const calls: string[] = [];
   let settled = false;

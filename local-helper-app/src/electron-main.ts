@@ -21,6 +21,7 @@ import { createJsonFileConfigStore } from './app/config-store.ts';
 import { createLocalApiServer, resolveRuntimeDirs } from './app/local-api.ts';
 import { createTaskStore } from './app/task-store.ts';
 import { definitionFor } from './sites/registry.ts';
+import { rewriteYulongSearchRequestUrl } from './sites/yulong-agent.ts';
 
 const electron = await import('electron');
 const { app, BrowserWindow, Menu, shell, Tray, nativeImage, dialog } = electron;
@@ -111,6 +112,9 @@ const createSiteBrowserSession = (task: { sourceName?: string }) => {
   const partition = `persist:hcz-site-${Buffer.from(site.sourceName).toString('hex').slice(0, 32)}`;
   return createElectronCdpSession({
     screenshotDir: runtimeDirs.screenshotDir,
+    rewriteRequestUrl: site.sourceName === '裕龙招投标网'
+      ? rewriteYulongSearchRequestUrl
+      : undefined,
     createWindow: () => {
       const window = new BrowserWindow({
         width: 1180,
@@ -131,6 +135,32 @@ const createSiteBrowserSession = (task: { sourceName?: string }) => {
         .replace(/\sElectron\/\S+/i, '')
         .replace(/\shcz-local-helper-app\/\S+/i, '');
       window.webContents.setUserAgent(userAgent);
+      window.webContents.setWindowOpenHandler(({ url }) => {
+        try {
+          const target = new URL(url);
+          if (target.hostname === 'ctbpsp.com' || target.hostname.endsWith('.ctbpsp.com')) {
+            return {
+              action: 'allow',
+              overrideBrowserWindowOptions: {
+                width: 1180,
+                height: 820,
+                minWidth: 900,
+                minHeight: 640,
+                autoHideMenuBar: true,
+                webPreferences: {
+                  nodeIntegration: false,
+                  contextIsolation: true,
+                  sandbox: true,
+                  partition,
+                },
+              },
+            };
+          }
+        } catch {
+          // Invalid popup URLs stay blocked inside the controlled browser.
+        }
+        return { action: 'deny' };
+      });
       return window;
     },
   });

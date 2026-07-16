@@ -58,6 +58,24 @@ test('collection report keeps only information selected for follow-up', () => {
   assert.match(report.summary, /截止：2026-07-13/);
 });
 
+test('collection report makes the actual detail-reading method visible', () => {
+  const report = buildCollectionReport(task({
+    sourceName: '裕龙招投标网',
+    lastScreenedNotices: [card({
+      detailUrl: 'https://ctbpsp.com/#/bulletinDetail?uuid=ocr',
+      deepReadAt: '2026-07-15T01:00:00.000Z',
+      documentSummaries: [{
+        title: '详情页截图',
+        textSnippet: '阻垢剂采购 20 吨',
+        ocrProvider: 'baidu',
+      }],
+    })],
+  }), '2026-07-12T01:00:00.000Z');
+
+  assert.equal(report.items[0]?.detailReadMethod, '百度 OCR');
+  assert.match(report.summary, /详情读取：百度 OCR/);
+});
+
 test('collection report produces a copy-ready no-match conclusion', () => {
   const report = buildCollectionReport(task(), '2026-07-12T01:00:00.000Z');
   assert.equal(report.status, 'no_matches');

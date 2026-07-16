@@ -4,6 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import type { BrowserSession, LocalHelperTask } from '../browser/types.ts';
+import {
+  testOCRConfig,
+  type LocalOCRConfig,
+} from '../browser/ocr.ts';
 import { createPlaywrightSession } from '../browser/playwright-session.ts';
 import {
   runCollection,
@@ -35,6 +39,11 @@ import type { createTaskStore } from './task-store.ts';
 type Store = ReturnType<typeof createTaskStore>;
 type BrowserSessionFactory = (task: { sourceName?: string }) => BrowserSession;
 type LLMConnectionTester = (input: { config: LocalLLMConfig | null }) => Promise<LLMConnectionTestResult>;
+type OCRConnectionTester = (input: { config: LocalOCRConfig | null }) => Promise<{
+  ok: boolean;
+  provider: string;
+  message: string;
+}>;
 type CloudReportUploader = typeof uploadCloudTaskReport;
 
 const DEFAULT_HELPER_VERSION = process.env.HCZ_LOCAL_HELPER_VERSION || process.env.npm_package_version || 'dev';
@@ -109,6 +118,7 @@ export const createLocalApiServer = ({
   helperVersion = DEFAULT_HELPER_VERSION,
   rendererDir = '',
   testLLMConnection = ({ config }) => testOpenAICompatibleLLMConfig({ config }),
+  testOCRConnection = ({ config }) => testOCRConfig({ config }),
   createBrowserSession,
   agentHarness = createAgentHarnessStore({ rootDir: resolveAgentHarnessDir() }),
   uploadReport = uploadCloudTaskReport,
@@ -120,6 +130,7 @@ export const createLocalApiServer = ({
   helperVersion?: string;
   rendererDir?: string;
   testLLMConnection?: LLMConnectionTester;
+  testOCRConnection?: OCRConnectionTester;
   createBrowserSession?: BrowserSessionFactory;
   agentHarness?: AgentHarnessStore;
   uploadReport?: CloudReportUploader;
@@ -167,6 +178,22 @@ export const createLocalApiServer = ({
       : existing?.apiKey || '',
     model: String(body.model ?? existing?.model ?? ''),
   });
+  const ocrConfigFromBody = (
+    body: Record<string, unknown>,
+    existing: LocalOCRConfig | null,
+  ): LocalOCRConfig => ({
+    enabled: body.enabled === undefined ? existing?.enabled !== false : body.enabled !== false,
+    provider: String(body.provider ?? existing?.provider ?? 'disabled') as LocalOCRConfig['provider'],
+    baiduApiKey: Object.prototype.hasOwnProperty.call(body, 'baiduApiKey')
+      ? String(body.baiduApiKey || '')
+      : existing?.baiduApiKey || '',
+    baiduSecretKey: Object.prototype.hasOwnProperty.call(body, 'baiduSecretKey')
+      ? String(body.baiduSecretKey || '')
+      : existing?.baiduSecretKey || '',
+    paddleCommand: String(body.paddleCommand ?? existing?.paddleCommand ?? ''),
+    paddleConfigPath: String(body.paddleConfigPath ?? existing?.paddleConfigPath ?? ''),
+    paddleDevice: String(body.paddleDevice ?? existing?.paddleDevice ?? ''),
+  });
 
   const applyResult = (taskId: string, result: CollectionRunResult) => {
     const observation = result.observation;
@@ -197,11 +224,13 @@ export const createLocalApiServer = ({
       trigger: resume ? 'human_resume' : 'manual_run',
     });
     const config = store.getLLMConfig({ includeApiKey: true }) as LocalLLMConfig | null;
+    const ocrConfig = store.getOCRConfig({ includeSecrets: true }) as LocalOCRConfig | null;
     try {
       const result = await runCollection({
         task,
         browser: getBrowser(task),
         llmConfig: config,
+        ocrConfig,
         assessor: createDefaultBidAssessor({ config }),
         terms: store.getProductTerms(),
         resume,
@@ -287,6 +316,22 @@ export const createLocalApiServer = ({
         sendJson(response, 200, await testLLMConnection({ config }));
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/settings/ocr') {
+        sendJson(response, 200, store.getOCRConfig());
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/settings/ocr') {
+        const body = await readBody(request);
+        const config = ocrConfigFromBody(body, store.getOCRConfig({ includeSecrets: true }) as LocalOCRConfig | null);
+        sendJson(response, 200, store.setOCRConfig(config));
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/settings/ocr/test') {
+        const body = await readBody(request);
+        const config = ocrConfigFromBody(body, store.getOCRConfig({ includeSecrets: true }) as LocalOCRConfig | null);
+        sendJson(response, 200, await testOCRConnection({ config }));
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/cloud/pair') {
         const body = await readBody(request);
         const cloudUrl = String(body.cloudUrl || process.env.HCZ_AGENT_CLOUD_URL || '');
@@ -322,6 +367,14 @@ export const createLocalApiServer = ({
           actionSteps: String(body.actionSteps || site.defaultActionSteps || ''),
         });
         sendJson(response, 201, { task });
+        return;
+      }
+      if (request.method === 'DELETE' && parts[0] === 'tasks' && parts[1] && parts.length === 2) {
+        const task = store.getTask(parts[1]);
+        if (task.status === 'running') throw new Error('该巡检正在采集，暂时不能删除');
+        await closeBrowser(task);
+        store.deleteTask(task.id);
+        sendJson(response, 200, { deleted: true, id: task.id });
         return;
       }
       if (request.method === 'POST' && parts[0] === 'tasks' && parts[2] === 'agent-run') {
