@@ -1,134 +1,50 @@
 import { pb } from '@/lib/pocketbase';
 import type {
-  BidOpportunity,
-  BidDocument,
-  BidDocumentFormData,
-  MonitorRun,
-  OpportunityListParams,
-  OpportunityReview,
-  OpportunityReviewFormData,
-  OpportunityStatus,
-  ProductTerm,
-  ProductTermFormData,
+  BidCollectionRun,
+  BidNoticeListParams,
+  BidNoticeListResult,
+  BidSourceOption,
 } from '@/types/opportunity';
 
-const buildOpportunityFilters = (params: OpportunityListParams = {}) => {
-  const filters: string[] = [];
-  if (params.search) {
-    const search = params.search.replaceAll('"', '\\"');
-    filters.push(`(title ~ "${search}" || buyer_name ~ "${search}" || product_keywords ~ "${search}" || source_name ~ "${search}")`);
-  }
-  if (params.status) filters.push(`status = "${params.status}"`);
-  if (params.relevance) filters.push(`relevance = "${params.relevance}"`);
-  if (params.owner_name) filters.push(`owner_name = "${params.owner_name}"`);
-  return filters.length > 0 ? filters.join(' && ') : undefined;
+const agentBaseUrl = () => {
+  const override = import.meta.env.VITE_BID_AGENT_URL;
+  if (override) return String(override).replace(/\/+$/, '');
+  return import.meta.env.DEV ? 'http://127.0.0.1:8097' : 'https://agent.henghuacheng.cn';
+};
+
+const request = async <T>(path: string): Promise<T> => {
+  const token = pb.authStore.token;
+  if (!token) throw new Error('请重新登录 ERP');
+  const response = await fetch(`${agentBaseUrl()}${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-ERP-Region': localStorage.getItem('erp_system') || 'beijing',
+    },
+  });
+  const body = await response.json().catch(() => ({})) as T & { error?: string };
+  if (!response.ok) throw new Error(body.error || `招投标信息服务请求失败（${response.status}）`);
+  return body;
 };
 
 export const OpportunityAPI = {
+  listNotices: (params: BidNoticeListParams = {}) => {
+    const query = new URLSearchParams({
+      page: String(params.page || 1),
+      perPage: String(params.perPage || 30),
+    });
+    if (params.kind) query.set('kind', params.kind);
+    if (params.source) query.set('source', params.source);
+    if (params.search) query.set('search', params.search);
+    return request<BidNoticeListResult>(`/api/bids/notices?${query}`);
+  },
+
   listRuns: async () => {
-    return pb.collection('monitor_runs').getList<MonitorRun>(1, 500, {
-      sort: '-created',
-      expand: 'source',
-    });
+    const result = await request<{ items: BidCollectionRun[] }>('/api/bids/runs');
+    return result.items;
   },
 
-  listOpportunities: async (params: OpportunityListParams = {}) => {
-    return pb.collection('bid_opportunities').getList<BidOpportunity>(
-      params.page || 1,
-      params.per_page || 50,
-      {
-        filter: buildOpportunityFilters(params),
-        sort: '-created',
-        expand: 'source,monitor_run,responsible_user',
-      },
-    );
-  },
-
-  getOpportunity: async (id: string) => {
-    return pb.collection('bid_opportunities').getOne<BidOpportunity>(id, {
-      expand: 'source,monitor_run,responsible_user',
-    });
-  },
-
-  updateOpportunity: async (id: string, data: Partial<BidOpportunity>) => {
-    return pb.collection('bid_opportunities').update<BidOpportunity>(id, data);
-  },
-
-  updateStatus: async (id: string, status: OpportunityStatus, comment?: string) => {
-    const update: Partial<BidOpportunity> = { status };
-    if (comment !== undefined) update.employee_assessment = comment;
-    return pb.collection('bid_opportunities').update<BidOpportunity>(id, update);
-  },
-
-  createReview: async (data: OpportunityReviewFormData) => {
-    return pb.collection('opportunity_reviews').create<OpportunityReview>({
-      ...data,
-      reviewer: pb.authStore.record?.id || undefined,
-    });
-  },
-
-  listReviews: async (opportunityId: string) => {
-    return pb.collection('opportunity_reviews').getList<OpportunityReview>(1, 100, {
-      filter: `opportunity = "${opportunityId}"`,
-      sort: '-created',
-      expand: 'reviewer',
-    });
-  },
-
-  listDocuments: async (opportunityId: string) => {
-    return pb.collection('bid_documents').getList<BidDocument>(1, 100, {
-      filter: `opportunity = "${opportunityId}"`,
-      sort: '-created',
-    });
-  },
-
-  createDocument: async (data: BidDocumentFormData) => {
-    return pb.collection('bid_documents').create<BidDocument>({
-      extraction_status: data.extracted_text ? 'pending' : 'empty',
-      ...data,
-    });
-  },
-
-  listProductTerms: async () => {
-    return pb.collection('product_terms').getList<ProductTerm>(1, 500, {
-      sort: 'term_type,term',
-    });
-  },
-
-  createProductTerm: async (data: ProductTermFormData) => {
-    return pb.collection('product_terms').create<ProductTerm>({
-      status: 'active',
-      weight: 0.7,
-      ...data,
-    });
-  },
-
-  updateProductTerm: async (id: string, data: Partial<ProductTermFormData>) => {
-    return pb.collection('product_terms').update<ProductTerm>(id, data);
-  },
-
-  copyGroupSummary: async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const opportunities = await pb.collection('bid_opportunities').getList<BidOpportunity>(1, 500, {
-      filter: `created >= "${today} 00:00:00"`,
-    });
-    const grouped = opportunities.items.reduce<Record<string, { related: number; urgent: number }>>((acc, item) => {
-      const source = item.source_name || '未知网站';
-      acc[source] ||= { related: 0, urgent: 0 };
-      if (item.relevance === 'likely_related') {
-        acc[source].related += 1;
-        if (item.urgency === 'urgent') acc[source].urgent += 1;
-      }
-      return acc;
-    }, {});
-    const lines = ['今日招投标监测摘要：'];
-    Object.entries(grouped).forEach(([source, count]) => {
-      lines.push(`${source}：${count.related} 条疑似相关，${count.urgent} 条需 3 日内确认`);
-    });
-    if (Object.keys(grouped).length === 0) {
-      lines.push('暂无新增疑似相关商机。');
-    }
-    lines.push('正式处理请进入 ERP 商机池。');
-    return lines.join('\n');
+  listSources: async () => {
+    const result = await request<{ items: BidSourceOption[] }>('/api/bids/sources');
+    return result.items;
   },
 };

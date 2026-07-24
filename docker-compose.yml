@@ -68,22 +68,27 @@ services:
       dockerfile: Dockerfile
     container_name: erp-opportunity-agent
     restart: unless-stopped
-    depends_on:
-      - collector-service
     environment:
       - POCKETBASE_URL=${POCKETBASE_URL}
       - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
       - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
-      - OPPORTUNITY_AGENT_SAMPLE_MODE=0
-      - COLLECTOR_SERVICE_URL=http://collector-service:8096
       - LOCAL_HELPER_API_PORT=8097
       - LOCAL_HELPER_PAIR_CODE=${LOCAL_HELPER_PAIR_CODE}
       - LOCAL_HELPER_API_TOKEN=${LOCAL_HELPER_API_TOKEN}
       - LOCAL_HELPER_LATEST_VERSION=${LOCAL_HELPER_LATEST_VERSION:-0.1.18}
+      - ERP_BEIJING_API_URL=${ERP_BEIJING_API_URL:-https://api-beijing.henghuacheng.cn}
+      - ERP_LANZHOU_API_URL=${ERP_LANZHOU_API_URL:-https://api-lanzhou.henghuacheng.cn}
+      - HCZ_LOCAL_AGENT_LLM_BASE_URL=${HCZ_LOCAL_AGENT_LLM_BASE_URL:-https://api.deepseek.com}
+      - HCZ_LOCAL_AGENT_LLM_API_KEY=${HCZ_LOCAL_AGENT_LLM_API_KEY}
+      - HCZ_LOCAL_AGENT_LLM_MODEL=${HCZ_LOCAL_AGENT_LLM_MODEL:-deepseek-v4-pro}
+      - HCZ_LOCAL_AGENT_LLM_TIMEOUT_MS=${HCZ_LOCAL_AGENT_LLM_TIMEOUT_MS:-45000}
+      - BAIDU_OCR_API_KEY=${BAIDU_OCR_API_KEY}
+      - BAIDU_OCR_SECRET_KEY=${BAIDU_OCR_SECRET_KEY}
+      - BAIDU_OCR_PDF_PAGES=${BAIDU_OCR_PDF_PAGES:-3}
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 384M
     networks:
       - web
       - agent-internal
@@ -93,21 +98,6 @@ services:
       - "traefik.http.routers.local-helper-agent.entryPoints=websecure"
       - "traefik.http.routers.local-helper-agent.tls.certResolver=letsencrypt"
       - "traefik.http.services.local-helper-agent.loadbalancer.server.port=8097"
-
-  collector-service:
-    build:
-      context: ./collector-service
-      dockerfile: Dockerfile
-    container_name: erp-collector-service
-    restart: unless-stopped
-    environment:
-      - COLLECTOR_SERVICE_PORT=8096
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    networks:
-      - agent-internal
 
   traefik:
     image: traefik:v2.9

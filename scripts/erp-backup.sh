@@ -82,21 +82,27 @@ log "  总包大小: $ARCHIVE_SIZE"
 
 # 上传到 OSS（日备路径）
 OSS_PATH="oss://${BUCKET}/daily/${DATE_TAG}/erp-backup-${TS}.tar.gz"
-ossutil64 cp "$ARCHIVE" "$OSS_PATH" \
+if ! ossutil64 cp "$ARCHIVE" "$OSS_PATH" \
   -c "$CONFIG_FILE" \
   -e "$ENDPOINT" \
-  --force 2>>"$LOG_FILE" \
-  && log "  ✅ 已上传日备: $OSS_PATH"
+  --force 2>>"$LOG_FILE"; then
+  log "  ❌ OSS 日备上传失败，本地归档已保留: $ARCHIVE"
+  exit 1
+fi
+log "  ✅ 已上传日备: $OSS_PATH"
 
 # 如果是周日，额外存一份到 weekly 路径（周备，保留更久）
 DOW=$(date +%u)  # 1=周一 ... 7=周日
 if [ "$DOW" = "7" ]; then
   WEEK_PATH="oss://${BUCKET}/weekly/${WEEK_TAG}/erp-backup-${TS}.tar.gz"
-  ossutil64 cp "$ARCHIVE" "$WEEK_PATH" \
+  if ! ossutil64 cp "$ARCHIVE" "$WEEK_PATH" \
     -c "$CONFIG_FILE" \
     -e "$ENDPOINT" \
-    --force 2>>"$LOG_FILE" \
-    && log "  ✅ 已上传周备（周日）: $WEEK_PATH"
+    --force 2>>"$LOG_FILE"; then
+    log "  ❌ OSS 周备上传失败，本地归档已保留: $ARCHIVE"
+    exit 1
+  fi
+  log "  ✅ 已上传周备（周日）: $WEEK_PATH"
 fi
 
 # ---- 5. 清理本地临时文件 ----

@@ -26,6 +26,13 @@
     [http.routers.beijing-api.tls]
       certResolver = "letsencrypt"
 
+  [http.routers.bid-agent]
+    rule = "Host(`agent.henghuacheng.cn`)"
+    entryPoints = ["websecure"]
+    service = "bid-agent"
+    [http.routers.bid-agent.tls]
+      certResolver = "letsencrypt"
+
 [http.middlewares]
   [http.middlewares.redirect-to-https.redirectScheme]
     scheme = "https"
@@ -43,6 +50,10 @@
   [http.services.beijing-pocketbase.loadBalancer]
     [[http.services.beijing-pocketbase.loadBalancer.servers]]
       url = "http://erp-pocketbase-beijing:8090"
+
+  [http.services.bid-agent.loadBalancer]
+    [[http.services.bid-agent.loadBalancer.servers]]
+      url = "http://erp-opportunity-agent:8097"
 
 [http.serversTransports]
   [http.serversTransports.default]

@@ -1,0 +1,433 @@
+import seedTerms from '../data/product-terms.seed.json' with { type: 'json' };
+import type { CandidateBundle, PublicCollectionTask } from './collection.ts';
+
+export type ProductTermStatus = 'active' | 'disabled';
+
+export type ProductTerm = {
+  term: string;
+  aliases?: string[];
+  sources?: string[];
+  source?: string;
+  weight?: number;
+  status?: ProductTermStatus;
+  notes?: string;
+};
+
+export type ProductTermMatch = {
+  term: string;
+  matchedText: string;
+  sources: string[];
+  weight: number;
+  evidenceText: string;
+};
+
+export type ProductMatchResult = {
+  score: number;
+  matchedTerms: string[];
+  matchedSources: string[];
+  evidenceText: string;
+  negativeTerms: string[];
+  matches: ProductTermMatch[];
+};
+
+export type ScreeningAction =
+  'prioritize'
+  | 'deep_read'
+  | 'ignore'
+  | 'manual_review'
+  | 'track_deadline';
+
+export type BidEligibility =
+  'likely_can_do'
+  | 'needs_manual_check'
+  | 'likely_cannot_do';
+
+export type BusinessRelevance =
+  | 'known_product'
+  | 'potential_product'
+  | 'irrelevant';
+
+export type NoticeDocumentSummary = {
+  title: string;
+  url?: string;
+  filePath?: string;
+  textSnippet?: string;
+  warning?: string;
+  ocrProvider?: 'baidu' | 'paddle';
+};
+
+export type ScreenedNotice = {
+  id: string;
+  title: string;
+  sourceName: string;
+  url: string;
+  buyerName: string;
+  publishedAt: string;
+  deadlineAt: string;
+  matchedTerms: string[];
+  matchedSources: string[];
+  relevanceScore: number;
+  businessRelevance?: BusinessRelevance;
+  sourceOpportunityStatus?: 'active' | 'ended' | 'unknown';
+  bidability: BidEligibility;
+  hardRequirements: string[];
+  riskFlags: string[];
+  missingInfo: string[];
+  recommendedAction: ScreeningAction;
+  evidenceText: string;
+  wechatSummary: string;
+  confidence: number;
+  deepReadAt?: string;
+  detailUrl?: string;
+  detailScreenshotPath?: string;
+  documentSummaries?: NoticeDocumentSummary[];
+};
+
+const DEFAULT_TERMS = seedTerms as ProductTerm[];
+const NEGATIVE_SOURCES = new Set(['negative_guard', 'feedback_negative']);
+const BROAD_SOURCES = new Set(['broad_guard']);
+const REQUIREMENT_PATTERNS = [
+  /代理商|授权|制造商|生产商|厂家/,
+  /8\s*位码|八位码|准入|入网/,
+  /第三方|检测|质检|检验报告/,
+  /业绩|合同业绩|供货业绩/,
+  /危化|危险化学品|危包|运输/,
+  /保证金|标书费|服务费|质保金/,
+  /交货期|分批|到货|付款|账期/,
+  /截止|递交|开标|报价/,
+];
+
+const normalize = (value = '') => value.normalize('NFKC').toLowerCase();
+const compact = (value = '') => normalize(value).replace(/\s+/g, '');
+const unique = <T>(items: T[]) => [...new Set(items.filter(Boolean))];
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const COMPANY_CONTEXT_SUFFIX = /^(有限责任公司|股份有限公司|有限公司|分公司|子公司|公司|集团|研究院|研究所|厂)/;
+
+export const loadProductTerms = (terms: ProductTerm[] = DEFAULT_TERMS) => (
+  terms
+    .filter((term) => term.status !== 'disabled')
+    .filter((term) => String(term.term || '').trim())
+    .map((term) => ({
+      ...term,
+      term: String(term.term).trim(),
+      aliases: unique((term.aliases || []).map((alias) => String(alias).trim())),
+      sources: unique([...(term.sources || []), term.source || 'curated']),
+      weight: Number(term.weight ?? 50),
+    }))
+);
+
+const labelsForTerm = (term: ProductTerm) => unique([term.term, ...(term.aliases || [])]);
+
+const sourceListFor = (term: ProductTerm) => unique([...(term.sources || []), term.source || 'curated']);
+
+const isCompanyNameContext = (text: string, index: number, label: string) => {
+  if (label !== '催化剂') return false;
+  const after = text.slice(index + label.length, index + label.length + 12);
+  return COMPANY_CONTEXT_SUFFIX.test(after);
+};
+
+const containsLabelOutsideCompanyName = (haystack: string, label: string) => {
+  if (!label) return false;
+  let index = haystack.indexOf(label);
+  while (index >= 0) {
+    if (!isCompanyNameContext(haystack, index, label)) return true;
+    index = haystack.indexOf(label, index + label.length);
+  }
+  return false;
+};
+
+const includesLabel = (haystack: string, compactHaystack: string, label: string) => {
+  const normalized = normalize(label);
+  const compactLabel = compact(label);
+  return Boolean(normalized) && (
+    containsLabelOutsideCompanyName(haystack, normalized)
+    || containsLabelOutsideCompanyName(compactHaystack, compactLabel)
+  );
+};
+
+const snippetFor = (text: string, label: string) => {
+  const normalizedText = normalize(text);
+  const normalizedLabel = normalize(label);
+  const index = normalizedText.indexOf(normalizedLabel);
+  if (index < 0) return text.replace(/\s+/g, ' ').trim().slice(0, 180);
+  const start = Math.max(0, index - 45);
+  const end = Math.min(text.length, index + label.length + 90);
+  return text.slice(start, end).replace(/\s+/g, ' ').trim();
+};
+
+export const matchProductTerms = (
+  text: string,
+  terms: ProductTerm[] = loadProductTerms(),
+): ProductMatchResult => {
+  const normalizedText = normalize(text);
+  const compactText = compact(text);
+  const matches: ProductTermMatch[] = [];
+  const negativeMatches: ProductTermMatch[] = [];
+
+  for (const term of terms) {
+    const labels = labelsForTerm(term);
+    const matchedText = labels.find((label) => includesLabel(normalizedText, compactText, label));
+    if (!matchedText) continue;
+    const sources = sourceListFor(term);
+    const match = {
+      term: term.term,
+      matchedText,
+      sources,
+      weight: Number(term.weight ?? 50),
+      evidenceText: snippetFor(text, matchedText),
+    };
+    if (sources.some((source) => NEGATIVE_SOURCES.has(source)) || match.weight < 0) {
+      negativeMatches.push(match);
+    } else if (!sources.some((source) => BROAD_SOURCES.has(source)) || match.weight > 10) {
+      matches.push(match);
+    }
+  }
+
+  const positiveScore = matches.reduce((sum, match) => sum + Math.max(0, match.weight), 0);
+  const negativePenalty = negativeMatches.reduce((sum, match) => sum + Math.abs(Math.min(0, match.weight)), 0);
+  const broadOnlyPenalty = matches.length === 0 && negativeMatches.length > 0 ? 20 : 0;
+  const score = Math.round(clamp(positiveScore - negativePenalty - broadOnlyPenalty, 0, 100));
+  const effectiveMatches = score > 0 ? matches : [];
+
+  return {
+    score,
+    matchedTerms: unique(effectiveMatches.map((match) => match.term)),
+    matchedSources: unique(effectiveMatches.flatMap((match) => match.sources)),
+    evidenceText: unique(effectiveMatches.map((match) => match.evidenceText)).slice(0, 3).join('\n'),
+    negativeTerms: unique(negativeMatches.map((match) => match.term)),
+    matches: effectiveMatches,
+  };
+};
+
+const stripMachineText = (value = '') => value
+  .replace(/https?:\/\/\S+/gi, ' ')
+  .replace(/\b[A-Za-z0-9_-]{24,}\b/g, ' ');
+
+const candidateText = (candidate: CandidateBundle['candidates'][number]) => [
+  candidate.title,
+  candidate.buyer_name,
+  candidate.published_at,
+  candidate.deadline_at,
+  candidate.raw_text,
+  ...(candidate.attachments || []),
+].filter(Boolean).map((value) => stripMachineText(String(value))).join('\n');
+
+const collectRequirementHints = (text: string) => {
+  const lines = text
+    .split(/[\n。；;]+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length >= 4);
+  return unique(lines.filter((line) => REQUIREMENT_PATTERNS.some((pattern) => pattern.test(line))))
+    .slice(0, 6)
+    .map((line) => line.slice(0, 120));
+};
+
+const riskFlagsFor = (text: string, match: ProductMatchResult) => {
+  const risks = [];
+  if (match.negativeTerms.length) risks.push(`命中低相关排除词：${match.negativeTerms.join('、')}`);
+  if (/制造商|生产商|厂家|原厂/.test(text)) risks.push('可能限制生产商/制造商资质');
+  if (/8\s*位码|八位码|准入|入网/.test(text)) risks.push('可能需要 8 位码或供应商准入');
+  if (/危化|危险化学品|危包/.test(text)) risks.push('可能涉及危化品资质和运输要求');
+  if (/保证金|标书费|服务费|质保金/.test(text)) risks.push('可能存在保证金、标书费或服务费');
+  return unique(risks).slice(0, 5);
+};
+
+const missingInfoFor = (text: string, match: ProductMatchResult) => {
+  if (!match.matchedTerms.length) return ['未命中公司重点产品词'];
+  const missing = [];
+  if (!/规格|型号|纯度|含量|包装|数量|吨|kg|千克/i.test(text)) missing.push('规格、数量、包装待确认');
+  if (!/装置|用途|使用|项目|车间/.test(text)) missing.push('具体装置或用途待确认');
+  if (!/代理商|授权|制造商|生产商|厂家/.test(text)) missing.push('是否接受代理商投标待确认');
+  if (!/第三方|检测|质检|业绩|8\s*位码|八位码|准入|危化|危险化学品/.test(text)) missing.push('检测、业绩、8 位码或危化资质要求待确认');
+  return missing.slice(0, 5);
+};
+
+const recommendedActionFor = (match: ProductMatchResult): ScreeningAction => {
+  if (match.score <= 0) return 'ignore';
+  if (match.score >= 85 && match.matchedSources.includes('erp_history')) return 'prioritize';
+  if (match.score >= 55) return 'deep_read';
+  return 'manual_review';
+};
+
+const candidateDeadlineTimestamp = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return Number.NaN;
+  return Date.parse(/^20\d{2}-\d{2}-\d{2}$/.test(raw) ? `${raw}T23:59:59+08:00` : raw);
+};
+
+export const isCandidateExpired = (
+  candidate: CandidateBundle['candidates'][number],
+  now = new Date(),
+) => {
+  const deadline = candidateDeadlineTimestamp(candidate.deadline_at);
+  return Number.isFinite(deadline) && deadline < now.getTime();
+};
+
+const isNonActionableNotice = (candidate: CandidateBundle['candidates'][number]) => (
+  isCandidateExpired(candidate) ||
+  candidate.opportunity_status === 'ended' ||
+  /(?:评标|招标|中标候选|中标|成交|采购|入围)结果(?:公告|公示|通知)?|结果公示|候选人公示|废(?:旧|物|料).{0,8}(?:销售|处置)/
+    .test(candidate.title)
+);
+
+export const enforceScreenedNoticeConstraints = ({
+  candidate,
+  card,
+}: {
+  candidate: CandidateBundle['candidates'][number];
+  card: ScreenedNotice;
+}): ScreenedNotice => {
+  if (!isNonActionableNotice(candidate)) return card;
+  return {
+    ...card,
+    bidability: 'likely_cannot_do',
+    recommendedAction: 'ignore',
+    riskFlags: isCandidateExpired(candidate)
+      ? [...new Set([...card.riskFlags, '截止时间已过'])].slice(0, 8)
+      : candidate.opportunity_status === 'ended'
+        ? [...new Set([...card.riskFlags, '项目状态已结束'])].slice(0, 8)
+        : card.riskFlags,
+  };
+};
+
+const normalizedEvidence = (candidate: CandidateBundle['candidates'][number]) => {
+  const query = String(candidate.search_query || '').trim();
+  const text = `${candidate.title}\n${candidate.raw_text || ''}`
+    .replace(/(?:站内|全文)?(?:搜索|检索)(?:关键词|词)?[：:]?\s*[^\s；;，,。]+/g, ' ');
+  const withoutQuery = query ? text.replaceAll(query, ' ') : text;
+  return withoutQuery.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase('zh-CN');
+};
+
+export const enforcePromotedProductEvidence = ({
+  candidate,
+  baseCard,
+  assessedCard,
+}: {
+  candidate: CandidateBundle['candidates'][number];
+  baseCard: ScreenedNotice;
+  assessedCard: ScreenedNotice;
+}): ScreenedNotice => {
+  const evidence = normalizedEvidence(candidate);
+  const baseTerms = new Set(baseCard.matchedTerms);
+  const evidencedTerms = assessedCard.matchedTerms.filter((term) => {
+    const normalized = String(term || '').normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase('zh-CN');
+    return baseTerms.has(term) || (normalized.length >= 2 && evidence.includes(normalized));
+  });
+  const sanitized = { ...assessedCard, matchedTerms: evidencedTerms };
+  if (baseCard.matchedTerms.length || baseCard.recommendedAction !== 'ignore') return sanitized;
+  if (assessedCard.recommendedAction === 'ignore') return sanitized;
+  return evidencedTerms.length ? sanitized : baseCard;
+};
+
+const bidabilityFor = (match: ProductMatchResult): BidEligibility => {
+  if (match.score <= 0) return 'likely_cannot_do';
+  return 'needs_manual_check';
+};
+
+const actionLabel = (action: ScreeningAction) => ({
+  prioritize: '建议优先查看',
+  deep_read: '建议继续查附件/详情',
+  ignore: '建议忽略',
+  manual_review: '建议人工判断',
+  track_deadline: '建议跟踪截止时间',
+}[action]);
+
+const cardIdFor = (sourceName: string, title: string, url: string) => (
+  `${sourceName}|${title}|${url}`.replace(/\s+/g, '').slice(0, 240)
+);
+
+const wechatSummaryFor = ({
+  sourceName,
+  title,
+  url,
+  match,
+  hardRequirements,
+  missingInfo,
+  riskFlags,
+  recommendedAction,
+}: {
+  sourceName: string;
+  title: string;
+  url: string;
+  match: ProductMatchResult;
+  hardRequirements: string[];
+  missingInfo: string[];
+  riskFlags: string[];
+  recommendedAction: ScreeningAction;
+}) => [
+  `【待确认】${sourceName} - ${title}`,
+  `产品：${match.matchedTerms.length ? match.matchedTerms.join('、') : '未命中重点产品'}`,
+  `相关度：${match.score}/100，${actionLabel(recommendedAction)}`,
+  hardRequirements.length ? `页面线索：${hardRequirements.slice(0, 2).join('；')}` : '',
+  missingInfo.length ? `需确认：${missingInfo.slice(0, 3).join('；')}` : '',
+  riskFlags.length ? `风险：${riskFlags.slice(0, 2).join('；')}` : '',
+  url ? `链接：${url}` : '',
+].filter(Boolean).join('\n');
+
+export const buildScreenedNotices = ({
+  bundle,
+  task,
+  terms = loadProductTerms(),
+}: {
+  bundle: CandidateBundle | null | undefined;
+  task?: Pick<PublicCollectionTask, 'sourceName'>;
+  terms?: ProductTerm[];
+}): ScreenedNotice[] => {
+  const sourceName = bundle?.source_name || task?.sourceName || '';
+  return (bundle?.candidates || []).map((candidate) => {
+    const text = candidateText(candidate);
+    const match = matchProductTerms(text, terms);
+    const hardRequirements = collectRequirementHints(text);
+    const riskFlags = riskFlagsFor(text, match);
+    const missingInfo = missingInfoFor(text, match);
+    const recommendedAction = isNonActionableNotice(candidate) ? 'ignore' : recommendedActionFor(match);
+    return {
+      id: cardIdFor(sourceName, candidate.title, candidate.url),
+      title: candidate.title,
+      sourceName,
+      url: candidate.url,
+      buyerName: candidate.buyer_name,
+      publishedAt: candidate.published_at,
+      deadlineAt: candidate.deadline_at,
+      matchedTerms: match.matchedTerms,
+      matchedSources: match.matchedSources,
+      relevanceScore: match.score,
+      businessRelevance: match.matchedTerms.length ? 'known_product' : 'irrelevant',
+      sourceOpportunityStatus: candidate.opportunity_status,
+      bidability: bidabilityFor(match),
+      hardRequirements,
+      riskFlags,
+      missingInfo,
+      recommendedAction,
+      evidenceText: match.evidenceText || candidate.raw_text || candidate.title,
+      wechatSummary: wechatSummaryFor({
+        sourceName,
+        title: candidate.title,
+        url: candidate.url,
+        match,
+        hardRequirements,
+        missingInfo,
+        riskFlags,
+        recommendedAction,
+      }),
+      confidence: match.score > 0 ? clamp(match.score / 100, 0.25, 0.9) : 0.2,
+    };
+  });
+};
+
+export const summarizeScreenedNotices = (
+  cards: ScreenedNotice[],
+  fallback = '本次采集没有识别到可入库候选，请调整搜索词或进入公告列表后继续采集。',
+) => {
+  if (!cards.length) return fallback;
+  const strong = cards.filter((card) => card.recommendedAction === 'prioritize');
+  const manual = cards.filter((card) => card.recommendedAction !== 'prioritize' && card.recommendedAction !== 'ignore');
+  const ignored = cards.filter((card) => card.recommendedAction === 'ignore');
+  return [
+    `本次采集识别到 ${cards.length} 条候选，保留 ${cards.length} 条筛选结果。`,
+    strong.length ? `建议优先查看：${strong.length} 条。` : '',
+    manual.length ? `待查附件/人工确认：${manual.length} 条。` : '',
+    ignored.length ? `低相关可跳过：${ignored.length} 条。` : '',
+    ...cards.slice(0, 5).map((card, index) => `${index + 1}. ${card.title}｜${card.matchedTerms.join('、') || '未命中重点产品'}｜${card.relevanceScore}/100｜${actionLabel(card.recommendedAction)}`),
+  ].filter(Boolean).join('\n');
+};
