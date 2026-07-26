@@ -17,12 +17,30 @@ interface BidNoticeGroupsProps {
   loading: boolean;
   selectedId?: string;
   sources: BidSourceOption[];
+  selectedSourceKey?: string;
+  showEmptyLocalSources?: boolean;
   onSelect: (notice: BidNotice) => void;
 }
 
-const groupNotices = (items: BidNotice[], sources: BidSourceOption[]): BidNoticeGroup[] => {
+const groupNotices = (
+  items: BidNotice[],
+  sources: BidSourceOption[],
+  selectedSourceKey?: string,
+  showEmptyLocalSources = false,
+): BidNoticeGroup[] => {
   const sourceOrder = new Map(sources.map((source, index) => [source.sourceKey, index]));
   const groups = new Map<string, BidNoticeGroup>();
+
+  if (showEmptyLocalSources) {
+    sources
+      .filter((source) => source.collectionMode === 'local_helper')
+      .filter((source) => !selectedSourceKey || source.sourceKey === selectedSourceKey)
+      .forEach((source) => groups.set(source.sourceKey, {
+        sourceKey: source.sourceKey,
+        sourceName: source.sourceName,
+        items: [],
+      }));
+  }
 
   items.forEach((item) => {
     const group = groups.get(item.sourceKey);
@@ -48,12 +66,17 @@ export const BidNoticeGroups: React.FC<BidNoticeGroupsProps> = ({
   loading,
   selectedId,
   sources,
+  selectedSourceKey,
+  showEmptyLocalSources = false,
   onSelect,
 }) => {
-  const groups = useMemo(() => groupNotices(items, sources), [items, sources]);
+  const groups = useMemo(
+    () => groupNotices(items, sources, selectedSourceKey, showEmptyLocalSources),
+    [items, selectedSourceKey, showEmptyLocalSources, sources],
+  );
 
   if (loading && !items.length) return <Skeleton active paragraph={{ rows: 8 }} />;
-  if (!items.length) return <Empty description="当前筛选条件下没有招投标信息" />;
+  if (!groups.length) return <Empty description="当前筛选条件下没有招投标信息" />;
 
   return (
     <Collapse
@@ -69,13 +92,20 @@ export const BidNoticeGroups: React.FC<BidNoticeGroupsProps> = ({
         ),
         children: (
           <div className="bid-group-list">
-            <BidNoticeList
-              grouped
-              items={group.items}
-              loading={false}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
+            {group.items.length ? (
+              <BidNoticeList
+                grouped
+                items={group.items}
+                loading={false}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="等待本地助手完成采集并上传"
+              />
+            )}
           </div>
         ),
       }))}

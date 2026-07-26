@@ -40,31 +40,36 @@ const readMethod = (card: ScreenedNotice) => {
   return '公告列表/公开接口';
 };
 
-const toInput = (sourceKey: string, card: ScreenedNotice, kind: 'current' | 'attention'): BidNoticeInput => ({
-  sourceKey,
-  sourceName: card.sourceName,
-  kind,
-  title: card.title,
-  url: card.url,
-  buyerName: card.buyerName,
-  publishedAt: card.publishedAt,
-  deadlineAt: card.deadlineAt,
-  matchedProducts: [...new Set(card.matchedTerms || [])],
-  judgment: kind === 'attention'
-    ? card.sourceOpportunityStatus === 'ended' ? '项目已结束，仅作可关注信息' : '已截止或有效性待确认，仅作可关注信息'
-    : ({
-      prioritize: '当前商机，建议优先确认',
-      deep_read: '建议继续查看详情或附件',
-      manual_review: '建议人工判断',
-      track_deadline: '建议跟踪截止时间',
-      ignore: '无需跟进',
-    }[card.recommendedAction]),
-  requirements: [...new Set([...(card.hardRequirements || []), ...(card.riskFlags || [])])],
-  missingInfo: [...new Set(card.missingInfo || [])],
-  evidence: String(card.evidenceText || '').trim(),
-  detailReadMethod: readMethod(card),
-  attachmentUrls: (card.documentSummaries || []).map((item) => item.url || '').filter(Boolean),
-});
+export const screenedNoticeToInput = (
+  sourceKey: string,
+  card: ScreenedNotice,
+  kind: 'current' | 'attention',
+): BidNoticeInput => {
+  const attentionSummary = card.sourceOpportunityStatus === 'ended'
+    ? '项目已结束，仅保留产品、价格或资格信息作为业务参考。'
+    : '项目已截止或当前有效性待确认，仅保留产品、价格或资格信息作为业务参考。';
+  const assessment = kind === 'attention'
+    ? { ...card.businessAssessment, decision: 'likely_cannot_do' as const, decisionSummary: attentionSummary, nextActions: [] }
+    : card.businessAssessment;
+  return {
+    sourceKey,
+    sourceName: card.sourceName,
+    kind,
+    title: card.title,
+    url: card.url,
+    buyerName: card.buyerName,
+    publishedAt: card.publishedAt,
+    deadlineAt: card.deadlineAt,
+    matchedProducts: [...new Set(card.matchedTerms || [])],
+    judgment: assessment.decisionSummary,
+    requirements: [...new Set([...(card.hardRequirements || []), ...(card.riskFlags || [])])],
+    missingInfo: [...new Set(card.missingInfo || [])],
+    evidence: String(card.evidenceText || '').trim(),
+    detailReadMethod: readMethod(card),
+    attachmentUrls: (card.documentSummaries || []).map((item) => item.url || '').filter(Boolean),
+    assessment,
+  };
+};
 
 export const buildBidCollectionReport = ({
   sourceKey,
@@ -98,7 +103,7 @@ export const buildBidCollectionReport = ({
     const inactive = card.sourceOpportunityStatus === 'ended'
       || (deadline !== null && deadline < now)
       || card.recommendedAction === 'ignore';
-    (inactive ? attentionItems : currentItems).push(toInput(sourceKey, card, inactive ? 'attention' : 'current'));
+    (inactive ? attentionItems : currentItems).push(screenedNoticeToInput(sourceKey, card, inactive ? 'attention' : 'current'));
   }
   const rawCount = discoveryStats?.rawCount ?? cards.length;
   const eligibleCount = discoveryStats?.eligibleCount ?? cards.length;

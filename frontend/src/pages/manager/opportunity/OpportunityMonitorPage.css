@@ -20,6 +20,22 @@
   padding: 14px 16px;
 }
 
+.bid-local-source-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bid-border);
+}
+
+.bid-local-source-strip .ant-tag {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
 .bid-search-input {
   width: min(360px, 100%);
 }
@@ -44,6 +60,10 @@
 
 .bid-list-card .ant-card-body {
   padding: 12px 12px 14px;
+  height: clamp(560px, 70dvh, 780px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .bid-list-card-title {
@@ -54,11 +74,21 @@
 }
 
 .bid-kind-switch {
+  flex: 0 0 auto;
   margin-bottom: 12px;
   padding: 4px;
   border: 1px solid var(--bid-border);
   border-radius: 12px;
   background: #f7f9fa;
+}
+
+.bid-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-right: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .bid-kind-switch .ant-segmented {
@@ -118,9 +148,7 @@
 }
 
 .bid-notice-list {
-  max-height: 66vh;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  overflow: visible;
 }
 
 .bid-notice-row {
@@ -172,17 +200,41 @@
 
 .bid-product-tags {
   min-height: 28px;
+  margin-bottom: 5px;
+}
+
+.bid-notice-quantity {
+  display: block;
   margin-bottom: 9px;
+  font-size: 12px;
 }
 
 .bid-notice-row-footer {
   color: var(--bid-muted);
 }
 
+.bid-notice-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.bid-notice-row-action .ant-tag {
+  margin-inline-end: 0;
+}
+
 .bid-detail-card {
-  min-height: 520px;
+  height: clamp(620px, 78dvh, 880px);
   position: sticky;
   top: 12px;
+}
+
+.bid-detail-card > .ant-card-body {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .bid-detail-heading {
@@ -197,10 +249,109 @@
 }
 
 .bid-detail-descriptions {
-  margin-top: 22px;
+  margin-top: 16px;
   padding: 14px 16px;
   border-radius: 12px;
   background: #fafbfc;
+}
+
+.bid-decision-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid #f0d9a7;
+  border-radius: 12px;
+  background: #fffbf2;
+}
+
+.bid-decision-panel.is-likely_can_do {
+  border-color: #b7ddcd;
+  background: #f3faf7;
+}
+
+.bid-decision-panel.is-likely_cannot_do {
+  border-color: #efc4c0;
+  background: #fff7f6;
+}
+
+.bid-decision-panel .ant-typography {
+  margin: 0;
+}
+
+.bid-procurement-grid,
+.bid-analysis-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.bid-procurement-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.55fr);
+  margin-top: 12px;
+}
+
+.bid-analysis-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bid-fact-panel {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--bid-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.bid-fact-panel h5 {
+  margin: 7px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bid-fact-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: #344054;
+}
+
+.bid-fact-list li {
+  padding-left: 2px;
+  line-height: 1.55;
+}
+
+.bid-qualification-list {
+  display: grid;
+  gap: 8px;
+}
+
+.bid-qualification-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--bid-border);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.bid-qualification-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.bid-qualification-main .ant-typography {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bid-qualification-row .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  white-space: nowrap;
 }
 
 .bid-detail-section {
@@ -270,7 +421,13 @@
   }
 
   .bid-detail-card {
+    height: auto;
     position: static;
+  }
+
+  .bid-detail-card > .ant-card-body {
+    height: auto;
+    overflow: visible;
   }
 }
 
@@ -280,8 +437,19 @@
     width: 100%;
   }
 
-  .bid-notice-list {
-    max-height: none;
+  .bid-list-card .ant-card-body {
+    height: 68dvh;
+    min-height: 480px;
+  }
+
+  .bid-procurement-grid,
+  .bid-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bid-qualification-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

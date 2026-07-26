@@ -24,6 +24,18 @@ const ignoredCard = (): ScreenedNotice => ({
   evidenceText: '',
   wechatSummary: '',
   confidence: 0.7,
+  businessAssessment: {
+    decision: 'likely_cannot_do',
+    decisionSummary: '当前不建议参与',
+    productSummary: '待确认',
+    quantity: '',
+    specifications: [],
+    deliveryTerms: [],
+    commercialTerms: [],
+    qualificationChecks: [],
+    historicalReferences: [],
+    nextActions: [],
+  },
 });
 
 const candidate = (overrides: Partial<TenderCandidate> = {}): TenderCandidate => ({

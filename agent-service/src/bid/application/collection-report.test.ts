@@ -25,6 +25,18 @@ const card = (overrides: Partial<ScreenedNotice> = {}): ScreenedNotice => ({
   evidenceText: '采购阻聚剂',
   wechatSummary: '',
   confidence: 0.9,
+  businessAssessment: {
+    decision: 'needs_manual_check',
+    decisionSummary: '产品匹配，但代理商资格需要确认。',
+    productSummary: '阻聚剂',
+    quantity: '20 吨',
+    specifications: ['工业级'],
+    deliveryTerms: [],
+    commercialTerms: [],
+    qualificationChecks: [{ requirement: '贸易商/代理商资格', status: 'unconfirmed', basis: '公告未写明' }],
+    historicalReferences: [],
+    nextActions: ['确认是否接受代理商投标'],
+  },
   ...overrides,
 });
 
@@ -41,6 +53,8 @@ test('separates current opportunities from expired attention information', () =>
   assert.equal(report.currentItems.length, 1);
   assert.equal(report.attentionItems.length, 1);
   assert.equal(report.attentionItems[0].kind, 'attention');
+  assert.equal(report.currentItems[0].judgment, '产品匹配，但代理商资格需要确认。');
+  assert.equal(report.currentItems[0].assessment?.quantity, '20 吨');
 });
 
 test('keeps an LLM-discovered new chemical as a current opportunity', () => {

@@ -1,6 +1,7 @@
 import process from 'node:process';
 
 import { createDailyBidRunner } from './application/daily-runner.ts';
+import { reassessStoredBidNotices } from './application/reassess-existing.ts';
 import { createBidApiServer } from './infrastructure/api-server.ts';
 import { PocketBaseClient } from './infrastructure/pocketbase-client.ts';
 
@@ -16,6 +17,21 @@ if (command === 'run-once') {
   const sourceArg = process.argv.find((item) => item.startsWith('--source='));
   const sourceKeys = sourceArg ? sourceArg.slice('--source='.length).split(',').filter(Boolean) : [];
   runner.run({ force: true, sourceKeys }).then((result) => {
+    console.log(JSON.stringify(result, null, 2));
+  }).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+} else if (command === 'reassess-notices') {
+  const limitArg = process.argv.find((item) => item.startsWith('--limit='));
+  const limit = Number(limitArg?.slice('--limit='.length) || 0);
+  const onlyMissing = !process.argv.includes('--all');
+  reassessStoredBidNotices({
+    client,
+    onlyMissing,
+    limit,
+    onProgress: (message) => console.log(`[bid-reassessment] ${message}`),
+  }).then((result) => {
     console.log(JSON.stringify(result, null, 2));
   }).catch((error) => {
     console.error(error);

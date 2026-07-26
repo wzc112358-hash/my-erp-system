@@ -1,9 +1,15 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 
-import type { BidNoticeInput } from '../domain/notice.ts';
-import { PUBLIC_SITES } from '../sites/registry.ts';
+import { normalizeBusinessAssessment } from '../domain/notice.ts';
+import type { BidBusinessAssessment } from '../domain/tender-screening.ts';
+import { BID_SITES } from '../sites/registry.ts';
 import { persistCollectionNotices } from '../application/persist-report.ts';
+import { assessLocalHelperReport } from '../application/ingest-local-helper-report.ts';
+import { createBidPreparationModule, type ErpRegion } from '../application/bid-preparation.ts';
+import { createDefaultBidAssessor } from '../llm/bid-assessor.ts';
+import { createBidDraftExtractor } from '../llm/bid-draft-extractor.ts';
+import { createBidPreparationData } from './bid-preparation-repository.ts';
 import { PocketBaseBidNoticeRepository } from './pocketbase-repository.ts';
 import { PocketBaseClient, type PocketBaseRecord } from './pocketbase-client.ts';
 
@@ -36,6 +42,15 @@ const parseArray = (value: unknown) => {
   }
 };
 
+const parseAssessment = (value: unknown) => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value || 'null') : value;
+    return normalizeBusinessAssessment(parsed as BidBusinessAssessment | undefined);
+  } catch {
+    return undefined;
+  }
+};
+
 const noticeDto = (record: PocketBaseRecord & Record<string, unknown>) => ({
   id: record.id,
   sourceKey: String(record.source_key || ''),
@@ -53,6 +68,7 @@ const noticeDto = (record: PocketBaseRecord & Record<string, unknown>) => ({
   evidence: String(record.evidence || ''),
   detailReadMethod: String(record.detail_read_method || ''),
   attachmentUrls: parseArray(record.attachment_urls),
+  assessment: parseAssessment(record.assessment),
   firstSeenAt: String(record.first_seen_at || ''),
   lastSeenAt: String(record.last_seen_at || ''),
   lastChangedAt: String(record.last_changed_at || ''),
@@ -113,40 +129,6 @@ const validateErpToken = async ({
   return true;
 };
 
-const sourceKeyForName = (sourceName: string) => {
-  const cloud = PUBLIC_SITES.find((site) => site.sourceName === sourceName)?.sourceKey;
-  if (cloud) return cloud;
-  if (sourceName === '裕龙招投标网') return 'yulong';
-  if (sourceName === '中国石油招标投标网') return 'cnpc';
-  return '';
-};
-
-const reportItemToNotice = (
-  report: Record<string, unknown>,
-  item: Record<string, unknown>,
-  kind: 'current' | 'attention',
-): BidNoticeInput | null => {
-  const sourceName = String(report.sourceName || '');
-  const sourceKey = sourceKeyForName(sourceName);
-  if (!sourceKey || !item.title || !item.url) return null;
-  return {
-    sourceKey,
-    sourceName,
-    kind,
-    title: String(item.title),
-    url: String(item.url),
-    buyerName: String(item.buyerName || ''),
-    publishedAt: String(item.publishedAt || ''),
-    deadlineAt: String(item.deadlineAt || ''),
-    matchedProducts: parseArray(item.matchedProducts),
-    judgment: String(item.judgment || ''),
-    requirements: parseArray(item.requirements),
-    missingInfo: parseArray(item.missingInfo),
-    evidence: String(item.evidence || ''),
-    detailReadMethod: String(item.detailReadMethod || ''),
-  };
-};
-
 export const createBidApiServer = ({
   client,
   port = Number(process.env.BID_AGENT_PORT || process.env.LOCAL_HELPER_API_PORT || 8097),
@@ -159,6 +141,19 @@ export const createBidApiServer = ({
   env?: Record<string, string | undefined>;
 }) => {
   const noticeRepository = new PocketBaseBidNoticeRepository(client);
+  const regionClients: Record<ErpRegion, PocketBaseClient> = {
+    beijing: client,
+    lanzhou: new PocketBaseClient({
+      baseUrl: env.POCKETBASE_LANZHOU_URL || env.ERP_LANZHOU_API_URL || 'https://api-lanzhou.henghuacheng.cn',
+      identity: env.POCKETBASE_SUPERUSER_EMAIL || env.POCKETBASE_ADMIN_EMAIL || '',
+      password: env.POCKETBASE_SUPERUSER_PASSWORD || env.POCKETBASE_ADMIN_PASSWORD || '',
+    }),
+  };
+  const bidPreparation = createBidPreparationModule({
+    data: createBidPreparationData({ noticeClient: client, regionClients }),
+    extractor: createBidDraftExtractor({ env }),
+  });
+  const localHelperAssessor = createDefaultBidAssessor({ env });
   const pairCode = String(env.LOCAL_HELPER_PAIR_CODE || '');
   const localHelperToken = String(env.LOCAL_HELPER_API_TOKEN || '');
   const server = http.createServer(async (request, response) => {
@@ -190,17 +185,17 @@ export const createBidApiServer = ({
         if (request.method === 'GET' && url.pathname === '/local-helper/release') return json(response, 200, { latestVersion: env.LOCAL_HELPER_LATEST_VERSION || '' });
         if (request.method === 'POST' && /^\/local-helper\/tasks\/[^/]+\/result$/.test(url.pathname)) {
           const report = await readJson(request) as Record<string, unknown>;
-          const current = Array.isArray(report.items) ? report.items : [];
-          const attention = Array.isArray(report.intelligenceItems) ? report.intelligenceItems : [];
-          const notices = [
-            ...current.map((item) => reportItemToNotice(report, item, 'current')),
-            ...attention.map((item) => reportItemToNotice(report, item, 'attention')),
-          ].filter((item): item is BidNoticeInput => Boolean(item));
-          const result = await persistCollectionNotices({ notices, repository: noticeRepository });
+          const assessed = await assessLocalHelperReport({
+            report,
+            assessor: localHelperAssessor,
+          });
+          const result = await persistCollectionNotices({ notices: assessed.notices, repository: noticeRepository });
           json(response, 200, {
             uploaded: true,
             uploadedCount: result.created.length + result.updated.length,
             duplicateCount: result.duplicateCount + result.batchDuplicateCount,
+            assessedCount: assessed.assessedCount,
+            ignoredCount: assessed.ignoredCount,
             recordIds: [...result.created, ...result.updated].map((item) => item.id),
           });
           return;
@@ -210,6 +205,26 @@ export const createBidApiServer = ({
 
       if (!url.pathname.startsWith('/api/bids/')) return json(response, 404, { error: 'not found' });
       if (!await validateErpToken({ request, env })) return json(response, 401, { error: 'ERP login required' });
+
+      const historyMatch = url.pathname.match(/^\/api\/bids\/notices\/([^/]+)\/history$/);
+      if (request.method === 'GET' && historyMatch) {
+        const result = await bidPreparation.history(decodeURIComponent(historyMatch[1]));
+        json(response, 200, { items: result.historicalMatches });
+        return;
+      }
+
+      const prepareMatch = url.pathname.match(/^\/api\/bids\/notices\/([^/]+)\/prepare$/);
+      if (request.method === 'POST' && prepareMatch) {
+        const region: ErpRegion = request.headers['x-erp-region'] === 'lanzhou' ? 'lanzhou' : 'beijing';
+        try {
+          const result = await bidPreparation.prepare(decodeURIComponent(prepareMatch[1]), region);
+          json(response, 200, result);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          json(response, /不存在/.test(message) ? 404 : /不能创建|阻断条件/.test(message) ? 409 : 500, { error: message });
+        }
+        return;
+      }
 
       if (request.method === 'GET' && url.pathname === '/api/bids/notices') {
         const kind = url.searchParams.get('kind') || '';
@@ -235,7 +250,13 @@ export const createBidApiServer = ({
         return;
       }
       if (request.method === 'GET' && url.pathname === '/api/bids/sources') {
-        json(response, 200, { items: PUBLIC_SITES.map(({ sourceKey, sourceName }) => ({ sourceKey, sourceName })) });
+        json(response, 200, {
+          items: BID_SITES.map(({ sourceKey, sourceName, collectionMode }) => ({
+            sourceKey,
+            sourceName,
+            collectionMode,
+          })),
+        });
         return;
       }
       json(response, 404, { error: 'not found' });

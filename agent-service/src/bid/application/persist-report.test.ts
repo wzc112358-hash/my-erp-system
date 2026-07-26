@@ -98,3 +98,28 @@ test('duplicates inside one fetched batch are collapsed before repository writes
   assert.equal(repository.records.size, 1);
 });
 
+test('normalization rejects an unsupported claim that the company lacks a qualification', () => {
+  const notice = normalizeBidNotice(input({
+    assessment: {
+      decision: 'likely_cannot_do',
+      decisionSummary: '公司没有所需业绩，无法参与。',
+      productSummary: '阻聚剂',
+      quantity: '数量未指明',
+      specifications: [],
+      deliveryTerms: [],
+      commercialTerms: [],
+      qualificationChecks: [{
+        requirement: '同类供货业绩',
+        status: 'not_met',
+        basis: '我司无此业绩记录',
+      }],
+      historicalReferences: [],
+      nextActions: ['核实同类合同'],
+    },
+  }));
+
+  assert.equal(notice.assessment?.decision, 'needs_manual_check');
+  assert.equal(notice.assessment?.qualificationChecks[0].status, 'unconfirmed');
+  assert.equal(notice.assessment?.quantity, '');
+  assert.equal(notice.judgment, notice.assessment?.decisionSummary);
+});

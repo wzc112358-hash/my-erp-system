@@ -124,20 +124,45 @@ export const collectPublicSite = async ({
   }
 
   const cards = [...preliminary];
-  if (selectedIndexes.length) {
-    const selectedBundle: CandidateBundle = {
+  const assessmentIndexes = preliminary
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) => isRelevant(card))
+    .map(({ index }) => index);
+  if (assessmentIndexes.length) {
+    const assessmentBundle: CandidateBundle = {
       source_name: bundle.source_name,
-      candidates: selectedIndexes.map((index) => candidates[index]),
+      candidates: assessmentIndexes.map((index) => candidates[index]),
     };
-    const selectedCards = await assessScreenedNotices({
+    const deterministicCards = buildScreenedNotices({ bundle: assessmentBundle, task });
+    const assessmentBaseCards = deterministicCards.map((card, index) => {
+      const preliminaryCard = preliminary[assessmentIndexes[index]];
+      if (!preliminaryCard) return card;
+      const matchedTerms = [...new Set([...card.matchedTerms, ...preliminaryCard.matchedTerms])];
+      return {
+        ...card,
+        matchedTerms,
+        matchedSources: [...new Set([...card.matchedSources, ...preliminaryCard.matchedSources])],
+        relevanceScore: Math.max(card.relevanceScore, preliminaryCard.relevanceScore),
+        businessRelevance: preliminaryCard.businessRelevance,
+        bidability: preliminaryCard.bidability,
+        recommendedAction: preliminaryCard.recommendedAction,
+        evidenceText: preliminaryCard.evidenceText || card.evidenceText,
+        confidence: Math.max(card.confidence, preliminaryCard.confidence),
+        businessAssessment: {
+          ...card.businessAssessment,
+          productSummary: matchedTerms.join('、') || card.businessAssessment.productSummary,
+        },
+      };
+    });
+    const assessedCards = await assessScreenedNotices({
       task,
-      bundle: selectedBundle,
-      cards: buildScreenedNotices({ bundle: selectedBundle, task }),
+      bundle: assessmentBundle,
+      cards: assessmentBaseCards,
       assessor,
       mode: 'detail',
     });
-    selectedIndexes.forEach((originalIndex, selectedIndex) => {
-      const card = selectedCards[selectedIndex];
+    assessmentIndexes.forEach((originalIndex, assessmentIndex) => {
+      const card = assessedCards[assessmentIndex];
       if (!card) return;
       const documents = documentsByIndex.get(originalIndex) || [];
       const useful = documents.filter((document) => document.text);
@@ -145,16 +170,18 @@ export const collectPublicSite = async ({
         ...card,
         ...(useful.length ? { deepReadAt: new Date().toISOString() } : {}),
         detailUrl: candidates[originalIndex].url,
-        documentSummaries: documents.map((document) => ({
-          title: document.title,
-          url: document.url,
-          textSnippet: document.text.slice(0, 1_200),
-          warning: document.warning,
-          ocrProvider: document.readMethod === '百度 OCR' ? 'baidu' : undefined,
-        })),
-        missingInfo: useful.length
-          ? card.missingInfo
-          : [...new Set([...card.missingInfo, '详情或附件未读取到有效正文'])],
+        ...(documents.length ? {
+          documentSummaries: documents.map((document) => ({
+            title: document.title,
+            url: document.url,
+            textSnippet: document.text.slice(0, 1_200),
+            warning: document.warning,
+            ocrProvider: document.readMethod === '百度 OCR' ? 'baidu' : undefined,
+          })),
+          missingInfo: useful.length
+            ? card.missingInfo
+            : [...new Set([...card.missingInfo, '详情或附件未读取到有效正文'])],
+        } : {}),
       };
     });
   }

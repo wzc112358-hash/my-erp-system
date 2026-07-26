@@ -3,6 +3,8 @@ import type {
   StoredBidNotice,
 } from '../application/persist-report.ts';
 import type { NormalizedBidNotice } from '../domain/notice.ts';
+import { normalizeBusinessAssessment } from '../domain/notice.ts';
+import type { BidBusinessAssessment } from '../domain/tender-screening.ts';
 import {
   asPocketBaseDate,
   PocketBaseClient,
@@ -27,6 +29,15 @@ const jsonArray = (value: unknown) => {
   }
 };
 
+const assessmentFrom = (value: unknown) => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value || 'null') : value;
+    return normalizeBusinessAssessment(parsed as BidBusinessAssessment | undefined);
+  } catch {
+    return undefined;
+  }
+};
+
 const noticeFromRecord = (record: NoticeRecord): StoredBidNotice => ({
   id: record.id,
   sourceKey: String(record.source_key || ''),
@@ -48,6 +59,7 @@ const noticeFromRecord = (record: NoticeRecord): StoredBidNotice => ({
   evidence: String(record.evidence || ''),
   detailReadMethod: String(record.detail_read_method || ''),
   attachmentUrls: jsonArray(record.attachment_urls),
+  assessment: assessmentFrom(record.assessment),
   firstSeenAt: String(record.first_seen_at || ''),
   lastSeenAt: String(record.last_seen_at || ''),
   lastChangedAt: String(record.last_changed_at || ''),
@@ -109,6 +121,7 @@ export class PocketBaseBidNoticeRepository implements BidNoticeRepository {
       evidence: String(notice.evidence || '').slice(0, 4_800),
       detail_read_method: String(notice.detailReadMethod || '').slice(0, 500),
       attachment_urls: arrayText(notice.attachmentUrls),
+      assessment: notice.assessment ? JSON.stringify(notice.assessment).slice(0, 12_000) : '',
     };
   }
 
@@ -134,6 +147,11 @@ export class PocketBaseBidNoticeRepository implements BidNoticeRepository {
       last_seen_at: asPocketBaseDate(seenAt),
       last_changed_at: asPocketBaseDate(seenAt),
     });
+    return noticeFromRecord(record);
+  }
+
+  async updateNoticeAssessment(id: string, notice: NormalizedBidNotice): Promise<StoredBidNotice> {
+    const record = await this.client.update<NoticeRecord>('bid_notices', id, await this.payload(notice));
     return noticeFromRecord(record);
   }
 }

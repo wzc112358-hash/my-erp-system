@@ -1,6 +1,10 @@
 import { buildProductQueryPlan, productFocusTerms } from '../domain/product-query-plan.ts';
 import type { PublicCollectionTask, PublicSiteDefinition } from '../domain/collection.ts';
 
+export type BidSourceDefinition = PublicSiteDefinition & {
+  collectionMode: 'scheduled' | 'local_helper';
+};
+
 const ALL_PRODUCTS = productFocusTerms();
 const fullScope = ALL_PRODUCTS.join(',');
 
@@ -38,7 +42,8 @@ const source = (
   recentDays = 30,
   maxDetails = 6,
   maxCandidates = 160,
-): PublicSiteDefinition => ({
+  collectionMode: BidSourceDefinition['collectionMode'] = 'scheduled',
+): BidSourceDefinition => ({
   sourceKey,
   sourceName,
   entryUrl,
@@ -47,9 +52,10 @@ const source = (
   llmExtractionHint,
   maxCandidates,
   browserJourney: { recentDays, maxDetails },
+  collectionMode,
 });
 
-export const PUBLIC_SITES: readonly PublicSiteDefinition[] = [
+export const PUBLIC_SITES: readonly BidSourceDefinition[] = [
   source('guoneng-egou', '国能E购', 'https://neep.shop/html/portal/index-Inquiries.html', plan(ENERGY, 24), '关注国家能源集团正在采购的化工原料、油品、药剂和助剂；排除销售、处置、工程和结果公告。'),
   source('guoneng-ebid', '国能E招', 'https://www.chnenergybidding.com.cn/bidweb/001/001002/moreinfo.html', plan(ENERGY, 24), '提取化工产品的数量、技术指标、代理商或制造商限制、业绩及投标截止时间。'),
   source('cnooc', '中国海油供应链平台', 'https://bid.cnooc.com.cn/home/#/navigation', plan(PETRO, 22), '关注中国海油体系采购的化工原料、溶剂、油品、催化剂和助剂，也保留规则外的新化工产品。'),
@@ -62,8 +68,38 @@ export const PUBLIC_SITES: readonly PublicSiteDefinition[] = [
   source('norinco-public', '兵器网', 'https://bid.norincogroup-ebuy.com/retrieve.do', plan(['四氯乙烯', '引发剂', '消泡剂', '矿物油', ...COMMON], 22), '只采集无需登录的公开招标和采购公告，关注兵器、华锦体系化工原料、油品和助剂，排除设备、工程、废旧处置和结果。'),
 ] as const;
 
-const byName = new Map(PUBLIC_SITES.map((item) => [item.sourceName, item]));
-const byKey = new Map(PUBLIC_SITES.map((item) => [item.sourceKey, item]));
+export const HUMAN_ASSISTED_SITES: readonly BidSourceDefinition[] = [
+  source(
+    'cnpc',
+    '中国石油招标投标网',
+    'https://www.cnpcbidding.com/#/tenders',
+    plan(PETRO, 24),
+    '本地助手完成人机验证和当前结果采集后，由云端 Agent 复核化工产品、数量、规格、交货、限价、保证金、贸易商/制造商限制、同类业绩、平台准入和危化要求。',
+    30,
+    6,
+    100,
+    'local_helper',
+  ),
+  source(
+    'yulong',
+    '裕龙招投标网',
+    'https://ctbpsp.com/#/bulletinList?keyWords=%E8%A3%95%E9%BE%99%E7%9F%B3%E5%8C%96',
+    plan(PETRO, 24),
+    '本地助手完成安全验证并读取裕龙石化公告后，由云端 Agent 复核产品、数量、规格/纯度/包装、截止时间、供应商资格、代理商限制及附件证据；排除候选人和结果公示。',
+    30,
+    6,
+    100,
+    'local_helper',
+  ),
+] as const;
+
+export const BID_SITES: readonly BidSourceDefinition[] = [
+  ...PUBLIC_SITES,
+  ...HUMAN_ASSISTED_SITES,
+];
+
+const byName = new Map(BID_SITES.map((item) => [item.sourceName, item]));
+const byKey = new Map(BID_SITES.map((item) => [item.sourceKey, item]));
 
 export const definitionFor = (sourceName: string): PublicSiteDefinition => {
   const definition = byName.get(sourceName);

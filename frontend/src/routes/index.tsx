@@ -45,6 +45,7 @@ const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
 const BiddingDetail = lazy(() => import('@/pages/sales/bidding/BiddingDetail').then(m => ({ default: m.BiddingDetail })));
+const BiddingCreatePage = lazy(() => import('@/pages/sales/bidding/BiddingCreatePage').then(m => ({ default: m.BiddingCreatePage })));
 
 // eslint-disable-next-line react-refresh/only-export-components
 const LoadingFallback: React.FC = () => (
@@ -202,6 +203,10 @@ export const router = createBrowserRouter([
           {
             path: 'bidding',
             element: <BiddingList />,
+          },
+          {
+            path: 'bidding/new',
+            element: <BiddingCreatePage />,
           },
           {
             path: 'bidding/:id',

@@ -1,0 +1,32 @@
+.bid-create-page {
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 24px;
+}
+
+.bid-create-page h2 {
+  margin: 8px 0 4px;
+}
+
+.bid-source-card {
+  border-top: 3px solid #1677ff;
+}
+
+.bid-create-warning {
+  margin-top: 14px;
+}
+
+.bid-create-loading {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+@media (max-width: 768px) {
+  .bid-create-page {
+    padding: 12px;
+  }
+}

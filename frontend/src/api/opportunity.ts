@@ -5,6 +5,7 @@ import type {
   BidNoticeListResult,
   BidSourceOption,
 } from '@/types/opportunity';
+import type { BidPreparation, HistoricalBidMatch } from '@/types/bidding-record';
 
 const agentBaseUrl = () => {
   const override = import.meta.env.VITE_BID_AGENT_URL;
@@ -12,13 +13,15 @@ const agentBaseUrl = () => {
   return import.meta.env.DEV ? 'http://127.0.0.1:8097' : 'https://agent.henghuacheng.cn';
 };
 
-const request = async <T>(path: string): Promise<T> => {
+const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const token = pb.authStore.token;
   if (!token) throw new Error('请重新登录 ERP');
   const response = await fetch(`${agentBaseUrl()}${path}`, {
+    ...init,
     headers: {
       Authorization: `Bearer ${token}`,
       'X-ERP-Region': localStorage.getItem('erp_system') || 'beijing',
+      ...(init.headers || {}),
     },
   });
   const body = await response.json().catch(() => ({})) as T & { error?: string };
@@ -47,4 +50,16 @@ export const OpportunityAPI = {
     const result = await request<{ items: BidSourceOption[] }>('/api/bids/sources');
     return result.items;
   },
+
+  listHistory: async (noticeId: string) => {
+    const result = await request<{ items: HistoricalBidMatch[] }>(
+      `/api/bids/notices/${encodeURIComponent(noticeId)}/history`,
+    );
+    return result.items;
+  },
+
+  prepareBid: (noticeId: string) => request<BidPreparation>(
+    `/api/bids/notices/${encodeURIComponent(noticeId)}/prepare`,
+    { method: 'POST' },
+  ),
 };

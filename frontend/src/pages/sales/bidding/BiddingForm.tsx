@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { pb } from '@/lib/pocketbase';
 import type { BiddingRecordFormData, BiddingRecord } from '@/types/bidding-record';
+import { BiddingBusinessFields } from './BiddingBusinessFields';
 
 interface BiddingFormProps {
   form: FormInstance<BiddingRecordFormData>;
@@ -33,6 +34,16 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
     };
     fetchContracts();
   }, []);
+
+  const qualificationSnapshot = (() => {
+    if (Array.isArray(initialValues?.qualification_snapshot)) return initialValues.qualification_snapshot;
+    try {
+      const parsed = JSON.parse(String(initialValues?.qualification_snapshot || '[]'));
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
 
   return (
     <Form
@@ -63,6 +74,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
                     url: file,
                   }))
                 : [],
+              qualification_snapshot: qualificationSnapshot,
             }
           : {
               bidding_company: '',
@@ -98,7 +110,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       </Row>
 
       <Row gutter={16}>
-        <Col xs={24} md={12}>
+        <Col xs={24} md={8}>
           <Form.Item
             name="product_name"
             label="产品名称"
@@ -107,15 +119,28 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col xs={24} md={12}>
+        <Col xs={24} md={8}>
           <Form.Item
             name="quantity"
             label="数量"
           >
-            <InputNumber placeholder="请输入数量" min={0} precision={0} style={{ width: '100%' }} />
+            <InputNumber placeholder="请输入数量" min={0} precision={4} style={{ width: '100%' }} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={8}>
+          <Form.Item name="quantity_unit" label="数量单位">
+            <Select
+              allowClear
+              showSearch
+              placeholder="吨、公斤、桶等"
+              options={['吨', '万吨', '千克', '公斤', 'kg', '桶', '袋', '箱', '批', '套']
+                .map((value) => ({ label: value, value }))}
+            />
           </Form.Item>
         </Col>
       </Row>
+
+      <BiddingBusinessFields />
 
       <Divider titlePlacement="left" plain>标书费</Divider>
       <Row gutter={16}>
@@ -139,7 +164,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
               return e?.fileList || [];
             }}
           >
-            <Upload beforeUpload={() => false} maxCount={3} multiple listType="text">
+            <Upload beforeUpload={() => false} maxCount={1} listType="text">
               <Button icon={<UploadOutlined />}>上传</Button>
             </Upload>
           </Form.Item>
@@ -164,7 +189,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Form.Item name="open_date" label="开标时间">
-            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+            <DatePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" />
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -223,6 +248,14 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Form.Item name="remark" label="备注">
         <Input.TextArea rows={2} placeholder="请输入备注" />
       </Form.Item>
+
+      {[
+        'source_notice_id',
+        'source_notice_fingerprint',
+        'source_notice_title',
+        'source_notice_url',
+        'source_name',
+      ].map((name) => <Form.Item key={name} name={name} hidden><Input /></Form.Item>)}
 
       <Form.Item
         name="attachments"

@@ -77,6 +77,17 @@ export const BiddingDetail: React.FC = () => {
   };
 
   const resultInfo = bidResultMap[record.bid_result];
+  const currency = record.currency || 'CNY';
+  const qualificationSnapshot = (() => {
+    if (Array.isArray(record.qualification_snapshot)) return record.qualification_snapshot;
+    try {
+      const parsed = JSON.parse(String(record.qualification_snapshot || '[]'));
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
+  const amount = (value?: number) => value ? `${currency} ${value.toLocaleString()}` : '-';
 
   return (
     <div style={{ padding: 24 }}>
@@ -93,7 +104,12 @@ export const BiddingDetail: React.FC = () => {
           <Descriptions.Item label="招标公司">{record.bidding_company}</Descriptions.Item>
           <Descriptions.Item label="招标编号">{record.bidding_no}</Descriptions.Item>
           <Descriptions.Item label="产品名称">{record.product_name}</Descriptions.Item>
-          <Descriptions.Item label="数量">{record.quantity}</Descriptions.Item>
+          <Descriptions.Item label="数量">{record.quantity ? `${record.quantity}${record.quantity_unit ? ` ${record.quantity_unit}` : ''}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="规格与技术指标" span={2}>{record.specification || '-'}</Descriptions.Item>
+          <Descriptions.Item label="纯度/含量">{record.purity || '-'}</Descriptions.Item>
+          <Descriptions.Item label="包装">{record.packaging || '-'}</Descriptions.Item>
+          <Descriptions.Item label="我方报价单价">{amount(record.quoted_unit_price)}</Descriptions.Item>
+          <Descriptions.Item label="我方报价总额">{amount(record.quoted_total_amount)}</Descriptions.Item>
 
           <Descriptions.Item label="标书费">
             {record.tender_fee ? `¥${record.tender_fee.toFixed(6)}` : '-'}
@@ -118,6 +134,16 @@ export const BiddingDetail: React.FC = () => {
           <Descriptions.Item label="中标结果">
             {resultInfo ? <Tag color={resultInfo.color}>{resultInfo.label}</Tag> : '-'}
           </Descriptions.Item>
+          <Descriptions.Item label="历史中标单价">{amount(record.winning_unit_price)}</Descriptions.Item>
+          <Descriptions.Item label="历史中标总额">{amount(record.winning_total_amount)}</Descriptions.Item>
+          <Descriptions.Item label="中标厂家">{record.winning_supplier || '-'}</Descriptions.Item>
+          <Descriptions.Item label="品牌/生产商">{record.brand || '-'}</Descriptions.Item>
+          <Descriptions.Item label="未中标/弃标原因" span={2}>{record.loss_reason || '-'}</Descriptions.Item>
+          <Descriptions.Item label="当时确认满足的资质" span={2}>
+            {qualificationSnapshot.length
+              ? <Flex gap={6} wrap>{qualificationSnapshot.map((item) => <Tag key={item}>{item}</Tag>)}</Flex>
+              : '-'}
+          </Descriptions.Item>
 
           <Descriptions.Item label="保证金退还时间">
             {record.bond_return_date?.split(' ')[0] || '-'}
@@ -138,6 +164,11 @@ export const BiddingDetail: React.FC = () => {
           </Descriptions.Item>
 
           <Descriptions.Item label="备注" span={2}>{record.remark || '-'}</Descriptions.Item>
+          <Descriptions.Item label="原始采集公告" span={2}>
+            {record.source_notice_url
+              ? <a href={record.source_notice_url} target="_blank" rel="noreferrer">{record.source_notice_title || record.source_name || '查看来源公告'}</a>
+              : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="附件" span={2}>
             {renderFileLinks(record.attachments)}
           </Descriptions.Item>

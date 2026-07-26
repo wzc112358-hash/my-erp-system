@@ -6,7 +6,10 @@ import {
 import {
   enforcePromotedProductEvidence,
   enforceScreenedNoticeConstraints,
+  type BidBusinessAssessment,
   type BusinessRelevance,
+  type QualificationCheck,
+  type QualificationCheckStatus,
   type ScreenedNotice,
   type ScreeningAction,
   type BidEligibility,
@@ -26,6 +29,7 @@ export type NoticeAssessment = {
   evidenceText: string;
   wechatSummary: string;
   confidence: number;
+  businessAssessment: BidBusinessAssessment;
 };
 
 export type AssessmentInput = {
@@ -60,6 +64,12 @@ const VALID_BUSINESS_RELEVANCE = new Set<BusinessRelevance>([
   'potential_product',
   'irrelevant',
 ]);
+const VALID_QUALIFICATION_STATUS = new Set<QualificationCheckStatus>([
+  'met',
+  'unconfirmed',
+  'not_met',
+  'not_applicable',
+]);
 
 const unique = <T>(items: T[]) => [...new Set(items.filter(Boolean))];
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -75,6 +85,68 @@ const textArray = (value: unknown) => (
 const asNumber = (value: unknown, fallback: number) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const qualificationChecksFrom = (value: unknown): QualificationCheck[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (!item || typeof item !== 'object') return null;
+    const raw = item as Record<string, unknown>;
+    const requirement = String(raw.requirement || '').trim();
+    let status = VALID_QUALIFICATION_STATUS.has(raw.status as QualificationCheckStatus)
+      ? raw.status as QualificationCheckStatus
+      : 'unconfirmed';
+    const basis = String(raw.basis || '').trim();
+    if (status === 'not_met' && /通常|惯例|倾向|暗示|可能|推测|未提供|未披露|未指明|无.{0,12}(?:记录|证明|资料)/.test(basis)) {
+      status = 'unconfirmed';
+    }
+    if (status === 'met' && (!basis || /未提供|未披露|未指明|待确认|可能/.test(basis))) {
+      status = 'unconfirmed';
+    }
+    return requirement ? { requirement, status, basis } : null;
+  }).filter((item): item is QualificationCheck => Boolean(item)).slice(0, 8);
+};
+
+const decisionSummaryFallback = (bidability: BidEligibility) => ({
+  likely_can_do: '产品方向匹配，公开信息中暂未发现明确阻断条件，可进入报价和投标准备。',
+  needs_manual_check: '产品具有业务机会，但技术指标或投标资格缺少公司侧证明，需要逐项确认后再决定。',
+  likely_cannot_do: '公开要求中存在明确阻断条件，当前不建议直接参与。',
+}[bidability]);
+
+const quantityText = (value: unknown) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const hasMeasuredQuantity = /\d+(?:\.\d+)?\s*(?:万?吨|千克|公斤|kg|桶|袋|箱|批|套)/i.test(text);
+  return !hasMeasuredQuantity && /待确认|原待确认|未指明|未提供|未知|暂未/.test(text) ? '' : text;
+};
+
+const mergeBusinessAssessment = ({
+  base,
+  assessment,
+  bidability,
+}: {
+  base: BidBusinessAssessment;
+  assessment: Partial<BidBusinessAssessment> | null | undefined;
+  bidability: BidEligibility;
+}): BidBusinessAssessment => {
+  const qualificationChecks = qualificationChecksFrom(assessment?.qualificationChecks);
+  const selectArray = (incoming: unknown, fallback: string[]) => {
+    const values = textArray(incoming);
+    return unique(values.length ? values : fallback).slice(0, 8);
+  };
+  return {
+    decision: bidability,
+    decisionSummary: String(assessment?.decisionSummary || '').trim()
+      || decisionSummaryFallback(bidability),
+    productSummary: String(assessment?.productSummary || base.productSummary || '').trim(),
+    quantity: quantityText(assessment?.quantity || base.quantity),
+    specifications: selectArray(assessment?.specifications, base.specifications),
+    deliveryTerms: selectArray(assessment?.deliveryTerms, base.deliveryTerms),
+    commercialTerms: selectArray(assessment?.commercialTerms, base.commercialTerms),
+    qualificationChecks: qualificationChecks.length ? qualificationChecks : base.qualificationChecks,
+    historicalReferences: selectArray(assessment?.historicalReferences, base.historicalReferences),
+    nextActions: selectArray(assessment?.nextActions, base.nextActions),
+  };
 };
 
 const firstJsonObject = (content = '') => {
@@ -97,7 +169,7 @@ export const mergeAssessmentIntoCard = (
   assessment: Partial<NoticeAssessment> | null | undefined,
 ): ScreenedNotice => {
   if (!assessment) return baseCard;
-  const bidability = VALID_BIDABILITY.has(assessment.bidability as BidEligibility)
+  const proposedBidability = VALID_BIDABILITY.has(assessment.bidability as BidEligibility)
     ? assessment.bidability as BidEligibility
     : baseCard.bidability;
   const recommendedAction = VALID_ACTION.has(assessment.recommendedAction as ScreeningAction)
@@ -117,6 +189,27 @@ export const mergeAssessmentIntoCard = (
       : recommendedAction !== 'ignore' && assessmentTerms.length
         ? 'potential_product'
         : 'irrelevant';
+  const proposedBusinessAssessment = mergeBusinessAssessment({
+    base: baseCard.businessAssessment,
+    assessment: assessment.businessAssessment,
+    bidability: proposedBidability,
+  });
+  const qualificationChecks = proposedBusinessAssessment.qualificationChecks;
+  const hasExplicitBlocker = qualificationChecks.some((item) => item.status === 'not_met');
+  const hasUnconfirmed = qualificationChecks.some((item) => item.status === 'unconfirmed');
+  const hasConfirmedFit = qualificationChecks.some((item) => item.status === 'met');
+  const bidability = proposedBidability === 'likely_cannot_do' && !hasExplicitBlocker
+    ? 'needs_manual_check'
+    : proposedBidability === 'likely_can_do' && (hasUnconfirmed || hasExplicitBlocker || !hasConfirmedFit)
+      ? 'needs_manual_check'
+      : proposedBidability;
+  const businessAssessment = {
+    ...proposedBusinessAssessment,
+    decision: bidability,
+    decisionSummary: bidability === proposedBidability
+      ? proposedBusinessAssessment.decisionSummary
+      : decisionSummaryFallback(bidability),
+  };
   return {
     ...baseCard,
     relevanceScore: Math.round(clamp(relevanceScore, 0, 100)),
@@ -130,6 +223,7 @@ export const mergeAssessmentIntoCard = (
     evidenceText: String(assessment.evidenceText || baseCard.evidenceText || '').trim(),
     wechatSummary: String(assessment.wechatSummary || baseCard.wechatSummary || '').trim(),
     confidence: clamp(asNumber(assessment.confidence, baseCard.confidence), 0, 1),
+    businessAssessment,
   };
 };
 
@@ -150,7 +244,12 @@ const buildAssessmentPrompt = ({ task, candidate, baseCard }: AssessmentInput) =
   '2. 常做产品命中后，继续确认是否接受代理商、是否限制生产商/制造商、是否要授权。',
   '3. 必查第三方检测/质检单/业绩/8 位码/准入/危化资质/运输/包装回收等硬性条件。',
   '4. 王总点名或强相关产品，需要整理规格、技术参数、装置/用途、历史中标公示/价格和操作人员自我评定。',
-  '5. 不确定就输出 needs_manual_check，并把 missingInfo 写清楚。',
+  '5. 提取产品全称/牌号、数量、规格/纯度/包装、交货时间/地点/分批方式、限价/保证金/服务费/付款条件，以及输入中出现的上次报价、中标价和中标单位。',
+  '6. 公司是化工产品 B2B 商贸公司，不默认具备制造商身份。规则命中 erp_history 只表示做过该产品方向，不代表技术指标、业绩、授权、平台准入或危化资质已经满足。',
+  '7. qualificationChecks 要把公告要求与公司能力分开：只有输入存在公司侧满足证据，或公告明确接受贸易商/代理商时，才可标 met；明确仅限制造商且无代理路径时标 not_met；其余标 unconfirmed。',
+  '8. likely_can_do 只用于产品匹配且关键资格有满足依据、没有明确阻断的情况；存在未知硬门槛时必须 needs_manual_check。',
+  '9. likely_cannot_do 和 not_met 也必须有公告明确条款与公司类型直接冲突。行业惯例、通常倾向、暗示、未提供历史记录或未见公司证明都不是不满足证据，只能标 needs_manual_check/unconfirmed。',
+  '10. nextActions 必须是具体动作，例如“向厂家确认 350cst 指标及 25kg 桶包装”，禁止写“继续查看详情或附件”。',
   '',
   `站点：${task.sourceName}`,
   `站点专项要求：${definitionFor(task.sourceName).llmExtractionHint}`,
@@ -161,12 +260,14 @@ const buildAssessmentPrompt = ({ task, candidate, baseCard }: AssessmentInput) =
   `发布日期：${candidate.published_at || '待确认'}`,
   `截止时间：${candidate.deadline_at || '待确认'}`,
   `规则命中产品：${baseCard.matchedTerms.join('、') || '无'}`,
+  `产品命中来源：${baseCard.matchedSources.join('、') || '无'}`,
   `规则相关度：${baseCard.relevanceScore}`,
   `页面原文：\n${candidate.raw_text || candidate.title}`,
   `附件线索：\n${(candidate.attachments || []).join('\n') || '无'}`,
   '',
   '请只根据以上文本输出 JSON，不要编造采购方、截止日期、历史价格、资质要求。',
-  '字段：relevanceScore(number 0-100), matchedTerms(string[]), businessRelevance(known_product|potential_product|irrelevant), bidability(likely_can_do|needs_manual_check|likely_cannot_do), hardRequirements(string[]), riskFlags(string[]), missingInfo(string[]), recommendedAction(prioritize|deep_read|ignore|manual_review|track_deadline), evidenceText(string), wechatSummary(string), confidence(number 0-1)。',
+  '字段：relevanceScore(number 0-100), matchedTerms(string[]), businessRelevance(known_product|potential_product|irrelevant), bidability(likely_can_do|needs_manual_check|likely_cannot_do), hardRequirements(string[]), riskFlags(string[]), missingInfo(string[]), recommendedAction(prioritize|deep_read|ignore|manual_review|track_deadline), evidenceText(string), wechatSummary(string), confidence(number 0-1), businessAssessment(object)。',
+  'businessAssessment 字段：decision(likely_can_do|needs_manual_check|likely_cannot_do), decisionSummary(string，直接回答初步能否做及原因), productSummary(string), quantity(string), specifications(string[]), deliveryTerms(string[]), commercialTerms(string[]), qualificationChecks([{requirement,status:met|unconfirmed|not_met|not_applicable,basis}]), historicalReferences(string[]), nextActions(string[])。',
 ].join('\n');
 
 const buildBatchAssessmentPrompt = (inputs: AssessmentInput[]) => [
@@ -176,7 +277,12 @@ const buildBatchAssessmentPrompt = (inputs: AssessmentInput[]) => [
   '机械设备、工程施工、咨询服务、办公用品、废物销售/处置、采购结果和中标公示通常应 ignore。',
   '不要只依赖规则命中；规则未命中但标题或正文明确是化工产品时，标为 potential_product 并保留供人工复核。不得因为未命中旧产品词库就判为 irrelevant。',
   '不得编造正文没有的截止时间、规格、资质和历史价格；缺失内容写入 missingInfo。',
-  '返回严格 JSON：{"items":[{"index":0,"relevanceScore":0,"matchedTerms":[],"businessRelevance":"irrelevant","bidability":"likely_cannot_do","hardRequirements":[],"riskFlags":[],"missingInfo":[],"recommendedAction":"ignore","evidenceText":"...","wechatSummary":"...","confidence":0.9}]}。',
+  '公司是化工产品 B2B 商贸公司，不默认是制造商。ERP 历史产品只能证明经营方向，不能证明技术、授权、业绩、平台准入或危化资质满足。',
+  '逐条提取产品/牌号、数量、规格/纯度/包装、交货和分批、限价/保证金/付款、历史报价或中标信息。没有写明的字段留空，不要用“待确认”填满事实字段。',
+  'qualificationChecks 中 met 必须有公司侧满足证据，或公告明确接受贸易商/代理商；制造商限定且无代理路径标 not_met；其余硬门槛标 unconfirmed。',
+  'not_met 和 likely_cannot_do 必须有公告明确限制与公司类型直接冲突。不得用行业惯例、倾向、暗示或缺少公司历史记录推断不满足。',
+  'nextActions 写成具体核实动作，禁止输出“继续查看详情或附件”。',
+  '返回严格 JSON：{"items":[{"index":0,"relevanceScore":0,"matchedTerms":[],"businessRelevance":"irrelevant","bidability":"likely_cannot_do","hardRequirements":[],"riskFlags":[],"missingInfo":[],"recommendedAction":"ignore","evidenceText":"...","wechatSummary":"...","confidence":0.9,"businessAssessment":{"decision":"likely_cannot_do","decisionSummary":"...","productSummary":"...","quantity":"...","specifications":[],"deliveryTerms":[],"commercialTerms":[],"qualificationChecks":[{"requirement":"贸易商/代理商资格","status":"unconfirmed","basis":"公告未写明"}],"historicalReferences":[],"nextActions":[]}}]}。',
   `items 数量必须等于 ${inputs.length}，index 必须覆盖 0 到 ${Math.max(0, inputs.length - 1)}。`,
   '',
   ...inputs.map(({ task, candidate, baseCard }, index) => [
@@ -189,7 +295,8 @@ const buildBatchAssessmentPrompt = (inputs: AssessmentInput[]) => [
     `发布日期：${candidate.published_at || '待确认'}`,
     `截止：${candidate.deadline_at || '待确认'}`,
     `规则命中：${baseCard.matchedTerms.join('、') || '无'}`,
-    `原文：${String(candidate.raw_text || candidate.title).replace(/\s+/g, ' ').slice(0, 900)}`,
+    `产品命中来源：${baseCard.matchedSources.join('、') || '无'}`,
+    `原文：${String(candidate.raw_text || candidate.title).replace(/\s+/g, ' ').slice(0, 1_800)}`,
   ].join('\n')),
 ].join('\n');
 
@@ -335,6 +442,7 @@ export const createOpenAIBidAssessor = ({
       config,
       fetchImpl,
       temperature: 0,
+      maxTokens: 5_500,
       responseFormatJson: true,
       messages: [
         {
@@ -402,7 +510,7 @@ export const assessScreenedNotices = async ({
     : assessor.assessBatch;
   if (batchAssessor && inputs.length === cards.length) {
     const batch: ScreenedNotice[] = [];
-    const chunkSize = mode === 'screen' ? 30 : 30;
+    const chunkSize = mode === 'screen' ? 30 : 5;
     for (let index = 0; index < inputs.length; index += chunkSize) {
       const chunk = inputs.slice(index, index + chunkSize);
       try {

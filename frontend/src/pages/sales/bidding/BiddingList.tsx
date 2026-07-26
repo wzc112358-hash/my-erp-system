@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import type { BiddingRecord, BiddingRecordFormData } from '@/types/bidding-record';
 import { BiddingForm } from './BiddingForm';
-import { extractAttachments } from '@/utils/file';
+import { biddingSubmissionData } from './bidding-form-data';
 
 const bidResultMap: Record<string, { label: string; color: string }> = {
   pending: { label: '待开标', color: 'orange' },
@@ -91,24 +91,51 @@ export const BiddingList: React.FC = () => {
           url: file,
         }))
       : [];
+    const qualificationSnapshot = (() => {
+      if (Array.isArray(record.qualification_snapshot)) return record.qualification_snapshot;
+      try {
+        const parsed = JSON.parse(String(record.qualification_snapshot || '[]'));
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        return [];
+      }
+    })();
     form.setFieldsValue({
       bidding_company: record.bidding_company,
       bidding_no: record.bidding_no,
       product_name: record.product_name,
       quantity: record.quantity,
+      quantity_unit: record.quantity_unit,
+      specification: record.specification,
+      purity: record.purity,
+      packaging: record.packaging,
+      quoted_unit_price: record.quoted_unit_price,
+      quoted_total_amount: record.quoted_total_amount,
+      currency: record.currency,
       tender_fee: record.tender_fee || undefined,
       bid_bond: record.bid_bond || undefined,
-      open_date: record.open_date ? dayjs(record.open_date.split(' ')[0]) : undefined,
+      open_date: record.open_date ? dayjs(record.open_date) : undefined,
       bid_result: record.bid_result,
       bond_return_amount: record.bond_return_amount || undefined,
       agency_fee: record.agency_fee || undefined,
+      winning_unit_price: record.winning_unit_price,
+      winning_total_amount: record.winning_total_amount,
+      winning_supplier: record.winning_supplier,
+      brand: record.brand,
+      loss_reason: record.loss_reason,
+      qualification_snapshot: qualificationSnapshot,
+      source_notice_id: record.source_notice_id,
+      source_notice_fingerprint: record.source_notice_fingerprint,
+      source_notice_title: record.source_notice_title,
+      source_notice_url: record.source_notice_url,
+      source_name: record.source_name,
       sales_contract: record.sales_contract || undefined,
       remark: record.remark || undefined,
       tender_fee_date: record.tender_fee_date ? dayjs(record.tender_fee_date.split(' ')[0]) : undefined,
       bid_bond_date: record.bid_bond_date ? dayjs(record.bid_bond_date.split(' ')[0]) : undefined,
       bond_return_date: record.bond_return_date ? dayjs(record.bond_return_date.split(' ')[0]) : undefined,
       tender_fee_invoice: tenderFeeInvoice,
-      attachments: attachments as any,
+      attachments,
     });
     setFormVisible(true);
   };
@@ -129,24 +156,7 @@ export const BiddingList: React.FC = () => {
   };
 
   const handleFormFinish = async (values: BiddingRecordFormData) => {
-    let tenderFeeInvoice: (File | string)[] | undefined;
-    let attachments: (File | string)[] | undefined;
-
-    if (values.tender_fee_invoice) {
-      tenderFeeInvoice = extractAttachments(values.tender_fee_invoice);
-    }
-
-    if (values.attachments) {
-      attachments = extractAttachments(values.attachments);
-    }
-
-    const submitData = {
-      ...Object.fromEntries(
-        Object.entries(values).filter(([, v]) => v !== undefined && v !== '' && v !== null)
-      ),
-      tender_fee_invoice: tenderFeeInvoice,
-      attachments,
-    } as BiddingRecordFormData;
+    const submitData = biddingSubmissionData(values);
 
     try {
       if (editingRecord) {
@@ -189,7 +199,19 @@ export const BiddingList: React.FC = () => {
       title: '数量',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: 80,
+      width: 100,
+      render: (value: number, record: BiddingRecord) => value
+        ? `${value}${record.quantity_unit ? ` ${record.quantity_unit}` : ''}`
+        : '-',
+    },
+    {
+      title: '报价总额',
+      dataIndex: 'quoted_total_amount',
+      key: 'quoted_total_amount',
+      width: 120,
+      render: (value: number, record: BiddingRecord) => value
+        ? `${record.currency || 'CNY'} ${value.toLocaleString()}`
+        : '-',
     },
     {
       title: '标书费',
@@ -312,7 +334,7 @@ export const BiddingList: React.FC = () => {
             setPageSize(ps);
           },
         }}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1280 }}
         locale={{ emptyText: '暂无数据' }}
       />
 

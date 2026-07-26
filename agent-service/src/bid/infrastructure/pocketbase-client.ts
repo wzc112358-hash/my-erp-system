@@ -11,11 +11,26 @@ const escapeFilterValue = (value: string) => value
   .replaceAll('\\', '\\\\')
   .replaceAll('"', '\\"');
 
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+const OPAQUE_TOKEN_TTL_MS = 5 * 60_000;
+
+const tokenExpiresAt = (token: string) => {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8')) as { exp?: unknown };
+    const seconds = Number(payload.exp || 0);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 0;
+  } catch {
+    return 0;
+  }
+};
+
 export class PocketBaseClient {
   readonly baseUrl: string;
   readonly identity: string;
   readonly password: string;
   private token = '';
+  private tokenExpiresAt = 0;
+  private authenticationRequest: Promise<string> | null = null;
 
   constructor({ baseUrl, identity, password }: { baseUrl: string; identity: string; password: string }) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
@@ -24,14 +39,23 @@ export class PocketBaseClient {
   }
 
   async authenticate() {
-    if (this.token) return this.token;
+    if (this.token && this.tokenExpiresAt > Date.now() + TOKEN_REFRESH_SKEW_MS) return this.token;
+    if (this.authenticationRequest) return this.authenticationRequest;
     if (!this.identity || !this.password) throw new Error('PocketBase superuser credentials are required');
-    const result = await this.request<{ token: string }>('/api/collections/_superusers/auth-with-password', {
-      method: 'POST',
-      body: JSON.stringify({ identity: this.identity, password: this.password }),
-    });
-    this.token = result.token;
-    return this.token;
+    this.authenticationRequest = (async () => {
+      const result = await this.request<{ token: string }>('/api/collections/_superusers/auth-with-password', {
+        method: 'POST',
+        body: JSON.stringify({ identity: this.identity, password: this.password }),
+      });
+      this.token = result.token;
+      this.tokenExpiresAt = tokenExpiresAt(result.token) || Date.now() + OPAQUE_TOKEN_TTL_MS;
+      return this.token;
+    })();
+    try {
+      return await this.authenticationRequest;
+    } finally {
+      this.authenticationRequest = null;
+    }
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -55,6 +79,7 @@ export class PocketBaseClient {
     } catch (error) {
       if (!String(error).includes('401')) throw error;
       this.token = '';
+      this.tokenExpiresAt = 0;
       return this.request<T>(path, { ...options, token: await this.authenticate() });
     }
   }

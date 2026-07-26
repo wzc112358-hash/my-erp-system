@@ -7,6 +7,12 @@ const { Text, Title } = Typography;
 
 const dateOnly = (value: string) => value ? value.slice(0, 10) : '待确认';
 
+const decisionMeta = {
+  likely_can_do: { label: '初步可做', color: 'success' },
+  needs_manual_check: { label: '需确认', color: 'warning' },
+  likely_cannot_do: { label: '初步不可做', color: 'error' },
+} as const;
+
 interface BidNoticeListProps {
   items: BidNotice[];
   loading: boolean;
@@ -57,9 +63,21 @@ export const BidNoticeList: React.FC<BidNoticeListProps> = ({
               {item.matchedProducts.slice(0, 4).map((product) => <Tag key={product}>{product}</Tag>)}
               {!item.matchedProducts.length && <Text type="secondary">新化工产品，待确认</Text>}
             </div>
+            {item.assessment?.quantity && (
+              <Text type="secondary" ellipsis className="bid-notice-quantity">
+                数量 {item.assessment.quantity}
+              </Text>
+            )}
             <div className="bid-notice-row-footer">
               <Text type="secondary"><ClockCircleOutlined /> 截止 {dateOnly(item.deadlineAt)}</Text>
-              <RightOutlined aria-hidden="true" />
+              <span className="bid-notice-row-action">
+                {item.assessment && (
+                  <Tag color={decisionMeta[item.assessment.decision].color}>
+                    {decisionMeta[item.assessment.decision].label}
+                  </Tag>
+                )}
+                <RightOutlined aria-hidden="true" />
+              </span>
             </div>
           </div>
         </button>

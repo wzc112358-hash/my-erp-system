@@ -1,0 +1,22 @@
+.bid-history-loading {
+  color: rgba(0, 0, 0, 0.55);
+  padding: 12px 0;
+}
+
+.bid-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bid-history-item {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(246, 249, 252, 0.92));
+  border: 1px solid rgba(20, 35, 55, 0.1);
+  border-radius: 14px;
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+}
+
+.bid-history-note {
+  font-size: 12px;
+}

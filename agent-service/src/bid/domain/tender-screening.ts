@@ -42,6 +42,31 @@ export type BidEligibility =
   | 'needs_manual_check'
   | 'likely_cannot_do';
 
+export type QualificationCheckStatus =
+  | 'met'
+  | 'unconfirmed'
+  | 'not_met'
+  | 'not_applicable';
+
+export type QualificationCheck = {
+  requirement: string;
+  status: QualificationCheckStatus;
+  basis: string;
+};
+
+export type BidBusinessAssessment = {
+  decision: BidEligibility;
+  decisionSummary: string;
+  productSummary: string;
+  quantity: string;
+  specifications: string[];
+  deliveryTerms: string[];
+  commercialTerms: string[];
+  qualificationChecks: QualificationCheck[];
+  historicalReferences: string[];
+  nextActions: string[];
+};
+
 export type BusinessRelevance =
   | 'known_product'
   | 'potential_product'
@@ -77,6 +102,7 @@ export type ScreenedNotice = {
   evidenceText: string;
   wechatSummary: string;
   confidence: number;
+  businessAssessment: BidBusinessAssessment;
   deepReadAt?: string;
   detailUrl?: string;
   detailScreenshotPath?: string;
@@ -242,6 +268,94 @@ const missingInfoFor = (text: string, match: ProductMatchResult) => {
   return missing.slice(0, 5);
 };
 
+const factLines = (text: string) => unique(text
+  .split(/[\n。；;]+/)
+  .map((line) => line.replace(/\s+/g, ' ').trim())
+  .filter((line) => line.length >= 4 && line.length <= 240));
+
+const factsMatching = (text: string, patterns: RegExp[], limit = 4) => factLines(text)
+  .filter((line) => patterns.some((pattern) => pattern.test(line)))
+  .slice(0, limit)
+  .map((line) => line.slice(0, 180));
+
+const defaultQualificationChecks = (text: string): QualificationCheck[] => {
+  const lines = factLines(text);
+  const first = (...patterns: RegExp[]) => lines.find((line) => patterns.some((pattern) => pattern.test(line))) || '';
+  const checks: QualificationCheck[] = [];
+  const traderBasis = first(/代理商|贸易商|经销商|制造商|生产商|原厂|厂家|授权/);
+  if (traderBasis) {
+    const manufacturerOnly = /(?:仅限|必须|只接受|投标人(?:须|应)为).{0,12}(?:制造商|生产商|原厂)/.test(traderBasis)
+      && !/代理商|贸易商|经销商/.test(traderBasis);
+    const acceptsTrader = /接受.{0,8}(?:代理商|贸易商|经销商)|(?:制造商|生产商).{0,6}(?:或|及).{0,6}(?:代理商|贸易商|经销商)/.test(traderBasis);
+    checks.push({
+      requirement: '贸易商/代理商资格',
+      status: manufacturerOnly ? 'not_met' : acceptsTrader ? 'met' : 'unconfirmed',
+      basis: traderBasis,
+    });
+  }
+  const technicalBasis = first(/规格|型号|牌号|纯度|含量|技术参数|指标|包装/);
+  if (technicalBasis) checks.push({ requirement: '技术指标与包装', status: 'unconfirmed', basis: technicalBasis });
+  const performanceBasis = first(/业绩|合同业绩|供货业绩/);
+  if (performanceBasis) checks.push({ requirement: '同类供货业绩', status: 'unconfirmed', basis: performanceBasis });
+  const testBasis = first(/第三方|检测|质检|检验报告|质检单/);
+  if (testBasis) checks.push({ requirement: '检测或质检材料', status: 'unconfirmed', basis: testBasis });
+  const accessBasis = first(/8\s*位码|八位码|准入|入网|物料编码/);
+  if (accessBasis) checks.push({ requirement: '平台准入或物料编码', status: 'unconfirmed', basis: accessBasis });
+  const hazmatBasis = first(/危化|危险化学品|危品|危包|危险品.{0,8}运输/);
+  if (hazmatBasis) checks.push({ requirement: '危化许可与运输', status: 'unconfirmed', basis: hazmatBasis });
+  return checks.slice(0, 7);
+};
+
+const decisionSummaryFor = ({
+  bidability,
+  recommendedAction,
+  matchedTerms,
+}: {
+  bidability: BidEligibility;
+  recommendedAction: ScreeningAction;
+  matchedTerms: string[];
+}) => {
+  if (recommendedAction === 'ignore') return '当前项目已无参与机会或不属于可投采购，仅保留业务参考。';
+  if (bidability === 'likely_can_do') return '产品方向匹配，公开信息中暂未发现明确阻断条件，可进入报价和投标准备。';
+  if (bidability === 'likely_cannot_do') return '公开要求中存在明确阻断条件，当前不建议直接参与。';
+  return matchedTerms.length
+    ? '产品方向与公司经营范围匹配，但技术指标或投标资格缺少公司侧证明，需要逐项确认后再决定。'
+    : '采购对象可能属于公司可经营的新化工产品，需要先确认货源和投标资格。';
+};
+
+const businessAssessmentFor = ({
+  text,
+  match,
+  bidability,
+  recommendedAction,
+  missingInfo,
+}: {
+  text: string;
+  match: ProductMatchResult;
+  bidability: BidEligibility;
+  recommendedAction: ScreeningAction;
+  missingInfo: string[];
+}): BidBusinessAssessment => {
+  const quantityFacts = factsMatching(text, [/数量|用量|采购量|需求量|\d+(?:\.\d+)?\s*(?:万?吨|千克|公斤|kg|桶|批)\b/i], 2);
+  const qualificationChecks = defaultQualificationChecks(text);
+  const nextActions = unique([
+    ...qualificationChecks.filter((item) => item.status === 'unconfirmed').map((item) => `确认${item.requirement}`),
+    ...missingInfo.map((item) => item.replace(/待确认$/, '').replace(/^是否/, '确认是否')),
+  ]).slice(0, 5);
+  return {
+    decision: bidability,
+    decisionSummary: decisionSummaryFor({ bidability, recommendedAction, matchedTerms: match.matchedTerms }),
+    productSummary: match.matchedTerms.join('、') || '采购产品待确认',
+    quantity: quantityFacts.join('；'),
+    specifications: factsMatching(text, [/规格|型号|牌号|纯度|含量|技术参数|指标|包装|粘度|工业级|食品级/], 4),
+    deliveryTerms: factsMatching(text, [/交货|到货|送货|交付|分批|一次性|供货期|交货地点|送货地点/], 4),
+    commercialTerms: factsMatching(text, [/限价|最高价|保证金|服务费|标书费|付款|结算|承兑|质保金|报价有效期/], 4),
+    qualificationChecks,
+    historicalReferences: factsMatching(text, [/上次|去年|历史|曾经|中标价|中标单位|我司.{0,8}(?:报价|中标|未中标)|排名/], 4),
+    nextActions,
+  };
+};
+
 const recommendedActionFor = (match: ProductMatchResult): ScreeningAction => {
   if (match.score <= 0) return 'ignore';
   if (match.score >= 85 && match.matchedSources.includes('erp_history')) return 'prioritize';
@@ -282,6 +396,12 @@ export const enforceScreenedNoticeConstraints = ({
     ...card,
     bidability: 'likely_cannot_do',
     recommendedAction: 'ignore',
+    businessAssessment: {
+      ...card.businessAssessment,
+      decision: 'likely_cannot_do',
+      decisionSummary: '当前项目已无参与机会，仅保留产品、价格或资格信息作为业务参考。',
+      nextActions: [],
+    },
     riskFlags: isCandidateExpired(candidate)
       ? [...new Set([...card.riskFlags, '截止时间已过'])].slice(0, 8)
       : candidate.opportunity_status === 'ended'
@@ -381,6 +501,7 @@ export const buildScreenedNotices = ({
     const riskFlags = riskFlagsFor(text, match);
     const missingInfo = missingInfoFor(text, match);
     const recommendedAction = isNonActionableNotice(candidate) ? 'ignore' : recommendedActionFor(match);
+    const bidability = isNonActionableNotice(candidate) ? 'likely_cannot_do' : bidabilityFor(match);
     return {
       id: cardIdFor(sourceName, candidate.title, candidate.url),
       title: candidate.title,
@@ -394,7 +515,7 @@ export const buildScreenedNotices = ({
       relevanceScore: match.score,
       businessRelevance: match.matchedTerms.length ? 'known_product' : 'irrelevant',
       sourceOpportunityStatus: candidate.opportunity_status,
-      bidability: bidabilityFor(match),
+      bidability,
       hardRequirements,
       riskFlags,
       missingInfo,
@@ -411,6 +532,13 @@ export const buildScreenedNotices = ({
         recommendedAction,
       }),
       confidence: match.score > 0 ? clamp(match.score / 100, 0.25, 0.9) : 0.2,
+      businessAssessment: businessAssessmentFor({
+        text,
+        match,
+        bidability,
+        recommendedAction,
+        missingInfo,
+      }),
     };
   });
 };

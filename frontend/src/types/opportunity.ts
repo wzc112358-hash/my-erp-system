@@ -1,5 +1,26 @@
 export type BidNoticeKind = 'current' | 'attention';
 
+export type BidQualificationStatus = 'met' | 'unconfirmed' | 'not_met' | 'not_applicable';
+
+export interface BidQualificationCheck {
+  requirement: string;
+  status: BidQualificationStatus;
+  basis: string;
+}
+
+export interface BidBusinessAssessment {
+  decision: 'likely_can_do' | 'needs_manual_check' | 'likely_cannot_do';
+  decisionSummary: string;
+  productSummary: string;
+  quantity: string;
+  specifications: string[];
+  deliveryTerms: string[];
+  commercialTerms: string[];
+  qualificationChecks: BidQualificationCheck[];
+  historicalReferences: string[];
+  nextActions: string[];
+}
+
 export interface BidNotice {
   id: string;
   sourceKey: string;
@@ -17,6 +38,7 @@ export interface BidNotice {
   evidence: string;
   detailReadMethod: string;
   attachmentUrls: string[];
+  assessment?: BidBusinessAssessment;
   firstSeenAt: string;
   lastSeenAt: string;
   lastChangedAt: string;
@@ -45,6 +67,7 @@ export interface BidCollectionRun {
 export interface BidSourceOption {
   sourceKey: string;
   sourceName: string;
+  collectionMode: 'scheduled' | 'local_helper';
 }
 
 export interface BidNoticeListParams {

@@ -71,11 +71,11 @@ export const TopNav: React.FC<TopNavProps> = ({ user, onMenuToggle }) => {
           )}
           <Button
             icon={<DownloadOutlined />}
-            href="/downloads/hcz-local-helper-setup.exe"
+            href="/downloads/hcz-local-helper-setup.exe?v=0.8.4"
             target="_blank"
             rel="noreferrer"
           >
-            下载助手
+            下载助手 0.8.4
           </Button>
         </Space>
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">

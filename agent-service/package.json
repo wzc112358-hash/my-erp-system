@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test --experimental-strip-types src/bid/**/*.test.ts",
     "start": "node --experimental-strip-types src/bid/main.ts",
-    "run-once": "node --experimental-strip-types src/bid/main.ts run-once"
+    "run-once": "node --experimental-strip-types src/bid/main.ts run-once",
+    "reassess-notices": "node --experimental-strip-types src/bid/main.ts reassess-notices"
   },
   "dependencies": {}
 }
