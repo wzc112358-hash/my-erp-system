@@ -6,6 +6,11 @@ import { PocketBaseBidRunRepository } from '../infrastructure/run-repository.ts'
 import type { PocketBaseClient } from '../infrastructure/pocketbase-client.ts';
 
 const TIME_ZONE = 'Asia/Shanghai';
+export const BID_RECORD_RETENTION_DAYS = 10;
+
+export const bidRetentionCutoff = (now: Date) => new Date(
+  now.getTime() - BID_RECORD_RETENTION_DAYS * 24 * 60 * 60 * 1_000,
+).toISOString();
 
 export const shanghaiDate = (date = new Date()) => new Intl.DateTimeFormat('en-CA', {
   timeZone: TIME_ZONE,
@@ -106,7 +111,7 @@ export const createDailyBidRunner = ({
         }
       }
       if (lastCleanupDate !== shanghaiDate(now)) {
-        const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000).toISOString();
+        const cutoff = bidRetentionCutoff(now);
         const cleanup = await runRepository.cleanupBefore(cutoff);
         lastCleanupDate = shanghaiDate(now);
         results.push({ cleanup });

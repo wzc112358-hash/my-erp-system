@@ -2,6 +2,7 @@ import { Empty, Skeleton, Tag, Typography } from 'antd';
 import { ClockCircleOutlined, RightOutlined } from '@ant-design/icons';
 
 import type { BidNotice } from '@/types/opportunity';
+import { isNewToday } from './notice-date';
 
 const { Text, Title } = Typography;
 
@@ -33,7 +34,9 @@ export const BidNoticeList: React.FC<BidNoticeListProps> = ({
 
   return (
     <div className="bid-notice-list">
-      {items.map((item) => (
+      {items.map((item) => {
+        const todayNew = isNewToday(item.firstSeenAt);
+        return (
         <button
           type="button"
           key={item.id}
@@ -45,13 +48,19 @@ export const BidNoticeList: React.FC<BidNoticeListProps> = ({
               {grouped ? (
                 <>
                   <Text ellipsis>{item.buyerName || '采购方待确认'}</Text>
-                  <Text type="secondary">发布 {dateOnly(item.publishedAt)}</Text>
+                  <span className="bid-notice-row-meta-right">
+                    {todayNew && <Tag color="blue">今日新增</Tag>}
+                    <Text type="secondary">发布 {dateOnly(item.publishedAt)}</Text>
+                  </span>
                 </>
               ) : (
                 <>
-                  <Tag color={item.kind === 'current' ? 'green' : 'gold'}>
-                    {item.kind === 'current' ? '当前商机' : '可关注商机'}
-                  </Tag>
+                  <span>
+                    <Tag color={item.kind === 'current' ? 'green' : 'gold'}>
+                      {item.kind === 'current' ? '当前商机' : '可关注商机'}
+                    </Tag>
+                    {todayNew && <Tag color="blue">今日新增</Tag>}
+                  </span>
                   <Text type="secondary">{item.sourceName}</Text>
                 </>
               )}
@@ -81,7 +90,8 @@ export const BidNoticeList: React.FC<BidNoticeListProps> = ({
             </div>
           </div>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 };

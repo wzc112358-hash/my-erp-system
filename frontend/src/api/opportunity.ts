@@ -4,6 +4,7 @@ import type {
   BidNoticeListParams,
   BidNoticeListResult,
   BidSourceOption,
+  LocalHelperPairingInvitation,
 } from '@/types/opportunity';
 import type { BidPreparation, HistoricalBidMatch } from '@/types/bidding-record';
 
@@ -50,6 +51,11 @@ export const OpportunityAPI = {
     const result = await request<{ items: BidSourceOption[] }>('/api/bids/sources');
     return result.items;
   },
+
+  createLocalHelperPairingCode: () => request<LocalHelperPairingInvitation>(
+    '/api/bids/local-helper/pairing-code',
+    { method: 'POST' },
+  ),
 
   listHistory: async (noticeId: string) => {
     const result = await request<{ items: HistoricalBidMatch[] }>(

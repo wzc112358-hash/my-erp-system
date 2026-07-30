@@ -70,6 +70,13 @@ export interface BidSourceOption {
   collectionMode: 'scheduled' | 'local_helper';
 }
 
+export interface LocalHelperPairingInvitation {
+  code: string;
+  expiresAt: string;
+  expiresInSeconds: number;
+  ownerName: string;
+}
+
 export interface BidNoticeListParams {
   page?: number;
   perPage?: number;

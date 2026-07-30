@@ -193,6 +193,35 @@
   min-width: 0;
 }
 
+.bid-notice-row-meta-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.bid-notice-row-meta-right .ant-tag {
+  margin: 0;
+}
+
+.bid-pairing-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.bid-pairing-code {
+  margin: 4px 0 0 !important;
+  padding: 16px;
+  border: 1px solid #b9d9ce;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f4f8f7, #fbfdfc);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+
 .bid-notice-title {
   margin: 10px 0 8px !important;
   line-height: 1.48 !important;

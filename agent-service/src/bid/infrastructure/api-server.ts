@@ -10,6 +10,7 @@ import { createBidPreparationModule, type ErpRegion } from '../application/bid-p
 import { createDefaultBidAssessor } from '../llm/bid-assessor.ts';
 import { createBidDraftExtractor } from '../llm/bid-draft-extractor.ts';
 import { createBidPreparationData } from './bid-preparation-repository.ts';
+import { createLocalHelperPairing } from './local-helper-pairing.ts';
 import { PocketBaseBidNoticeRepository } from './pocketbase-repository.ts';
 import { PocketBaseClient, type PocketBaseRecord } from './pocketbase-client.ts';
 
@@ -102,9 +103,17 @@ const searchMatches = (record: ReturnType<typeof noticeDto>, search: string) => 
     .toLocaleLowerCase('zh-CN')
     .includes(search.toLocaleLowerCase('zh-CN'));
 
-const tokenCache = new Map<string, number>();
+type ErpIdentity = {
+  id: string;
+  name: string;
+  email: string;
+  type: string;
+  region: ErpRegion;
+};
 
-const validateErpToken = async ({
+const tokenCache = new Map<string, { expiresAt: number; identity: ErpIdentity }>();
+
+const authenticateErpToken = async ({
   request,
   env,
 }: {
@@ -112,11 +121,13 @@ const validateErpToken = async ({
   env: Record<string, string | undefined>;
 }) => {
   const authorization = String(request.headers.authorization || '');
-  if (!authorization.startsWith('Bearer ')) return false;
+  if (!authorization.startsWith('Bearer ')) return null;
   const token = authorization.slice(7);
   const digest = crypto.createHash('sha256').update(token).digest('hex');
-  if ((tokenCache.get(digest) || 0) > Date.now()) return true;
-  const region = String(request.headers['x-erp-region'] || 'beijing');
+  const region: ErpRegion = request.headers['x-erp-region'] === 'lanzhou' ? 'lanzhou' : 'beijing';
+  const cacheKey = `${region}:${digest}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.identity;
   const baseUrl = region === 'lanzhou'
     ? env.ERP_LANZHOU_API_URL || 'https://api-lanzhou.henghuacheng.cn'
     : env.ERP_BEIJING_API_URL || env.POCKETBASE_URL || 'https://api-beijing.henghuacheng.cn';
@@ -124,9 +135,19 @@ const validateErpToken = async ({
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   }).catch(() => null);
-  if (!response?.ok) return false;
-  tokenCache.set(digest, Date.now() + 5 * 60_000);
-  return true;
+  if (!response?.ok) return null;
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const record = (body.record && typeof body.record === 'object' ? body.record : body) as Record<string, unknown>;
+  const identity: ErpIdentity = {
+    id: String(record.id || ''),
+    name: String(record.name || record.username || ''),
+    email: String(record.email || ''),
+    type: String(record.type || ''),
+    region,
+  };
+  if (!identity.id) return null;
+  tokenCache.set(cacheKey, { expiresAt: Date.now() + 5 * 60_000, identity });
+  return identity;
 };
 
 export const createBidApiServer = ({
@@ -154,8 +175,7 @@ export const createBidApiServer = ({
     extractor: createBidDraftExtractor({ env }),
   });
   const localHelperAssessor = createDefaultBidAssessor({ env });
-  const pairCode = String(env.LOCAL_HELPER_PAIR_CODE || '');
-  const localHelperToken = String(env.LOCAL_HELPER_API_TOKEN || '');
+  const localHelperPairing = createLocalHelperPairing({ client });
   const server = http.createServer(async (request, response) => {
     response.setHeader('Access-Control-Allow-Origin', String(request.headers.origin || '*'));
     response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-ERP-Region');
@@ -173,13 +193,27 @@ export const createBidApiServer = ({
       }
       if (request.method === 'POST' && url.pathname === '/local-helper/pair') {
         const body = await readJson(request);
-        if (!pairCode || !localHelperToken) return json(response, 503, { error: 'local helper pairing is not configured' });
-        if (String(body.code || '') !== pairCode) return json(response, 401, { error: 'invalid pair code' });
-        json(response, 200, { paired: true, token: localHelperToken, device: { id: 'local-helper', ownerName: '', deviceName: String(body.deviceName || 'Windows 本地助手') } });
+        try {
+          const paired = await localHelperPairing.pair({
+            code: String(body.code || ''),
+            deviceName: String(body.deviceName || 'Windows 本地助手'),
+            deviceFingerprint: String(body.deviceFingerprint || ''),
+            helperVersion: String(body.helperVersion || ''),
+            platform: String(body.platform || ''),
+          });
+          json(response, 200, paired);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          json(response, /过期/.test(message) ? 410 : 401, { error: message });
+        }
         return;
       }
       if (url.pathname.startsWith('/local-helper/')) {
-        if (!localHelperToken || request.headers.authorization !== `Bearer ${localHelperToken}`) return json(response, 401, { error: 'invalid local helper token' });
+        const authorization = String(request.headers.authorization || '');
+        const device = authorization.startsWith('Bearer ')
+          ? await localHelperPairing.authenticate(authorization.slice(7))
+          : null;
+        if (!device) return json(response, 401, { error: '本地助手连接已失效，请在 ERP 重新生成配对码' });
         if (request.method === 'POST' && url.pathname === '/local-helper/heartbeat') return json(response, 200, { ok: true });
         if (request.method === 'GET' && url.pathname === '/local-helper/tasks') return json(response, 200, { tasks: [] });
         if (request.method === 'GET' && url.pathname === '/local-helper/release') return json(response, 200, { latestVersion: env.LOCAL_HELPER_LATEST_VERSION || '' });
@@ -204,7 +238,19 @@ export const createBidApiServer = ({
       }
 
       if (!url.pathname.startsWith('/api/bids/')) return json(response, 404, { error: 'not found' });
-      if (!await validateErpToken({ request, env })) return json(response, 401, { error: 'ERP login required' });
+      const identity = await authenticateErpToken({ request, env });
+      if (!identity) return json(response, 401, { error: 'ERP login required' });
+
+      if (request.method === 'POST' && url.pathname === '/api/bids/local-helper/pairing-code') {
+        if (identity.type !== 'manager') return json(response, 403, { error: '仅经理账号可以生成本地助手配对码' });
+        const ownerName = identity.name || identity.email || 'ERP 经理';
+        const invitation = await localHelperPairing.createInvitation({
+          ownerUserId: identity.region === 'beijing' ? identity.id : '',
+          ownerName,
+        });
+        json(response, 201, { ...invitation, ownerName });
+        return;
+      }
 
       const historyMatch = url.pathname.match(/^\/api\/bids\/notices\/([^/]+)\/history$/);
       if (request.method === 'GET' && historyMatch) {

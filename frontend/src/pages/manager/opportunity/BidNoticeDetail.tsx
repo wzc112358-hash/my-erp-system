@@ -16,6 +16,7 @@ import type {
   BidQualificationStatus,
 } from '@/types/opportunity';
 import { BiddingHistoryReferences } from '@/pages/sales/bidding/BiddingHistoryReferences';
+import { isNewToday } from './notice-date';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -127,6 +128,7 @@ export const BidNoticeDetail: React.FC<BidNoticeDetailProps> = ({ notice, onCopy
             <Tag color={notice.kind === 'current' ? 'green' : 'gold'}>
               {notice.kind === 'current' ? '当前商机' : '可关注商机'}
             </Tag>
+            {isNewToday(notice.firstSeenAt) && <Tag color="blue">今日新增</Tag>}
             <Text type="secondary">{notice.sourceName}</Text>
           </Space>
           <Title level={3}>{notice.title}</Title>

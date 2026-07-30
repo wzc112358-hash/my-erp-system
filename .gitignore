@@ -29,6 +29,8 @@ backend/pb_migrations/*
 !backend/pb_migrations/202606220001_add_creator_user_to_business_collections.js
 !backend/pb_migrations/202606220002_prune_cloud_agent_to_guoneng.js
 !backend/pb_migrations/202607240001_replace_bid_collection_schema.js
+!backend/pb_migrations/202607300001_create_local_helper_pairing_devices.js
+!backend/pb_migrations/202607300002_repair_local_helper_pairing_device_fields.js
 
 # Backend binary
 backend/pocketbase

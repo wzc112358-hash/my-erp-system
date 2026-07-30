@@ -6,6 +6,7 @@ import {
   Col,
   Flex,
   Input,
+  Modal,
   Row,
   Segmented,
   Select,
@@ -13,10 +14,16 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CopyOutlined, KeyOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 
 import { OpportunityAPI } from '@/api/opportunity';
-import type { BidCollectionRun, BidNotice, BidNoticeKind, BidSourceOption } from '@/types/opportunity';
+import type {
+  BidCollectionRun,
+  BidNotice,
+  BidNoticeKind,
+  BidSourceOption,
+  LocalHelperPairingInvitation,
+} from '@/types/opportunity';
 import { BidNoticeDetail } from './opportunity/BidNoticeDetail';
 import { BidNoticeGroups } from './opportunity/BidNoticeGroups';
 import { BidRunStatus } from './opportunity/BidRunStatus';
@@ -36,6 +43,17 @@ const OpportunityMonitorPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [activeKind, setActiveKind] = useState<BidNoticeKind>('current');
   const [source, setSource] = useState<string>();
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingLoading, setPairingLoading] = useState(false);
+  const [pairingInvitation, setPairingInvitation] = useState<LocalHelperPairingInvitation | null>(null);
+  const [pairingClock, setPairingClock] = useState(Date.now());
+
+  useEffect(() => {
+    if (!pairingOpen) return undefined;
+    setPairingClock(Date.now());
+    const timer = window.setInterval(() => setPairingClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [pairingOpen]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -105,6 +123,29 @@ const OpportunityMonitorPage: React.FC = () => {
     message.success('摘要已复制');
   };
 
+  const generatePairingCode = async () => {
+    setPairingLoading(true);
+    try {
+      const invitation = await OpportunityAPI.createLocalHelperPairingCode();
+      setPairingInvitation(invitation);
+      setPairingClock(Date.now());
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '生成配对码失败');
+    } finally {
+      setPairingLoading(false);
+    }
+  };
+
+  const openPairing = () => {
+    setPairingOpen(true);
+    setPairingInvitation(null);
+    void generatePairingCode();
+  };
+
+  const pairingSecondsLeft = pairingInvitation
+    ? Math.max(0, Math.ceil((new Date(pairingInvitation.expiresAt).getTime() - pairingClock) / 1_000))
+    : 0;
+
   return (
     <div className="manager-page bid-monitor-page">
       <Flex justify="space-between" align="flex-start" gap={16} wrap className="bid-page-heading">
@@ -112,7 +153,10 @@ const OpportunityMonitorPage: React.FC = () => {
           <Title level={3}>招投标信息</Title>
           <Text type="secondary">10 个公开站点每日 08:00 自动巡检；中国石油、裕龙由本地助手完成人工验证后上传，全部由云端 Agent 研判并去重。</Text>
         </div>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadData()}>刷新数据</Button>
+        <Flex gap={8} wrap>
+          <Button icon={<KeyOutlined />} onClick={openPairing}>连接本地助手</Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadData()}>刷新数据</Button>
+        </Flex>
       </Flex>
 
       <Row gutter={[12, 12]} className="bid-metric-grid">
@@ -198,6 +242,44 @@ const OpportunityMonitorPage: React.FC = () => {
       </div>
 
       <BidRunStatus runs={runs} />
+
+      <Modal
+        open={pairingOpen}
+        title="连接本地助手"
+        onCancel={() => setPairingOpen(false)}
+        footer={[
+          <Button key="regenerate" loading={pairingLoading} onClick={() => void generatePairingCode()}>
+            重新生成
+          </Button>,
+          <Button
+            key="copy"
+            type="primary"
+            icon={<CopyOutlined />}
+            disabled={!pairingInvitation || pairingSecondsLeft <= 0}
+            onClick={() => pairingInvitation && void copyText(pairingInvitation.code)}
+          >
+            复制配对码
+          </Button>,
+        ]}
+      >
+        <div className="bid-pairing-panel">
+          <Text type="secondary">在本地助手主窗口点击“连接 ERP 云端”，填写下面的一次性配对码。</Text>
+          {pairingInvitation ? (
+            <>
+              <Title level={2} className="bid-pairing-code">{pairingInvitation.code}</Title>
+              <Text type={pairingSecondsLeft > 0 ? 'secondary' : 'danger'}>
+                {pairingSecondsLeft > 0
+                  ? `剩余 ${Math.floor(pairingSecondsLeft / 60)}:${String(pairingSecondsLeft % 60).padStart(2, '0')}，使用一次后立即失效`
+                  : '配对码已过期，请重新生成'}
+              </Text>
+              <Text type="secondary">云端地址：https://agent.henghuacheng.cn</Text>
+            </>
+          ) : (
+            <Text type="secondary">{pairingLoading ? '正在生成安全配对码…' : '暂未生成配对码'}</Text>
+          )}
+          <Text type="secondary">每次重新生成都会使上一个尚未使用的配对码失效。</Text>
+        </div>
+      </Modal>
     </div>
   );
 };
