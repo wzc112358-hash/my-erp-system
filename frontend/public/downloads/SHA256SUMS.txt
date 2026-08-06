@@ -1,2 +1,2 @@
-dbfff37e91748bc9d585843eb1713f07d57bb3885c16d099e57e2c309d419653  hcz-local-helper-app.zip
-563ad6aeb67be4b34ad97a91bc726e1dc6b34a473fe88325dd86e6643df08a35  hcz-local-helper-setup.exe
+720402504be2729f697e382c4d9706a231fd334721b376c8ce8319b9fd7ca70d  hcz-local-helper-app.zip
+62c502cbbf023b885c9cfc19571d5ad1b2a20a232cae1b1aac8222d4f7609488  hcz-local-helper-setup.exe

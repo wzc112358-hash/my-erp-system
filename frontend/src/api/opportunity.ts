@@ -5,6 +5,7 @@ import type {
   BidNoticeListResult,
   BidSourceOption,
   LocalHelperPairingInvitation,
+  SiteSearchScope,
 } from '@/types/opportunity';
 import type { BidPreparation, HistoricalBidMatch } from '@/types/bidding-record';
 
@@ -50,6 +51,22 @@ export const OpportunityAPI = {
   listSources: async () => {
     const result = await request<{ items: BidSourceOption[] }>('/api/bids/sources');
     return result.items;
+  },
+
+  updateSourceSearchScope: async (sourceKey: string, searchScope: SiteSearchScope) => {
+    const result = await request<{ item: BidSourceOption }>(
+      `/api/bids/sources/${encodeURIComponent(sourceKey)}/search-scope`,
+      { method: 'PUT', body: JSON.stringify({ searchScope }), headers: { 'Content-Type': 'application/json' } },
+    );
+    return result.item;
+  },
+
+  resetSourceSearchScope: async (sourceKey: string) => {
+    const result = await request<{ item: BidSourceOption }>(
+      `/api/bids/sources/${encodeURIComponent(sourceKey)}/search-scope`,
+      { method: 'DELETE' },
+    );
+    return result.item;
   },
 
   createLocalHelperPairingCode: () => request<LocalHelperPairingInvitation>(

@@ -14,6 +14,8 @@ import {
   BellOutlined,
   LinkOutlined,
   RadarChartOutlined,
+  LineChartOutlined,
+  HomeOutlined,
   InboxOutlined as InventoryIcon,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
@@ -57,7 +59,9 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'notifications', label: '通知中心', icon: <BellOutlined />, path: '/purchase/notifications' },
   ],
   manager: [
+    { key: 'dashboard', label: '首页总览', icon: <HomeOutlined />, path: '/manager/dashboard' },
     { key: 'overview', label: '关联合同总览', icon: <LinkOutlined />, path: '/manager/overview' },
+    { key: 'monthly-profit', label: '月度利润', icon: <LineChartOutlined />, path: '/manager/monthly-profit' },
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },

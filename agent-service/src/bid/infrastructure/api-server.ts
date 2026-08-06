@@ -2,6 +2,12 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 
 import { normalizeBusinessAssessment } from '../domain/notice.ts';
+import {
+  normalizeSiteSearchScope,
+  serializedSiteSearchScope,
+  storedSiteSearchScope,
+  type SiteSearchScope,
+} from '../domain/site-search-scope.ts';
 import type { BidBusinessAssessment } from '../domain/tender-screening.ts';
 import { BID_SITES } from '../sites/registry.ts';
 import { persistCollectionNotices } from '../application/persist-report.ts';
@@ -13,6 +19,7 @@ import { createBidPreparationData } from './bid-preparation-repository.ts';
 import { createLocalHelperPairing } from './local-helper-pairing.ts';
 import { PocketBaseBidNoticeRepository } from './pocketbase-repository.ts';
 import { PocketBaseClient, type PocketBaseRecord } from './pocketbase-client.ts';
+import { PocketBaseBidRunRepository, type BidSourceRecord } from './run-repository.ts';
 
 type JsonResponse = http.ServerResponse<http.IncomingMessage>;
 
@@ -97,6 +104,24 @@ const runDto = (record: PocketBaseRecord & Record<string, unknown>) => ({
   errorMessage: String(record.error_message || ''),
 });
 
+const sourceDto = (
+  site: (typeof BID_SITES)[number],
+  record?: BidSourceRecord,
+) => {
+  const effectiveScope = storedSiteSearchScope(record?.search_scope, site.searchScope);
+  return {
+    sourceKey: site.sourceKey,
+    sourceName: site.sourceName,
+    collectionMode: site.collectionMode,
+    keywordSearch: Boolean(site.searchScope),
+    searchScopeEditable: site.collectionMode === 'scheduled' && Boolean(site.searchScope),
+    searchScopeCustomized: Boolean(record?.search_scope?.trim()),
+    searchScope: effectiveScope || null,
+    searchScopeUpdatedBy: String(record?.search_scope_updated_by || ''),
+    searchScopeUpdatedAt: String(record?.search_scope_updated_at || ''),
+  };
+};
+
 const searchMatches = (record: ReturnType<typeof noticeDto>, search: string) => !search
   || [record.title, record.buyerName, record.sourceName, ...record.matchedProducts]
     .join(' ')
@@ -162,6 +187,7 @@ export const createBidApiServer = ({
   env?: Record<string, string | undefined>;
 }) => {
   const noticeRepository = new PocketBaseBidNoticeRepository(client);
+  const runRepository = new PocketBaseBidRunRepository(client);
   const regionClients: Record<ErpRegion, PocketBaseClient> = {
     beijing: client,
     lanzhou: new PocketBaseClient({
@@ -179,7 +205,7 @@ export const createBidApiServer = ({
   const server = http.createServer(async (request, response) => {
     response.setHeader('Access-Control-Allow-Origin', String(request.headers.origin || '*'));
     response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-ERP-Region');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (request.method === 'OPTIONS') {
       response.writeHead(204);
       response.end();
@@ -252,6 +278,39 @@ export const createBidApiServer = ({
         return;
       }
 
+      const sourceScopeMatch = url.pathname.match(/^\/api\/bids\/sources\/([^/]+)\/search-scope$/);
+      if (sourceScopeMatch && (request.method === 'PUT' || request.method === 'DELETE')) {
+        if (identity.type !== 'manager') return json(response, 403, { error: '仅管理员可以修改巡检关键词' });
+        const sourceKey = decodeURIComponent(sourceScopeMatch[1]);
+        const site = BID_SITES.find((item) => item.sourceKey === sourceKey);
+        if (!site) return json(response, 404, { error: '站点不存在' });
+        if (site.collectionMode !== 'scheduled' || !site.searchScope) {
+          return json(response, 409, { error: '该站点不使用 ERP 关键词巡检' });
+        }
+        const audit = {
+          sourceKey,
+          updatedBy: identity.name || identity.email || '管理员',
+          updatedAt: new Date().toISOString(),
+        };
+        if (request.method === 'DELETE') {
+          const updated = await runRepository.resetSearchScope(audit);
+          return json(response, 200, { item: sourceDto(site, updated) });
+        }
+        const body = await readJson(request) as { searchScope?: Partial<SiteSearchScope> };
+        if (!body.searchScope || typeof body.searchScope !== 'object') {
+          return json(response, 400, { error: '请提供完整的搜索范围' });
+        }
+        const normalized = normalizeSiteSearchScope(body.searchScope);
+        if (!normalized.productTerms.length) {
+          return json(response, 400, { error: '产品库至少保留 1 个有效关键词（不少于 2 个字符）' });
+        }
+        const updated = await runRepository.updateSearchScope({
+          ...audit,
+          serializedScope: serializedSiteSearchScope(normalized),
+        });
+        return json(response, 200, { item: sourceDto(site, updated) });
+      }
+
       const historyMatch = url.pathname.match(/^\/api\/bids\/notices\/([^/]+)\/history$/);
       if (request.method === 'GET' && historyMatch) {
         const result = await bidPreparation.history(decodeURIComponent(historyMatch[1]));
@@ -296,12 +355,10 @@ export const createBidApiServer = ({
         return;
       }
       if (request.method === 'GET' && url.pathname === '/api/bids/sources') {
+        const records = await runRepository.listSources();
+        const byKey = new Map(records.map((record) => [record.source_key, record]));
         json(response, 200, {
-          items: BID_SITES.map(({ sourceKey, sourceName, collectionMode }) => ({
-            sourceKey,
-            sourceName,
-            collectionMode,
-          })),
+          items: BID_SITES.map((site) => sourceDto(site, byKey.get(site.sourceKey))),
         });
         return;
       }

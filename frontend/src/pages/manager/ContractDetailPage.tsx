@@ -6,6 +6,7 @@ import { ComparisonAPI } from '@/api/comparison';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
+import { calculateContractProfit } from '@/lib/contract-profit';
 import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import dayjs from 'dayjs';
@@ -124,23 +125,28 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
   // Calculate total tariff and VAT from arrival records
   const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0);
   const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0);
-  const isExTax = sc.is_price_excluding_tax;
-  const salesIncTax = isExTax ? salesAmountCny * 1.13 : salesAmountCny;
-  const salesExTax = isExTax ? salesAmountCny : salesAmountCny / 1.13;
-  const operatingProfit = salesExTax - purchaseTotalAmountCny / 1.13 - freightCny - miscCny - totalTariff - totalVAT;
-  const taxAmount = (salesIncTax - purchaseTotalAmountCny) * 0.1881;
-  const netProfit = salesIncTax - purchaseTotalAmountCny - taxAmount - freightCny - miscCny - totalTariff - totalVAT;
+  const profit = calculateContractProfit({
+    salesAmount: salesAmountCny,
+    salesPriceExcludingTax: sc.is_price_excluding_tax,
+    purchaseAmount: purchaseTotalAmountCny,
+    freight: freightCny,
+    miscellaneous: miscCny,
+    tariff: totalTariff,
+    valueAddedTax: totalVAT,
+  });
 
   // currentProfit 已被新的「已执行利润」行取代（旧逻辑用合同签订量且未扣运费/税，口径不准）。
   // 此处保留字段供兼容，但 UI 不再渲染该行。
   const currentProfit = realized.realizedNetProfit;
 
   return {
-    operatingProfit, taxAmount, netProfit,
-    salesAmountIncTax: salesIncTax,
-    purchaseAmountIncTax: purchaseTotalAmountCny,
-    salesAmountExTax: salesExTax,
-    purchaseAmountExTax: purchaseTotalAmountCny / 1.13,
+    operatingProfit: profit.operatingProfit,
+    taxAmount: profit.taxAmount,
+    netProfit: profit.netProfit,
+    salesAmountIncTax: profit.salesAmountIncTax,
+    purchaseAmountIncTax: profit.purchaseAmountIncTax,
+    salesAmountExTax: profit.salesAmountExTax,
+    purchaseAmountExTax: profit.purchaseAmountExTax,
     totalFreight: freightCny,
     totalMiscellaneous: miscCny,
     quantityMatched: data.profit.is_quantity_matched,
@@ -186,22 +192,27 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
   // Calculate total tariff and VAT from arrival records (convert to USD)
   const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0) / rate;
   const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0) / rate;
-  const isExTax = sc.is_price_excluding_tax;
-  const salesIncTax = isExTax ? salesAmount * 1.13 : salesAmount;
-  const salesExTax = isExTax ? salesAmount : salesAmount / 1.13;
-  const operatingProfit = salesExTax - purchaseTotalAmount / 1.13 - freight - misc - totalTariff - totalVAT;
-  const taxAmount = (salesIncTax - purchaseTotalAmount) * 0.1881;
-  const netProfit = salesIncTax - purchaseTotalAmount - taxAmount - freight - misc - totalTariff - totalVAT;
+  const profit = calculateContractProfit({
+    salesAmount,
+    salesPriceExcludingTax: sc.is_price_excluding_tax,
+    purchaseAmount: purchaseTotalAmount,
+    freight,
+    miscellaneous: misc,
+    tariff: totalTariff,
+    valueAddedTax: totalVAT,
+  });
 
   // currentProfit 已被「已执行利润」行取代，此处仅保留兼容字段
   const currentProfit = (data.profit.realized_net_profit ?? 0) / rate;
 
   return {
-    operatingProfit, taxAmount, netProfit,
-    salesAmountIncTax: salesIncTax,
-    purchaseAmountIncTax: purchaseTotalAmount,
-    salesAmountExTax: salesExTax,
-    purchaseAmountExTax: purchaseTotalAmount / 1.13,
+    operatingProfit: profit.operatingProfit,
+    taxAmount: profit.taxAmount,
+    netProfit: profit.netProfit,
+    salesAmountIncTax: profit.salesAmountIncTax,
+    purchaseAmountIncTax: profit.purchaseAmountIncTax,
+    salesAmountExTax: profit.salesAmountExTax,
+    purchaseAmountExTax: profit.purchaseAmountExTax,
     totalFreight: freight,
     totalMiscellaneous: misc,
     quantityMatched: data.profit.is_quantity_matched,

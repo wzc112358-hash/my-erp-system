@@ -775,7 +775,7 @@ export const OverviewPage: React.FC = () => {
       ) : (
         <div style={{ borderRadius: 12, border: '1px solid #f0f0f0', background: '#fff' }}>
           {/* Sticky Header */}
-          <div style={{ background: '#fff', zIndex: 2, padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 0 }}>
+          <div style={{ background: '#fff', zIndex: 2, padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: isMobile ? 'none' : 'flex', gap: 0 }}>
             <div style={{ flex: 1, fontWeight: 'bold', fontSize: 16, color: '#333' }}>
               销售合同 ({filteredSales.length})
             </div>
@@ -790,7 +790,16 @@ export const OverviewPage: React.FC = () => {
           {/* Contract Rows */}
           <div style={{ padding: '8px 16px' }}>
             {paginatedRows.map((row, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 0, marginBottom: 12, alignItems: 'stretch' }}>
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: isMobile ? 4 : 0,
+                  marginBottom: 12,
+                  alignItems: 'stretch',
+                }}
+              >
                 <div style={{ flex: 1 }}>
                   {row.sales ? (
                     <SalesContractCard
@@ -805,10 +814,10 @@ export const OverviewPage: React.FC = () => {
                     <div style={{ height: '100%', minHeight: 80 }} />
                   )}
                 </div>
-                <div style={{ width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: isMobile ? '100%' : 48, height: isMobile ? 16 : 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {row.sales && (row.purchaseSummary || row.purchases.length > 0) && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <div style={{ width: 16, height: 2, background: '#1890ff' }} />
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: 2 }}>
+                      <div style={{ width: isMobile ? 2 : 16, height: isMobile ? 8 : 2, background: '#1890ff' }} />
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#1890ff' }} />
                     </div>
                   )}

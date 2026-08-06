@@ -273,6 +273,69 @@
     "status": "active"
   },
   {
+    "term": "磷酸三钙",
+    "aliases": ["食品级磷酸三钙", "磷酸钙"],
+    "sources": ["user_confirmed"],
+    "weight": 76,
+    "status": "active"
+  },
+  {
+    "term": "亚磷酸酯",
+    "aliases": ["有机亚磷酸酯", "亚磷酸酯抗氧剂"],
+    "sources": ["user_confirmed"],
+    "weight": 72,
+    "status": "active"
+  },
+  {
+    "term": "ABS树脂",
+    "aliases": ["ABS", "ABS原料", "ABS颗粒"],
+    "sources": ["user_confirmed"],
+    "weight": 72,
+    "status": "active"
+  },
+  {
+    "term": "过氧化物",
+    "aliases": ["有机过氧化物", "过氧化", "过氧化氢", "双氧水"],
+    "sources": ["user_confirmed"],
+    "weight": 72,
+    "status": "active"
+  },
+  {
+    "term": "二乙基羟胺",
+    "aliases": ["DEHA", "二乙基羟胺水溶液"],
+    "sources": ["user_confirmed"],
+    "weight": 76,
+    "status": "active"
+  },
+  {
+    "term": "异丙基羟胺",
+    "aliases": ["IPHA", "异丙基羟胺水溶液"],
+    "sources": ["user_confirmed"],
+    "weight": 76,
+    "status": "active"
+  },
+  {
+    "term": "异十二烷",
+    "aliases": [],
+    "sources": ["user_confirmed"],
+    "weight": 70,
+    "status": "active"
+  },
+  {
+    "term": "壬酸",
+    "aliases": ["正壬酸"],
+    "sources": ["user_confirmed"],
+    "weight": 70,
+    "status": "active"
+  },
+  {
+    "term": "丙醛",
+    "aliases": ["正丙醛"],
+    "sources": ["user_confirmed"],
+    "weight": 70,
+    "status": "active"
+  },
+  {
     "term": "办公用品",
     "aliases": ["办公耗材", "文具"],
     "sources": ["negative_guard"],

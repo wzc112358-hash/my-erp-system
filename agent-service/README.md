@@ -8,7 +8,7 @@
 2. 用公司产品词库做规则召回，再用 OpenAI 兼容模型筛选新化工产品。
 3. 对每个站点优先级最高的 6 条候选读取公开详情/附件；扫描 PDF 使用百度 OCR。
 4. 以站点和公告身份生成唯一指纹。同一公告只更新最后发现时间，正文变化时更新原记录。
-5. 清理超过 30 天未再次发现的公告和巡检记录。
+5. 清理超过 7 天未再次发现的公告和巡检记录。
 
 ## 命令
 
@@ -28,7 +28,7 @@ POCKETBASE_SUPERUSER_PASSWORD=...
 
 HCZ_LOCAL_AGENT_LLM_BASE_URL=https://api.deepseek.com
 HCZ_LOCAL_AGENT_LLM_API_KEY=...
-HCZ_LOCAL_AGENT_LLM_MODEL=deepseek-v4-pro
+HCZ_LOCAL_AGENT_LLM_MODEL=deepseek-v4-flash
 
 BAIDU_OCR_API_KEY=...
 BAIDU_OCR_SECRET_KEY=...

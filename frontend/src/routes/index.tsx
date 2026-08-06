@@ -41,6 +41,8 @@ const ExchangeRatePage = lazy(() => import('@/pages/manager/ExchangeRatePage').t
 const InventoryPage = lazy(() => import('@/pages/manager/InventoryPage').then(m => ({ default: m.default })));
 const InventoryDetailPage = lazy(() => import('@/pages/manager/InventoryDetailPage').then(m => ({ default: m.default })));
 const OpportunityMonitorPage = lazy(() => import('@/pages/manager/OpportunityMonitorPage').then(m => ({ default: m.default })));
+const DashboardPage = lazy(() => import('@/pages/manager/DashboardPage').then(m => ({ default: m.default })));
+const MonthlyProfitPage = lazy(() => import('@/pages/manager/MonthlyProfitPage').then(m => ({ default: m.default })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
@@ -113,7 +115,7 @@ switch (user.type) {
     case 'purchasing':
       return <Navigate to="/purchase/suppliers" replace />;
     case 'manager':
-      return <Navigate to="/manager/overview" replace />;
+      return <Navigate to="/manager/dashboard" replace />;
     default:
       return <Navigate to="/login" replace />;
   }
@@ -287,6 +289,10 @@ export const router = createBrowserRouter([
         path: '/manager',
         children: [
           {
+            path: 'dashboard',
+            element: <DashboardPage />,
+          },
+          {
             path: 'overview',
             element: <OverviewPage />,
           },
@@ -301,6 +307,10 @@ export const router = createBrowserRouter([
           {
             path: 'progress-flow',
             element: <ProgressFlowPage />,
+          },
+          {
+            path: 'monthly-profit',
+            element: <MonthlyProfitPage />,
           },
           {
             path: 'reports',

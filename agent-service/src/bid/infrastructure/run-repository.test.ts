@@ -65,3 +65,27 @@ test('run diagnostics remain valid JSON within the PocketBase text limit', async
   assert.doesNotThrow(() => JSON.parse(diagnostics));
   assert.equal(JSON.parse(diagnostics).diagnosticsTruncated, true);
 });
+
+test('manager keyword changes are persisted on the selected source with audit data', async () => {
+  let updated: Record<string, unknown> | undefined;
+  const client = {
+    listAll: async (collection: string) => collection === 'bid_sources'
+      ? [{ id: 'source-1', source_key: 'ymz', source_name: '云梦泽智慧平台' }]
+      : [],
+    update: async (_collection: string, _id: string, payload: Record<string, unknown>) => {
+      updated = payload;
+      return { id: 'source-1', ...payload };
+    },
+  };
+  const repository = new PocketBaseBidRunRepository(client as never);
+  await repository.updateSearchScope({
+    sourceKey: 'ymz',
+    serializedScope: '{"productTerms":["阻聚剂"]}',
+    updatedBy: '张管理员',
+    updatedAt: '2026-08-06T03:00:00.000Z',
+  });
+
+  assert.equal(updated?.search_scope, '{"productTerms":["阻聚剂"]}');
+  assert.equal(updated?.search_scope_updated_by, '张管理员');
+  assert.equal(updated?.search_scope_updated_at, '2026-08-06T03:00:00.000Z');
+});

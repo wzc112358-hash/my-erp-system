@@ -1,13 +1,16 @@
 import type { BidCollectionReport } from '../application/collection-report.ts';
 import { asPocketBaseDate, PocketBaseClient, type PocketBaseRecord } from './pocketbase-client.ts';
 
-type SourceRecord = PocketBaseRecord & {
+export type BidSourceRecord = PocketBaseRecord & {
   source_key: string;
   source_name: string;
   enabled: boolean;
   schedule_time: string;
   last_run_at?: string;
   last_status?: string;
+  search_scope?: string;
+  search_scope_updated_by?: string;
+  search_scope_updated_at?: string;
 };
 
 type RunRecord = PocketBaseRecord & Record<string, unknown>;
@@ -54,7 +57,41 @@ export class PocketBaseBidRunRepository {
   }
 
   async listSources() {
-    return this.client.listAll<SourceRecord>('bid_sources', { sort: 'source_name' });
+    return this.client.listAll<BidSourceRecord>('bid_sources', { sort: 'source_name' });
+  }
+
+  async updateSearchScope({
+    sourceKey,
+    serializedScope,
+    updatedBy,
+    updatedAt,
+  }: {
+    sourceKey: string;
+    serializedScope: string;
+    updatedBy: string;
+    updatedAt: string;
+  }) {
+    const source = (await this.listSources()).find((item) => item.source_key === sourceKey);
+    if (!source) throw new Error(`站点配置不存在：${sourceKey}`);
+    return this.client.update<BidSourceRecord>('bid_sources', source.id, {
+      search_scope: serializedScope,
+      search_scope_updated_by: updatedBy.slice(0, 160),
+      search_scope_updated_at: asPocketBaseDate(updatedAt),
+    });
+  }
+
+  async resetSearchScope({ sourceKey, updatedBy, updatedAt }: {
+    sourceKey: string;
+    updatedBy: string;
+    updatedAt: string;
+  }) {
+    const source = (await this.listSources()).find((item) => item.source_key === sourceKey);
+    if (!source) throw new Error(`站点配置不存在：${sourceKey}`);
+    return this.client.update<BidSourceRecord>('bid_sources', source.id, {
+      search_scope: '',
+      search_scope_updated_by: updatedBy.slice(0, 160),
+      search_scope_updated_at: asPocketBaseDate(updatedAt),
+    });
   }
 
   async upsertRun({
@@ -67,7 +104,7 @@ export class PocketBaseBidRunRepository {
     counts,
     errorMessage = '',
   }: {
-    source: SourceRecord;
+    source: BidSourceRecord;
     runDate: string;
     startedAt: string;
     finishedAt: string;
@@ -107,7 +144,7 @@ export class PocketBaseBidRunRepository {
     const record = existing[0]
       ? await this.client.update<RunRecord>('bid_collection_runs', existing[0].id, payload)
       : await this.client.create<RunRecord>('bid_collection_runs', payload);
-    await this.client.update<SourceRecord>('bid_sources', source.id, {
+    await this.client.update<BidSourceRecord>('bid_sources', source.id, {
       last_run_at: asPocketBaseDate(finishedAt),
       last_status: status === 'no_new' ? 'success' : status,
       last_error: String(errorMessage).slice(0, 4_000),
@@ -115,8 +152,8 @@ export class PocketBaseBidRunRepository {
     return record;
   }
 
-  async markRunning(source: SourceRecord, startedAt: string) {
-    await this.client.update<SourceRecord>('bid_sources', source.id, {
+  async markRunning(source: BidSourceRecord, startedAt: string) {
+    await this.client.update<BidSourceRecord>('bid_sources', source.id, {
       last_status: 'running',
       last_error: '',
       last_run_at: asPocketBaseDate(startedAt),

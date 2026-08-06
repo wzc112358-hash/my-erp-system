@@ -68,6 +68,19 @@ export interface BidSourceOption {
   sourceKey: string;
   sourceName: string;
   collectionMode: 'scheduled' | 'local_helper';
+  keywordSearch: boolean;
+  searchScopeEditable: boolean;
+  searchScopeCustomized: boolean;
+  searchScope: SiteSearchScope | null;
+  searchScopeUpdatedBy: string;
+  searchScopeUpdatedAt: string;
+}
+
+export interface SiteSearchScope {
+  productTerms: string[];
+  familyTerms: string[];
+  exploratoryTerms: string[];
+  exploratoryTermsPerRun: number;
 }
 
 export interface LocalHelperPairingInvitation {

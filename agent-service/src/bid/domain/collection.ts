@@ -3,6 +3,7 @@ export type PublicCollectionTask = {
   sourceName: string;
   entryUrl: string;
   searchTerms?: string;
+  searchScope?: import('./site-search-scope.ts').SiteSearchScope;
 };
 
 export type CollectionArtifact = {
@@ -36,6 +37,7 @@ export type PublicSiteDefinition = {
   sourceName: string;
   entryUrl: string;
   deepSearchTerms: string[];
+  searchScope?: import('./site-search-scope.ts').SiteSearchScope;
   defaultSearchTerms: string;
   llmExtractionHint: string;
   maxCandidates: number;

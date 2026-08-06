@@ -42,6 +42,11 @@ interface SaleInvoiceItem {
   issue_date: string;
 }
 
+const contractProgress = (completedAmount: number, totalAmount: number) => {
+  if (totalAmount <= 0) return 0;
+  return Math.min(100, Math.max(0, (completedAmount / totalAmount) * 100));
+};
+
 // 到货记录中参与运费/杂费折算与到货量统计的最小字段集
 interface ArrivalForRealized {
   quantity: number;
@@ -301,7 +306,11 @@ export const ComparisonAPI = {
         paymentDate: saleReceiptsMap.get(sc.id) || undefined,
         invoiceNo: saleInvoiceMap.get(sc.id)?.no || undefined,
         invoiceIssueDate: saleInvoiceMap.get(sc.id)?.issueDate || undefined,
-        created: sc.created_at || '',
+        signDate: sc.sign_date || '',
+        created: sc.created_at || sc.created || '',
+        status: sc.status,
+        invoiceProgress: contractProgress(sc.invoiced_amount, sc.total_amount),
+        settlementProgress: contractProgress(sc.receipted_amount, sc.total_amount),
         customerName: sc.expand?.customer?.name || sc.customer_name || '-',
         associatedPurchaseIds: purchaseIds,
         purchaseSummary: purchaseIds.length > 0 ? {
@@ -323,7 +332,11 @@ export const ComparisonAPI = {
       totalAmount: pc.total_amount,
       paymentDate: purchasePaymentsMap.get(pc.id) || undefined,
       shipmentDate: purchaseArrivalsMap.get(pc.id) || undefined,
-      created: pc.created_at || '',
+      signDate: pc.sign_date || '',
+      created: pc.created_at || pc.created || '',
+      status: pc.status,
+      invoiceProgress: contractProgress(pc.invoiced_amount, pc.total_amount),
+      settlementProgress: contractProgress(pc.paid_amount, pc.total_amount),
       supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
       associatedSalesIds: [pc.sales_contract].filter(Boolean),
     }));
@@ -343,7 +356,11 @@ export const ComparisonAPI = {
         totalAmount: pc.total_amount,
         paymentDate: purchasePaymentsMap.get(pc.id) || undefined,
         shipmentDate: purchaseArrivalsMap.get(pc.id) || undefined,
-        created: pc.created_at || '',
+        signDate: pc.sign_date || '',
+        created: pc.created_at || pc.created || '',
+        status: pc.status,
+        invoiceProgress: contractProgress(pc.invoiced_amount, pc.total_amount),
+        settlementProgress: contractProgress(pc.paid_amount, pc.total_amount),
         supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
         associatedSalesIds: [],
       }));

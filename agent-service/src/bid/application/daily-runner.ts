@@ -4,9 +4,10 @@ import { PUBLIC_SITES, taskForSite } from '../sites/registry.ts';
 import { PocketBaseBidNoticeRepository } from '../infrastructure/pocketbase-repository.ts';
 import { PocketBaseBidRunRepository } from '../infrastructure/run-repository.ts';
 import type { PocketBaseClient } from '../infrastructure/pocketbase-client.ts';
+import { storedSiteSearchScope } from '../domain/site-search-scope.ts';
 
 const TIME_ZONE = 'Asia/Shanghai';
-export const BID_RECORD_RETENTION_DAYS = 10;
+export const BID_RECORD_RETENTION_DAYS = 7;
 
 export const bidRetentionCutoff = (now: Date) => new Date(
   now.getTime() - BID_RECORD_RETENTION_DAYS * 24 * 60 * 60 * 1_000,
@@ -70,7 +71,8 @@ export const createDailyBidRunner = ({
         const startedAt = new Date().toISOString();
         await runRepository.markRunning(source, startedAt);
         try {
-          const output = await collectPublicSite({ site, task: taskForSite(site), env });
+          const searchScope = storedSiteSearchScope(source.search_scope, site.searchScope);
+          const output = await collectPublicSite({ site, task: taskForSite(site, searchScope), env });
           if (output.feed.status === 'failed' && !output.bundle) {
             throw new Error(output.feed.warnings.join('；') || '公开接口采集失败');
           }

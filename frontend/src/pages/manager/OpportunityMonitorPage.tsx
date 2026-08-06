@@ -14,9 +14,10 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { CopyOutlined, KeyOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CopyOutlined, KeyOutlined, ReloadOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 
 import { OpportunityAPI } from '@/api/opportunity';
+import { useAuthStore } from '@/stores/auth';
 import type {
   BidCollectionRun,
   BidNotice,
@@ -27,6 +28,7 @@ import type {
 import { BidNoticeDetail } from './opportunity/BidNoticeDetail';
 import { BidNoticeGroups } from './opportunity/BidNoticeGroups';
 import { BidRunStatus } from './opportunity/BidRunStatus';
+import { SearchScopeCenter } from './opportunity/SearchScopeCenter';
 import './opportunity/OpportunityMonitorPage.css';
 
 const { Text, Title } = Typography;
@@ -34,6 +36,7 @@ const NOTICE_FETCH_LIMIT = 5000;
 
 const OpportunityMonitorPage: React.FC = () => {
   const { message } = App.useApp();
+  const user = useAuthStore((state) => state.user);
   const [items, setItems] = useState<BidNotice[]>([]);
   const [runs, setRuns] = useState<BidCollectionRun[]>([]);
   const [sources, setSources] = useState<BidSourceOption[]>([]);
@@ -47,6 +50,7 @@ const OpportunityMonitorPage: React.FC = () => {
   const [pairingLoading, setPairingLoading] = useState(false);
   const [pairingInvitation, setPairingInvitation] = useState<LocalHelperPairingInvitation | null>(null);
   const [pairingClock, setPairingClock] = useState(Date.now());
+  const [searchScopeOpen, setSearchScopeOpen] = useState(false);
 
   useEffect(() => {
     if (!pairingOpen) return undefined;
@@ -142,6 +146,12 @@ const OpportunityMonitorPage: React.FC = () => {
     void generatePairingCode();
   };
 
+  const updateSource = (updated: BidSourceOption) => {
+    setSources((current) => current.map((item) => (
+      item.sourceKey === updated.sourceKey ? updated : item
+    )));
+  };
+
   const pairingSecondsLeft = pairingInvitation
     ? Math.max(0, Math.ceil((new Date(pairingInvitation.expiresAt).getTime() - pairingClock) / 1_000))
     : 0;
@@ -154,6 +164,9 @@ const OpportunityMonitorPage: React.FC = () => {
           <Text type="secondary">10 个公开站点每日 08:00 自动巡检；中国石油、裕龙由本地助手完成人工验证后上传，全部由云端 Agent 研判并去重。</Text>
         </div>
         <Flex gap={8} wrap>
+          {user?.type === 'manager' && (
+            <Button icon={<SettingOutlined />} onClick={() => setSearchScopeOpen(true)}>关键词管理</Button>
+          )}
           <Button icon={<KeyOutlined />} onClick={openPairing}>连接本地助手</Button>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadData()}>刷新数据</Button>
         </Flex>
@@ -242,6 +255,13 @@ const OpportunityMonitorPage: React.FC = () => {
       </div>
 
       <BidRunStatus runs={runs} />
+
+      <SearchScopeCenter
+        open={searchScopeOpen}
+        sources={sources}
+        onClose={() => setSearchScopeOpen(false)}
+        onChanged={updateSource}
+      />
 
       <Modal
         open={pairingOpen}

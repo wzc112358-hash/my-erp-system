@@ -26,9 +26,11 @@ export const productLabelsForQuery = (query: string) => {
 export const buildProductQueryPlan = ({
   preferredTerms = [],
   limit = 10,
+  preservePreferredLabels = false,
 }: {
   preferredTerms?: string[];
   limit?: number;
+  preservePreferredLabels?: boolean;
 } = {}) => {
   const catalog = activeProducts();
   const canonical = new Map(catalog.flatMap((term) => [
@@ -36,7 +38,12 @@ export const buildProductQueryPlan = ({
     ...(term.aliases || []).map((alias) => [alias.toLocaleLowerCase('zh-CN'), term.term] as const),
   ]));
   const preferred = preferredTerms
-    .map((term) => canonical.get(String(term).trim().toLocaleLowerCase('zh-CN')) || String(term).trim())
+    .map((term) => {
+      const label = String(term).trim();
+      return preservePreferredLabels
+        ? label
+        : canonical.get(label.toLocaleLowerCase('zh-CN')) || label;
+    })
     .filter(Boolean);
   return [...new Set([...preferred, ...catalog.map((term) => term.term)])]
     .slice(0, Math.max(0, limit));

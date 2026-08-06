@@ -7,6 +7,7 @@ import {
   type DiscoveryExcludedNotice,
   type DiscoveryExclusionReason,
 } from '../domain/discovery.ts';
+import { effectiveSearchTerms } from '../domain/site-search-scope.ts';
 import { definitionFor } from './registry.ts';
 
 export type SitePublicFeedResult = {
@@ -72,7 +73,7 @@ const YANCHANG_NOTICE_CATEGORIES = [
 const PUBLIC_HTML_CANDIDATE_LIMIT = 30;
 const PUBLIC_FEED_SEARCH_TERM_LIMIT = 24;
 const PUBLIC_FEED_SEARCH_PAGE_SIZE = 10;
-const PUBLIC_FEED_BASELINE_LIMIT_AFTER_MATCH = 0;
+const PUBLIC_FEED_BASELINE_LIMIT_AFTER_MATCH = 30;
 const BUSINESS_SEARCH_TERM_LIMIT = 18;
 const YMZ_SEARCH_TERM_LIMIT = 24;
 const BUSINESS_SEARCH_PAGE_SIZE = 50;
@@ -267,14 +268,26 @@ const waitForInterval = async (lastRequestAt: number, minimumIntervalMs: number)
   if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
 };
 
-const businessSearchTermsFor = (task: PublicCollectionTask, limit = BUSINESS_SEARCH_TERM_LIMIT) => {
+const businessSearchTermsFor = (
+  task: PublicCollectionTask,
+  limit = BUSINESS_SEARCH_TERM_LIMIT,
+  now = new Date(),
+) => {
   const site = definitionFor(task.sourceName);
   const requested = splitSearchTerms(task.searchTerms || '');
+  const scoped = task.searchScope
+    ? effectiveSearchTerms(task.searchScope, task.sourceName, now)
+    : [];
   const explicitlyFocused = requested.length > 0 && requested.length <= 3;
-  return unique(explicitlyFocused ? requested : [...site.deepSearchTerms, ...requested])
-    .filter((term) => term.length >= 2)
-    .filter((term) => !/^(中化|中国石油|云梦泽|采购|公告|招标|询价|化工助剂)$/.test(term))
-    .slice(0, limit);
+  const terms = scoped.length
+    ? scoped
+    : explicitlyFocused ? requested : [...site.deepSearchTerms, ...requested];
+  const exploratory = new Set(task.searchScope?.exploratoryTerms || []);
+  const effectiveLimit = scoped.length ? Math.min(64, scoped.length) : limit;
+  return unique(terms)
+    .filter((term) => term.length >= 2 || exploratory.has(term))
+    .filter((term) => !/^(中化|中国石油|云梦泽|采购|公告|招标|询价)$/.test(term))
+    .slice(0, effectiveLimit);
 };
 
 type PublicCollectionStats = {
@@ -383,15 +396,22 @@ const parseMaybeJsonp = (text = '') => {
   return JSON.parse(jsonpMatch ? jsonpMatch[1] : trimmed || '{}');
 };
 
-const guonengEgouSearchTermsFor = (task: PublicCollectionTask) => {
+const guonengEgouSearchTermsFor = (task: PublicCollectionTask, now = new Date()) => {
   const site = definitionFor(task.sourceName);
   const requested = splitSearchTerms(task.searchTerms || '');
-  return unique(requested.length > 0 && requested.length <= 3
-    ? requested
-    : [...site.deepSearchTerms, ...requested])
-    .filter((term) => term.length >= 2)
-    .filter((term) => !/^(国能|国能E购|询价|竞价|竞争性谈判|采购|公告|化工助剂)$/.test(term))
-    .slice(0, PUBLIC_FEED_SEARCH_TERM_LIMIT);
+  const scoped = task.searchScope
+    ? effectiveSearchTerms(task.searchScope, task.sourceName, now)
+    : [];
+  const terms = scoped.length
+    ? scoped
+    : requested.length > 0 && requested.length <= 3
+      ? requested
+      : [...site.deepSearchTerms, ...requested];
+  const exploratory = new Set(task.searchScope?.exploratoryTerms || []);
+  return unique(terms)
+    .filter((term) => term.length >= 2 || exploratory.has(term))
+    .filter((term) => !/^(国能|国能E购|询价|竞价|竞争性谈判|采购|公告)$/.test(term))
+    .slice(0, scoped.length ? Math.min(64, scoped.length) : PUBLIC_FEED_SEARCH_TERM_LIMIT);
 };
 
 const collectPublicHtmlFeed = async ({
@@ -562,7 +582,7 @@ export const collectSinochemPublicNotices = async ({
 }): Promise<SitePublicFeedResult> => {
   const provider = 'site-public-feed:sinochem-notice-hall';
   const site = definitionFor(task.sourceName);
-  const searchTerms = businessSearchTermsFor(task);
+  const searchTerms = businessSearchTermsFor(task, BUSINESS_SEARCH_TERM_LIMIT, now);
   const recentDays = site.browserJourney?.recentDays || 14;
   const queryBeginTime = formatShanghaiDate(new Date(shanghaiDayStart(now, recentDays)));
   const queryEndTime = formatShanghaiDate(now);
@@ -847,7 +867,7 @@ export const collectYmzPublicNotices = async ({
 }): Promise<SitePublicFeedResult> => {
   const provider = 'site-public-feed:ymz-recent-search';
   const site = definitionFor(task.sourceName);
-  const searchTerms = businessSearchTermsFor(task, YMZ_SEARCH_TERM_LIMIT);
+  const searchTerms = businessSearchTermsFor(task, YMZ_SEARCH_TERM_LIMIT, now);
   const recentDays = site.browserJourney?.recentDays || 30;
   const releaseStartTime = shanghaiDayStart(now, recentDays);
   const releaseEndTime = now.getTime();
@@ -862,6 +882,7 @@ export const collectYmzPublicNotices = async ({
     truncatedCount: 0,
   };
   const collected: CandidateBundle['candidates'] = [];
+  const baselineCollected: CandidateBundle['candidates'] = [];
   const excludedNotices: DiscoveryExcludedNotice[] = [];
   let lastRequestAt = 0;
   let rateLimited = false;
@@ -912,9 +933,14 @@ export const collectYmzPublicNotices = async ({
     }
   };
 
-  for (const term of searchTerms) {
+  const broadTerms = new Set([
+    ...(task.searchScope?.familyTerms || site.searchScope?.familyTerms || []),
+    ...(task.searchScope?.exploratoryTerms || site.searchScope?.exploratoryTerms || []),
+  ]);
+  for (const term of ['', ...searchTerms]) {
     for (const scope of YMZ_DISCOVERY_SCOPES) {
-      for (let page = 1; page <= YMZ_SEARCH_PAGE_LIMIT && !rateLimited; page += 1) {
+      const pageLimit = !term || broadTerms.has(term) ? 1 : YMZ_SEARCH_PAGE_LIMIT;
+      for (let page = 1; page <= pageLimit && !rateLimited; page += 1) {
         const data = await fetchPage(term, page, scope);
         if (!data) break;
         const rows = Array.isArray(data.list) ? data.list as Record<string, unknown>[] : [];
@@ -936,7 +962,7 @@ export const collectYmzPublicNotices = async ({
             addExcludedNotice(excludedNotices, candidate, 'expired');
             continue;
           }
-          if (candidate) collected.push(candidate);
+          if (candidate) (term ? collected : baselineCollected).push(candidate);
         }
         const totalPages = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(data.pageSize || BUSINESS_SEARCH_PAGE_SIZE)));
         if (page >= totalPages || rows.length === 0) break;
@@ -947,7 +973,9 @@ export const collectYmzPublicNotices = async ({
   }
 
   const seen = new Set<string>();
-  const uniqueCandidates = collected
+  // Exact/family searches get first claim on the candidate budget. The
+  // unfiltered recent list is only a safety net for products we do not know yet.
+  const uniqueCandidates = [...collected, ...baselineCollected]
     .filter((candidate) => {
       const key = candidateKey(candidate.title, candidate.url);
       if (seen.has(key)) {
@@ -972,7 +1000,7 @@ export const collectYmzPublicNotices = async ({
     excludedNotices,
   });
   const summary = [
-    `云梦泽已完成 ${searchTerms.length} 个产品词的近 ${recentDays} 天查询，覆盖招标采购、谈判采购和询比采购`,
+    `云梦泽已先读取无关键词近期公告，再完成 ${searchTerms.length} 个分层搜索词的近 ${recentDays} 天查询，覆盖招标采购、谈判采购和询比采购`,
     `接口请求 ${stats.requests} 次，读取原始记录 ${stats.rawCount} 条`,
     `排除已截止 ${stats.expiredCount} 条，排除结果或计划 ${stats.nonActionableCount} 条，去重 ${stats.duplicateCount} 条`,
     `保留 ${candidates.length} 条交给 LLM 筛选${warnings.length ? `；${warnings.length} 个查询存在异常` : ''}。`,
@@ -1099,7 +1127,7 @@ export const collectCnoocPublicNotices = async ({
 }): Promise<SitePublicFeedResult> => {
   const provider = 'site-public-feed:cnooc-announcements';
   const site = definitionFor(task.sourceName);
-  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || BUSINESS_SEARCH_TERM_LIMIT);
+  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || BUSINESS_SEARCH_TERM_LIMIT, now);
   const recentDays = site.browserJourney?.recentDays || 30;
   const recentStart = shanghaiDayStart(now, recentDays);
   const startDate = formatShanghaiDate(new Date(recentStart));
@@ -1360,7 +1388,7 @@ export const collectGuonengEBidPublicNotices = async ({
 }): Promise<SitePublicFeedResult> => {
   const provider = 'site-public-feed:guoneng-ebid-search';
   const site = definitionFor(task.sourceName);
-  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || PUBLIC_FEED_SEARCH_TERM_LIMIT);
+  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || PUBLIC_FEED_SEARCH_TERM_LIMIT, now);
   const recentDays = site.browserJourney?.recentDays || 30;
   const recentStart = shanghaiDayStart(now, recentDays);
   const startDate = formatShanghaiDate(new Date(recentStart));
@@ -1591,7 +1619,7 @@ export const collectLongdaoPublicNotices = async ({
 }): Promise<SitePublicFeedResult> => {
   const provider = 'site-public-feed:longdao-search';
   const site = definitionFor(task.sourceName);
-  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || BUSINESS_SEARCH_TERM_LIMIT);
+  const searchTerms = businessSearchTermsFor(task, site.deepSearchTerms.length || BUSINESS_SEARCH_TERM_LIMIT, now);
   const recentDays = definitionFor(task.sourceName).browserJourney?.recentDays || 30;
   const recentStart = shanghaiDayStart(now, recentDays);
   const warnings: string[] = [];
@@ -2636,7 +2664,8 @@ export const collectGuonengEgouFeeds = async ({
   const searchCandidates: CandidateBundle['candidates'] = [];
   const artifacts: CollectionArtifact[] = [];
   const warnings: string[] = [];
-  const seen = new Set<string>();
+  const latestSeen = new Set<string>();
+  const searchSeen = new Set<string>();
   let lastSearchRequestAt = 0;
   let searchEndpointUnavailable = false;
   const addCandidate = (
@@ -2645,8 +2674,9 @@ export const collectGuonengEgouFeeds = async ({
   ) => {
     if (!candidate) return;
     const key = candidateKey(candidate.title, candidate.url, candidate.published_at);
-    if (seen.has(key)) return;
-    seen.add(key);
+    const targetSeen = target === searchCandidates ? searchSeen : latestSeen;
+    if (targetSeen.has(key)) return;
+    targetSeen.add(key);
     target.push(candidate);
   };
 
@@ -2680,7 +2710,7 @@ export const collectGuonengEgouFeeds = async ({
     }
   }
 
-  const searchTerms = guonengEgouSearchTermsFor(task);
+  const searchTerms = guonengEgouSearchTermsFor(task, now);
   for (const term of searchTerms) {
     if (searchEndpointUnavailable) break;
     for (const type of GUONENG_EGOU_SEARCH_NOTICE_TYPES) {
@@ -2708,7 +2738,10 @@ export const collectGuonengEgouFeeds = async ({
         });
         const text = await response.text();
         if (response.status === 405) {
-          warnings.push('国能E购公开站内深搜接口当前不接受匿名请求，已停止深搜并保留公告源巡检结果');
+          // The optional deep-search endpoint rejects some data-center egress
+          // IPs while the four public announcement feeds remain healthy. Do
+          // not turn a complete baseline collection into a misleading partial
+          // failure; stop the optional enhancement for this run instead.
           searchEndpointUnavailable = true;
           break;
         }
@@ -2743,7 +2776,13 @@ export const collectGuonengEgouFeeds = async ({
   const baselineCandidates = searchCandidates.length
     ? latestCandidates.slice(0, PUBLIC_FEED_BASELINE_LIMIT_AFTER_MATCH)
     : latestCandidates;
-  const candidates = [...searchCandidates, ...baselineCandidates];
+  const mergedSeen = new Set<string>();
+  const candidates = [...searchCandidates, ...baselineCandidates].filter((candidate) => {
+    const key = candidateKey(candidate.title, candidate.url, candidate.published_at);
+    if (mergedSeen.has(key)) return false;
+    mergedSeen.add(key);
+    return true;
+  });
   return {
     provider: 'site-public-feed:guoneng-egou',
     status: candidates.length ? 'success' : warnings.length ? 'failed' : 'no_new',

@@ -1,0 +1,29 @@
+.manager-dashboard-page {
+  padding: 24px;
+}
+
+.manager-dashboard-page .recent-contract-overview {
+  margin-bottom: 0;
+}
+
+.manager-dashboard-page__state {
+  display: grid;
+  min-height: 420px;
+  place-items: center;
+  padding: 24px;
+}
+
+.manager-dashboard-page__state > .ant-skeleton {
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .manager-dashboard-page {
+    padding: 8px;
+  }
+
+  .manager-dashboard-page__state {
+    min-height: 320px;
+    padding: 8px;
+  }
+}

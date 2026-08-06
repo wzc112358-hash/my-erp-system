@@ -24,6 +24,7 @@ export interface ComparisonSalesContract {
   attachments?: string[];
   sales_manager?: string;
   created_at?: string;
+  created?: string;
   updated?: string;
   expand?: {
     customer?: {
@@ -50,7 +51,11 @@ export interface OverviewContract {
   invoiceNo?: string;
   invoiceIssueDate?: string;
   shipmentDate?: string;
+  signDate?: string;
   created: string;
+  status?: string;
+  invoiceProgress?: number;
+  settlementProgress?: number;
   customerName?: string;
   supplierName?: string;
   associatedPurchaseIds?: string[];
@@ -87,6 +92,7 @@ export interface ComparisonPurchaseContract {
   attachments?: string[];
   purchasing_manager?: string;
   created_at?: string;
+  created?: string;
   updated?: string;
   expand?: {
     supplier?: {

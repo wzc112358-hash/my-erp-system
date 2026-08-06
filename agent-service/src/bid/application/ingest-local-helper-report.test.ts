@@ -42,7 +42,7 @@ test('cloud Agent reassesses local CNPC reports before persistence', async () =>
         url: 'https://www.cnpcbidding.com/#/details?id=notice-1',
         buyerName: '吉林石化',
         publishedAt: '2026-07-25',
-        deadlineAt: '2026-07-30',
+        deadlineAt: '2099-07-30',
         matchedProducts: ['阻聚剂'],
         rawText: '采购 TBC 阻聚剂 20 吨，纯度≥99%，分批交货。',
         detailReadMethod: '网页正文',
