@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useEffect, useState } from 'react';
 import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
@@ -107,7 +108,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       onFinish(data);
     } catch (error) {
       const err = error as Error;
-      message.error(err.message || '操作失败');
+      message.error(getPbErrorMessage(err, '操作失败'));
     } finally {
       setLoading(false);
     }

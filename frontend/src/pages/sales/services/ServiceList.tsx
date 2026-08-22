@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useState, useEffect } from 'react';
 import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
@@ -126,7 +127,7 @@ export const ServiceList: React.FC = () => {
       fetchData();
     } catch (error) {
       const err = error as Error;
-      message.error(err.message || (editingContract ? '更新失败' : '创建失败'));
+      message.error(getPbErrorMessage(err, editingContract ? '更新失败' : '创建失败'));
     }
   };
 

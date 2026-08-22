@@ -1,6 +1,20 @@
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { fetchAllByFieldBatches } from '@/api/helpers';
 import type { ReportData, ReportParams, ReportSummary } from '@/types/report';
+
+// 分批 OR 查询：PocketBase filter 超过 89 个 OR 条件会返回 400
+async function fetchByFieldBatches<T>(
+  collection: string,
+  ids: string[],
+  field: string,
+  expand?: string,
+): Promise<T[]> {
+  return fetchAllByFieldBatches(ids, field, async (filter) => {
+    const result = await pb.collection(collection).getList<T>(1, 1000, { filter, expand });
+    return result.items;
+  });
+}
 
 interface SalesContractData {
   id: string;
@@ -137,55 +151,31 @@ export const ReportAPI = {
     const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
     const salesContractIds = salesContracts.map((sc) => sc.id);
 
-    const [purchaseArrivalsResult, salesShipmentsResult, purchasePaymentsResult, purchaseInvoicesResult, saleReceiptsResult, saleInvoicesResult] = await Promise.all([
-      pb.collection('purchase_arrivals').getList<PurchaseArrivalData>(1, 1000, {
-        filter: purchaseContractIds.length > 0 
-          ? purchaseContractIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sales_shipments').getList<SalesShipmentData>(1, 1000, {
-        filter: salesContractIds.length > 0
-          ? salesContractIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('purchase_payments').getList<PurchasePaymentData>(1, 1000, {
-        filter: purchaseContractIds.length > 0
-          ? purchaseContractIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('purchase_invoices').getList<PurchaseInvoiceData>(1, 1000, {
-        filter: purchaseContractIds.length > 0
-          ? purchaseContractIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sale_receipts').getList<SaleReceiptData>(1, 1000, {
-        filter: salesContractIds.length > 0
-          ? salesContractIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sale_invoices').getList<SaleInvoiceData>(1, 1000, {
-        filter: salesContractIds.length > 0
-          ? salesContractIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
+    const [purchaseArrivalsAll, salesShipmentsAll, purchasePaymentsAll, purchaseInvoicesAll, saleReceiptsAll, saleInvoicesAll] = await Promise.all([
+      fetchByFieldBatches<PurchaseArrivalData>('purchase_arrivals', purchaseContractIds, 'purchase_contract'),
+      fetchByFieldBatches<SalesShipmentData>('sales_shipments', salesContractIds, 'sales_contract'),
+      fetchByFieldBatches<PurchasePaymentData>('purchase_payments', purchaseContractIds, 'purchase_contract'),
+      fetchByFieldBatches<PurchaseInvoiceData>('purchase_invoices', purchaseContractIds, 'purchase_contract'),
+      fetchByFieldBatches<SaleReceiptData>('sale_receipts', salesContractIds, 'sales_contract'),
+      fetchByFieldBatches<SaleInvoiceData>('sale_invoices', salesContractIds, 'sales_contract'),
     ]);
 
     const purchaseArrivalsMap = new Map<string, PurchaseArrivalData[]>();
-    purchaseArrivalsResult.items.forEach((arrival) => {
+    purchaseArrivalsAll.forEach((arrival) => {
       const existing = purchaseArrivalsMap.get(arrival.purchase_contract) || [];
       existing.push(arrival);
       purchaseArrivalsMap.set(arrival.purchase_contract, existing);
     });
 
     const salesShipmentsMap = new Map<string, string>();
-    salesShipmentsResult.items.forEach((shipment) => {
+    salesShipmentsAll.forEach((shipment) => {
       if (shipment.date) {
         salesShipmentsMap.set(shipment.sales_contract, shipment.date);
       }
     });
 
     const purchasePaymentDateMap = new Map<string, string>();
-    purchasePaymentsResult.items.forEach((p) => {
+    purchasePaymentsAll.forEach((p) => {
       if (!p.pay_date) return;
       const existing = purchasePaymentDateMap.get(p.purchase_contract);
       if (!existing || p.pay_date > existing) {
@@ -194,7 +184,7 @@ export const ReportAPI = {
     });
 
     const purchaseInvoiceDateMap = new Map<string, string>();
-    purchaseInvoicesResult.items.forEach((inv) => {
+    purchaseInvoicesAll.forEach((inv) => {
       if (!inv.receive_date) return;
       const existing = purchaseInvoiceDateMap.get(inv.purchase_contract);
       if (!existing || inv.receive_date > existing) {
@@ -203,7 +193,7 @@ export const ReportAPI = {
     });
 
     const salesReceiptDateMap = new Map<string, string>();
-    saleReceiptsResult.items.forEach((r) => {
+    saleReceiptsAll.forEach((r) => {
       if (!r.receive_date) return;
       const existing = salesReceiptDateMap.get(r.sales_contract);
       if (!existing || r.receive_date > existing) {
@@ -212,7 +202,7 @@ export const ReportAPI = {
     });
 
     const salesInvoiceDateMap = new Map<string, string>();
-    saleInvoicesResult.items.forEach((inv) => {
+    saleInvoicesAll.forEach((inv) => {
       if (!inv.issue_date) return;
       const existing = salesInvoiceDateMap.get(inv.sales_contract);
       if (!existing || inv.issue_date > existing) {
@@ -500,30 +490,13 @@ export const ReportAPI = {
       return { data: [], summary: { totalSalesAmount: 0, totalPurchaseAmount: 0, totalSalesTaxAmount: 0, totalPurchaseTaxAmount: 0, totalTax: 0, totalFreight: 0, totalMiscellaneous: 0, totalProfit: 0, totalNetProfit: 0, totalRealizedProfit: 0 } };
     }
 
-    const filterParts: string[] = [];
-    if (salesIds.length > 0) {
-      filterParts.push(salesIds.map((id) => `id="${id}"`).join(' || '));
-    }
-    if (purchaseIds.length > 0) {
-      const purchaseAsSalesFilter = purchaseIds.map((id) => `sales_contract="${id}"`).join(' || ');
-      filterParts.push(purchaseAsSalesFilter);
-    }
-
-    const [salesContractsResult, purchaseContractsResult] = await Promise.all([
-      pb.collection('sales_contracts').getList<SalesContractData>(1, 500, {
-        filter: salesIds.length > 0 ? salesIds.map((id) => `id="${id}"`).join(' || ') : '1=0',
-        expand: 'customer',
-      }),
-      pb.collection('purchase_contracts').getList<PurchaseContractData>(1, 500, {
-        filter: purchaseIds.length > 0
-          ? purchaseIds.map((id) => `id="${id}"`).join(' || ')
-          : '1=0',
-        expand: 'supplier,sales_contract.customer',
-      }),
+    const [salesContractsList, purchaseContractsList] = await Promise.all([
+      fetchByFieldBatches<SalesContractData>('sales_contracts', salesIds, 'id', 'customer'),
+      fetchByFieldBatches<PurchaseContractData>('purchase_contracts', purchaseIds, 'id', 'supplier,sales_contract.customer'),
     ]);
 
-    const salesContracts = salesContractsResult.items;
-    const purchaseContracts = purchaseContractsResult.items;
+    const salesContracts = salesContractsList;
+    const purchaseContracts = purchaseContractsList;
 
     const linkedSalesIds = new Set(salesIds);
     purchaseContracts.forEach((pc) => {
@@ -533,11 +506,8 @@ export const ReportAPI = {
     });
 
     if (linkedSalesIds.size > 0) {
-      const additionalSales = await pb.collection('sales_contracts').getList<SalesContractData>(1, 500, {
-        filter: Array.from(linkedSalesIds).map((id) => `id="${id}"`).join(' || '),
-        expand: 'customer',
-      });
-      additionalSales.items.forEach((sc) => {
+      const additionalSales = await fetchByFieldBatches<SalesContractData>('sales_contracts', Array.from(linkedSalesIds), 'id', 'customer');
+      additionalSales.forEach((sc) => {
         if (!salesContracts.find((existing) => existing.id === sc.id)) {
           salesContracts.push(sc);
         }
@@ -545,11 +515,8 @@ export const ReportAPI = {
     }
 
     if (salesIds.length > 0) {
-      const linkedPurchases = await pb.collection('purchase_contracts').getList<PurchaseContractData>(1, 500, {
-        filter: salesIds.map((id) => `sales_contract="${id}"`).join(' || '),
-        expand: 'supplier,sales_contract.customer',
-      });
-      linkedPurchases.items.forEach((pc) => {
+      const linkedPurchases = await fetchByFieldBatches<PurchaseContractData>('purchase_contracts', salesIds, 'sales_contract', 'supplier,sales_contract.customer');
+      linkedPurchases.forEach((pc) => {
         if (!purchaseContracts.find((existing) => existing.id === pc.id)) {
           purchaseContracts.push(pc);
         }
@@ -559,55 +526,31 @@ export const ReportAPI = {
     const allPurchaseIds = purchaseContracts.map((pc) => pc.id);
     const allSalesIds = salesContracts.map((sc) => sc.id);
 
-    const [purchaseArrivalsResult, salesShipmentsResult, purchasePaymentsResult, purchaseInvoicesResult, saleReceiptsResult, saleInvoicesResult] = await Promise.all([
-      pb.collection('purchase_arrivals').getList<PurchaseArrivalData>(1, 1000, {
-        filter: allPurchaseIds.length > 0
-          ? allPurchaseIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sales_shipments').getList<SalesShipmentData>(1, 1000, {
-        filter: allSalesIds.length > 0
-          ? allSalesIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('purchase_payments').getList<PurchasePaymentData>(1, 1000, {
-        filter: allPurchaseIds.length > 0
-          ? allPurchaseIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('purchase_invoices').getList<PurchaseInvoiceData>(1, 1000, {
-        filter: allPurchaseIds.length > 0
-          ? allPurchaseIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sale_receipts').getList<SaleReceiptData>(1, 1000, {
-        filter: allSalesIds.length > 0
-          ? allSalesIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
-      pb.collection('sale_invoices').getList<SaleInvoiceData>(1, 1000, {
-        filter: allSalesIds.length > 0
-          ? allSalesIds.map((id) => `sales_contract="${id}"`).join(' || ')
-          : '1=0',
-      }),
+    const [purchaseArrivalsAll, salesShipmentsAll, purchasePaymentsAll, purchaseInvoicesAll, saleReceiptsAll, saleInvoicesAll] = await Promise.all([
+      fetchByFieldBatches<PurchaseArrivalData>('purchase_arrivals', allPurchaseIds, 'purchase_contract'),
+      fetchByFieldBatches<SalesShipmentData>('sales_shipments', allSalesIds, 'sales_contract'),
+      fetchByFieldBatches<PurchasePaymentData>('purchase_payments', allPurchaseIds, 'purchase_contract'),
+      fetchByFieldBatches<PurchaseInvoiceData>('purchase_invoices', allPurchaseIds, 'purchase_contract'),
+      fetchByFieldBatches<SaleReceiptData>('sale_receipts', allSalesIds, 'sales_contract'),
+      fetchByFieldBatches<SaleInvoiceData>('sale_invoices', allSalesIds, 'sales_contract'),
     ]);
 
     const purchaseArrivalsMap = new Map<string, PurchaseArrivalData[]>();
-    purchaseArrivalsResult.items.forEach((arrival) => {
+    purchaseArrivalsAll.forEach((arrival) => {
       const existing = purchaseArrivalsMap.get(arrival.purchase_contract) || [];
       existing.push(arrival);
       purchaseArrivalsMap.set(arrival.purchase_contract, existing);
     });
 
     const salesShipmentsMap = new Map<string, string>();
-    salesShipmentsResult.items.forEach((shipment) => {
+    salesShipmentsAll.forEach((shipment) => {
       if (shipment.date) {
         salesShipmentsMap.set(shipment.sales_contract, shipment.date);
       }
     });
 
     const purchasePaymentDateMap = new Map<string, string>();
-    purchasePaymentsResult.items.forEach((p) => {
+    purchasePaymentsAll.forEach((p) => {
       if (!p.pay_date) return;
       const existing = purchasePaymentDateMap.get(p.purchase_contract);
       if (!existing || p.pay_date > existing) {
@@ -616,7 +559,7 @@ export const ReportAPI = {
     });
 
     const purchaseInvoiceDateMap = new Map<string, string>();
-    purchaseInvoicesResult.items.forEach((inv) => {
+    purchaseInvoicesAll.forEach((inv) => {
       if (!inv.receive_date) return;
       const existing = purchaseInvoiceDateMap.get(inv.purchase_contract);
       if (!existing || inv.receive_date > existing) {
@@ -625,7 +568,7 @@ export const ReportAPI = {
     });
 
     const salesReceiptDateMap = new Map<string, string>();
-    saleReceiptsResult.items.forEach((r) => {
+    saleReceiptsAll.forEach((r) => {
       if (!r.receive_date) return;
       const existing = salesReceiptDateMap.get(r.sales_contract);
       if (!existing || r.receive_date > existing) {
@@ -634,7 +577,7 @@ export const ReportAPI = {
     });
 
     const salesInvoiceDateMap = new Map<string, string>();
-    saleInvoicesResult.items.forEach((inv) => {
+    saleInvoicesAll.forEach((inv) => {
       if (!inv.issue_date) return;
       const existing = salesInvoiceDateMap.get(inv.sales_contract);
       if (!existing || inv.issue_date > existing) {

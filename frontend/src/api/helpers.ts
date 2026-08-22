@@ -1,6 +1,35 @@
 import { pb } from '@/lib/pocketbase';
 
 /**
+ * PocketBase rejects filter expressions with 90+ OR conditions with a 400
+ * error (verified empirically: 89 works, 90 fails). Keep batches comfortably
+ * below that limit when querying records by a list of ids/relations.
+ */
+export const PB_FILTER_BATCH_SIZE = 80;
+
+/**
+ * Splits ids into batches, builds `field="id1" || field="id2" ...` filters
+ * (one per batch), runs fetchBatch in parallel and merges the results.
+ * Use this instead of a single giant OR filter whenever the id list can
+ * exceed ~89 entries (e.g. report export with 90+ selected contracts).
+ */
+export async function fetchAllByFieldBatches<T>(
+  ids: string[],
+  field: string,
+  fetchBatch: (filter: string) => Promise<T[]>,
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += PB_FILTER_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + PB_FILTER_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    batches.map((batch) => fetchBatch(batch.map((id) => `${field}="${id}"`).join(' || '))),
+  );
+  return results.flat();
+}
+
+/**
  * Create a record in two steps:
  * 1. Create without attachments (fast, minimal SQLite lock time)
  * 2. Update with attachments (separate transaction)
@@ -89,4 +118,43 @@ export const handleApiError = (
   console.error(context ? `[${context}]` : 'API error:', err);
   notify(userMessage);
   return false;
+};
+
+interface PbErrorShape {
+  message?: string;
+  response?: {
+    message?: string;
+    data?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Extracts a human-readable reason from a PocketBase ClientResponseError.
+ * Field-level validation errors live in response.data as
+ * `{ fieldName: { message: "..." } }` (e.g. overage guards from Go hooks),
+ * so plain `err.message` ("Failed to create record.") hides the real cause.
+ * Falls back through response.message → err.message → fallback.
+ */
+export const getPbErrorMessage = (err: unknown, fallback = '操作失败'): string => {
+  const e = err as PbErrorShape;
+  const data = e?.response?.data;
+  if (data && typeof data === 'object') {
+    for (const value of Object.values(data)) {
+      if (value && typeof value === 'object' && typeof (value as { message?: string }).message === 'string') {
+        return (value as { message: string }).message;
+      }
+    }
+    if (typeof (data as { message?: string }).message === 'string') {
+      return (data as { message: string }).message;
+    }
+  }
+  const respMsg = e?.response?.message;
+  if (typeof respMsg === 'string' && respMsg && respMsg !== 'Failed to create record.' && respMsg !== 'Failed to update record.') {
+    return respMsg;
+  }
+  const msg = e?.message;
+  if (typeof msg === 'string' && msg && msg !== 'Failed to create record.' && msg !== 'Failed to update record.') {
+    return msg;
+  }
+  return fallback;
 };

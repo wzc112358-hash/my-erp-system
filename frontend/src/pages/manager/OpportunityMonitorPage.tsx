@@ -161,7 +161,7 @@ const OpportunityMonitorPage: React.FC = () => {
       <Flex justify="space-between" align="flex-start" gap={16} wrap className="bid-page-heading">
         <div>
           <Title level={3}>招投标信息</Title>
-          <Text type="secondary">10 个公开站点每日 08:00 自动巡检；中国石油、裕龙由本地助手完成人工验证后上传，全部由云端 Agent 研判并去重。</Text>
+          <Text type="secondary">{metrics.scheduledSourceCount || 11} 个公开站点每日 08:00 自动巡检；中国石油、裕龙由本地助手完成人工验证后上传，全部由云端 Agent 研判并去重。</Text>
         </div>
         <Flex gap={8} wrap>
           {user?.type === 'manager' && (
@@ -176,7 +176,7 @@ const OpportunityMonitorPage: React.FC = () => {
         <Col xs={12} lg={6}><Card><Statistic title="最近巡检新增" value={metrics.newCount} suffix="条" /></Card></Col>
         <Col xs={12} lg={6}><Card><Statistic title="筛选内当前商机" value={metrics.current} suffix="条" /></Card></Col>
         <Col xs={12} lg={6}><Card><Statistic title="筛选内可关注商机" value={metrics.attention} suffix="条" /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="最近自动巡检站点" value={metrics.successSources} suffix={`/ ${metrics.scheduledSourceCount || 10}`} /></Card></Col>
+        <Col xs={12} lg={6}><Card><Statistic title="最近自动巡检站点" value={metrics.successSources} suffix={`/ ${metrics.scheduledSourceCount || 11}`} /></Card></Col>
       </Row>
 
       <Card className="bid-filter-card">

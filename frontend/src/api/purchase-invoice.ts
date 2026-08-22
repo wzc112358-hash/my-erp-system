@@ -46,6 +46,7 @@ export const PurchaseInvoiceAPI = {
     if (data.tax_rate) formData.append('tax_rate', String(data.tax_rate));
     if (data.tax_amount) formData.append('tax_amount', String(data.tax_amount));
     if (data.remark) formData.append('remark', data.remark);
+    if (data.is_verified) formData.append('is_verified', data.is_verified);
     formData.append('creator_user', pb.authStore.record?.id || '');
     return createWithAttachments<PurchaseInvoice>('purchase_invoices', formData, attachments);
   },

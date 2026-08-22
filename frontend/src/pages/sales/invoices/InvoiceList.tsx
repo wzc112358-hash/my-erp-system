@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useState, useEffect } from 'react';
 import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Select, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
@@ -119,7 +120,7 @@ export const InvoiceList: React.FC = () => {
       fetchData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      message.error(err.response?.data?.message || '删除失败');
+      message.error(getPbErrorMessage(err, '删除失败'));
     }
   };
 
@@ -146,7 +147,7 @@ export const InvoiceList: React.FC = () => {
     } catch (error) {
       console.error('Invoice create/update error:', error);
       const err = error as { response?: { data?: { message?: string } }; message?: string };
-      const errorMessage = err.response?.data?.message || err.message || (editingInvoice ? '更新失败' : '创建失败');
+      const errorMessage = getPbErrorMessage(err, editingInvoice ? '更新失败' : '创建失败');
       message.error(errorMessage);
     }
   };

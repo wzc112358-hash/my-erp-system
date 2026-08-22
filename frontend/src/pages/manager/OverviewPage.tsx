@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip, Badge, Pagination } from 'antd';
+import { Card, Checkbox, Input, Select, DatePicker, Button, Spin, Empty, Space, App, Modal, Popconfirm, Tooltip, Badge, Pagination, Progress } from 'antd';
 import { SearchOutlined, ExportOutlined, ClearOutlined, DownOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
@@ -22,6 +22,36 @@ type SortField = 'no' | 'shipmentDate' | 'payDate' | 'salesReceiveDate' | 'sales
 const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 const formatDateShort = (date: string) => date ? dayjs(date).format('YYYY.MM.DD') : '-';
+
+// 合同卡片上的进度条组：执行进度 + 付款(收款)进度 + 开票进度
+const ContractProgressRow: React.FC<{
+  execution?: number;
+  payment?: number;
+  invoice?: number;
+  paymentLabel: string;
+}> = ({ execution, payment, invoice, paymentLabel }) => {
+  const items: { label: string; value: number }[] = ([
+    { label: '执行进度', value: execution },
+    { label: paymentLabel, value: payment },
+    { label: '开票进度', value: invoice },
+  ] as { label: string; value?: number }[]).filter((it): it is { label: string; value: number } => typeof it.value === 'number');
+  if (items.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
+      {items.map((it) => (
+        <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: '#666', width: 56, flexShrink: 0 }}>{it.label}</span>
+          <Progress
+            percent={Math.round((it.value ?? 0) * 100) / 100}
+            size="small"
+            style={{ flex: 1, margin: 0 }}
+            strokeColor={(it.value ?? 0) >= 100 ? '#52c41a' : '#1890ff'}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 767);
@@ -118,6 +148,12 @@ const SalesContractCard: React.FC<{
             <div>发票号: <span style={{ color: '#333' }}>{contract.invoiceNo || '-'}</span></div>
             <div>开票时间: <span style={{ color: '#333' }}>{formatDate(contract.invoiceIssueDate || '')}</span></div>
           </div>
+          <ContractProgressRow
+            execution={contract.executionProgress}
+            payment={contract.settlementProgress}
+            invoice={contract.invoiceProgress}
+            paymentLabel="收款进度"
+          />
         </div>
       </div>
     </Card>
@@ -164,6 +200,12 @@ const PurchaseContractCard: React.FC<{
             <div>付款时间: <span style={{ color: '#333' }}>{formatDate(contract.paymentDate || '')}</span></div>
             <div>发货时间: <span style={{ color: '#333' }}>{formatDate(contract.shipmentDate || '')}</span></div>
           </div>
+          <ContractProgressRow
+            execution={contract.executionProgress}
+            payment={contract.settlementProgress}
+            invoice={contract.invoiceProgress}
+            paymentLabel="付款进度"
+          />
         </div>
       </div>
     </Card>
@@ -293,6 +335,9 @@ export const OverviewPage: React.FC = () => {
   
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
+
+  const [standalonePage, setStandalonePage] = useState(1);
+  const STANDALONE_PAGE_SIZE = 10;
   
 
 
@@ -493,6 +538,11 @@ export const OverviewPage: React.FC = () => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return contractRows.slice(start, start + PAGE_SIZE);
   }, [contractRows, currentPage]);
+
+  const paginatedStandalone = useMemo(() => {
+    const start = (standalonePage - 1) * STANDALONE_PAGE_SIZE;
+    return standalonePurchaseContracts.slice(start, start + STANDALONE_PAGE_SIZE);
+  }, [standalonePurchaseContracts, standalonePage]);
 
   const handleSalesSelect = useCallback((id: string, checked: boolean) => {
     setSelectedSales(prev => {
@@ -869,7 +919,7 @@ export const OverviewPage: React.FC = () => {
       {standalonePurchaseContracts.length > 0 && (
         <Card title={`独立采购合同 (${standalonePurchaseContracts.length})`} style={{ marginTop: 16, borderRadius: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {standalonePurchaseContracts.map(pc => (
+            {paginatedStandalone.map(pc => (
               <Card
                 key={pc.id}
                 size="small"
@@ -917,11 +967,30 @@ export const OverviewPage: React.FC = () => {
                       <div>到货日期: <span style={{ color: '#333' }}>{formatDate(pc.shipmentDate || '')}</span></div>
                       <div>付款日期: <span style={{ color: '#333' }}>{formatDate(pc.paymentDate || '')}</span></div>
                     </div>
+                    <ContractProgressRow
+                      execution={pc.executionProgress}
+                      payment={pc.settlementProgress}
+                      invoice={pc.invoiceProgress}
+                      paymentLabel="付款进度"
+                    />
                   </div>
                 </div>
               </Card>
             ))}
           </div>
+          {standalonePurchaseContracts.length > STANDALONE_PAGE_SIZE && (
+            <div style={{ padding: '16px 0 0', display: 'flex', justifyContent: 'center', borderTop: '1px solid #f0f0f0', marginTop: 8 }}>
+              <Pagination
+                current={standalonePage}
+                pageSize={STANDALONE_PAGE_SIZE}
+                total={standalonePurchaseContracts.length}
+                onChange={setStandalonePage}
+                showSizeChanger={false}
+                showTotal={(total) => `共 ${total} 条`}
+                size="small"
+              />
+            </div>
+          )}
         </Card>
       )}
     </div>

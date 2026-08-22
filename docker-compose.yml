@@ -30,7 +30,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 384M
+          memory: 256M
     networks:
       - web
     labels:
@@ -52,7 +52,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 800M
+          memory: 384M
     networks:
       - web
     labels:
@@ -73,7 +73,7 @@ services:
       - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
       - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}
       - LOCAL_HELPER_API_PORT=8097
-      - LOCAL_HELPER_LATEST_VERSION=${LOCAL_HELPER_LATEST_VERSION:-0.8.5}
+      - LOCAL_HELPER_LATEST_VERSION=${LOCAL_HELPER_LATEST_VERSION:-0.8.6}
       - ERP_BEIJING_API_URL=${ERP_BEIJING_API_URL:-https://api-beijing.henghuacheng.cn}
       - ERP_LANZHOU_API_URL=${ERP_LANZHOU_API_URL:-https://api-lanzhou.henghuacheng.cn}
       - POCKETBASE_LANZHOU_URL=${POCKETBASE_LANZHOU_URL:-http://pocketbase-lanzhou:8090}

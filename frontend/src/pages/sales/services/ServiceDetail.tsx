@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Table, Spin, App, Flex, Button, Modal, Popconfirm, Form, Tag } from 'antd';
@@ -376,7 +377,7 @@ export const ServiceDetail: React.FC = () => {
       fetchData();
     } catch (error) {
       const err = error as Error;
-      message.error(err.message || (editingOrder ? '更新失败' : '创建失败'));
+      message.error(getPbErrorMessage(err, editingOrder ? '更新失败' : '创建失败'));
     }
   };
 

@@ -1,5 +1,6 @@
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { fetchAllByFieldBatches } from '@/api/helpers';
 
 import type {
   ComparisonSalesContract,
@@ -311,6 +312,7 @@ export const ComparisonAPI = {
         status: sc.status,
         invoiceProgress: contractProgress(sc.invoiced_amount, sc.total_amount),
         settlementProgress: contractProgress(sc.receipted_amount, sc.total_amount),
+        executionProgress: sc.execution_percent ?? 0,
         customerName: sc.expand?.customer?.name || sc.customer_name || '-',
         associatedPurchaseIds: purchaseIds,
         purchaseSummary: purchaseIds.length > 0 ? {
@@ -337,6 +339,7 @@ export const ComparisonAPI = {
       status: pc.status,
       invoiceProgress: contractProgress(pc.invoiced_amount, pc.total_amount),
       settlementProgress: contractProgress(pc.paid_amount, pc.total_amount),
+      executionProgress: pc.execution_percent ?? 0,
       supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
       associatedSalesIds: [pc.sales_contract].filter(Boolean),
     }));
@@ -832,29 +835,46 @@ export const ComparisonAPI = {
     });
 
     const salesIds = salesResult.items.map((sc) => sc.id);
-    const salesFilter = salesIds.length > 0
-      ? salesIds.map((id) => `sales_contract="${id}"`).join(' || ')
-      : '1=0';
 
-    const purchaseResult = await pb.collection('purchase_contracts').getList(1, 500, {
-      filter: salesIds.length > 0 ? salesIds.map((id) => `sales_contract="${id}"`).join(' || ') : '1=0',
+    // 分批 OR 查询：PocketBase filter 超过 89 个 OR 条件会返回 400
+    const [purchaseItems, saleInvoiceItems, saleReceiptItems, purchaseArrivalItems, purchaseInvoiceItems, purchasePaymentItems] = await Promise.all([
+      fetchAllByFieldBatches<{ id: string; sales_contract?: string; status?: string }>(salesIds, 'sales_contract', async (filter) => {
+        const r = await pb.collection('purchase_contracts').getList(1, 500, { filter });
+        return r.items as unknown as { id: string; sales_contract?: string; status?: string }[];
+      }),
+      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
+        const r = await pb.collection('sale_invoices').getList(1, 500, { filter });
+        return r.items as unknown as { sales_contract?: string; manager_confirmed?: string; updated?: string }[];
+      }),
+      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
+        const r = await pb.collection('sale_receipts').getList(1, 500, { filter });
+        return r.items as unknown as { sales_contract?: string; manager_confirmed?: string; updated?: string }[];
+      }),
+    ]).then(async ([pi, si, sr]) => {
+      const purchaseIds = pi.map((pc) => pc.id);
+      const [pa, pinv, ppay] = await Promise.all([
+        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
+          const r = await pb.collection('purchase_arrivals').getList(1, 500, { filter });
+          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
+        }),
+        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
+          const r = await pb.collection('purchase_invoices').getList(1, 500, { filter });
+          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
+        }),
+        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
+          const r = await pb.collection('purchase_payments').getList(1, 500, { filter });
+          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
+        }),
+      ]);
+      return [pi, si, sr, pa, pinv, ppay];
     });
 
-    const purchaseIds = (purchaseResult.items as unknown as { id: string }[]).map((pc) => pc.id);
-    const purchaseFilter = purchaseIds.length > 0
-      ? purchaseIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-      : '1=0';
-
-    const [
-      saleInvoices, saleReceipts,
-      purchaseArrivals, purchaseInvoices, purchasePayments,
-    ] = await Promise.all([
-      pb.collection('sale_invoices').getList(1, 500, { filter: salesFilter }),
-      pb.collection('sale_receipts').getList(1, 500, { filter: salesFilter }),
-      pb.collection('purchase_arrivals').getList(1, 500, { filter: purchaseFilter }),
-      pb.collection('purchase_invoices').getList(1, 500, { filter: purchaseFilter }),
-      pb.collection('purchase_payments').getList(1, 500, { filter: purchaseFilter }),
-    ]);
+    const purchaseResult = { items: purchaseItems };
+    const saleInvoices = { items: saleInvoiceItems };
+    const saleReceipts = { items: saleReceiptItems };
+    const purchaseArrivals = { items: purchaseArrivalItems };
+    const purchaseInvoices = { items: purchaseInvoiceItems };
+    const purchasePayments = { items: purchasePaymentItems };
 
     const getRelatedPcIds = (scId: string): string[] =>
       (purchaseResult.items as unknown as { id: string; sales_contract?: string }[])
@@ -936,8 +956,38 @@ export const ComparisonAPI = {
       sort: '-created_at',
     });
 
+    // 查询独立采购合同的子记录，用于判断 completed 合同是否仍有待确认项
+    const standaloneIds = (standalonePurchases.items as unknown as { id: string }[]).map((pc) => pc.id);
+    const standaloneChildFilter = standaloneIds.length > 0
+      ? standaloneIds.map((id) => `purchase_contract="${id}"`).join(' || ')
+      : '1=0';
+
+    const [standaloneArrivals, standaloneInvoices, standalonePayments] = await Promise.all([
+      pb.collection('purchase_arrivals').getList(1, 500, { filter: standaloneChildFilter })
+        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
+      pb.collection('purchase_invoices').getList(1, 500, { filter: standaloneChildFilter })
+        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
+      pb.collection('purchase_payments').getList(1, 500, { filter: standaloneChildFilter })
+        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
+    ]);
+
+    const countStandalonePending = (pcId: string): number => {
+      let count = 0;
+      (standaloneArrivals.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
+        .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
+      (standaloneInvoices.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
+        .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
+      (standalonePayments.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
+        .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
+      return count;
+    };
+
     const purchaseOptions = (standalonePurchases.items as unknown as { id: string; no: string; product_name: string; total_quantity: number; sign_date?: string; status?: string; created_at?: string }[])
-      .filter((pc) => pc.status !== 'completed')
+      .filter((pc) => {
+        if (pc.status !== 'completed') return true;
+        // 已完成的独立采购合同若仍有待确认的到货/收票/付款，仍需显示以便经理确认
+        return countStandalonePending(pc.id) > 0;
+      })
       .map((pc) => ({
         id: pc.id,
         no: pc.no,
@@ -947,7 +997,7 @@ export const ComparisonAPI = {
         type: 'purchase' as const,
         status: pc.status || 'executing',
         created: pc.created_at || '',
-        pendingCount: 0,
+        pendingCount: countStandalonePending(pc.id),
       }));
 
     return [...salesOptions, ...purchaseOptions]

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm } from 'antd';
 import { LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
+import { getPbErrorMessage } from '@/api/helpers';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
@@ -307,8 +308,8 @@ const ContractDetailPage: React.FC = () => {
         setDetailData(data);
       }
       message.success('附件上传成功');
-    } catch {
-      message.error('附件上传失败');
+    } catch (err) {
+      message.error(getPbErrorMessage(err, '附件上传失败'));
     } finally {
       setUploading(false);
     }

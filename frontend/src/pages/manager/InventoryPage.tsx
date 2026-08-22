@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -203,7 +204,7 @@ const InventoryPage: React.FC = () => {
       fetchInventory();
     } catch (error) {
       console.error('Form submit error:', error);
-      message.error('操作失败');
+      message.error(getPbErrorMessage(error, '操作失败'));
     }
   };
 
@@ -257,7 +258,7 @@ const InventoryPage: React.FC = () => {
       fetchInventory();
     } catch (error) {
       console.error('Movement submit error:', error);
-      message.error('操作失败');
+      message.error(getPbErrorMessage(error, '操作失败'));
     }
   };
 

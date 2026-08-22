@@ -56,6 +56,7 @@ export interface OverviewContract {
   status?: string;
   invoiceProgress?: number;
   settlementProgress?: number;
+  executionProgress?: number;
   customerName?: string;
   supplierName?: string;
   associatedPurchaseIds?: string[];

@@ -7,6 +7,7 @@ import { App, Button, Card, Select, Spin, Empty, Modal, Descriptions, Tag, Uploa
 import { LeftOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
+import { getPbErrorMessage } from '@/api/helpers';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
@@ -583,8 +584,8 @@ export const ProgressFlowPage: React.FC = () => {
         setFlowEdges(graph.edges);
       }
       refreshOptions();
-    } catch {
-      message.error('确认失败');
+    } catch (err) {
+      message.error(getPbErrorMessage(err, '确认失败'));
     } finally {
       setConfirming(false);
     }
@@ -615,8 +616,8 @@ export const ProgressFlowPage: React.FC = () => {
         setFlowEdges(graph.edges);
       }
       refreshOptions();
-    } catch {
-      message.error('驳回失败');
+    } catch (err) {
+      message.error(getPbErrorMessage(err, '驳回失败'));
     } finally {
       setConfirming(false);
     }

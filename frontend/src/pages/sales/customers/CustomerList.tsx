@@ -1,3 +1,4 @@
+import { getPbErrorMessage } from '@/api/helpers';
 import { useState, useEffect } from 'react';
 import { Table, Button, Space, Form, Input, Select, App, Popconfirm, Modal } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
@@ -102,7 +103,7 @@ export const CustomerList: React.FC = () => {
       fetchData();
     } catch (error) {
       const err = error as Error;
-      message.error(err.message || (editingCustomer ? '更新失败' : '创建失败'));
+      message.error(getPbErrorMessage(err, editingCustomer ? '更新失败' : '创建失败'));
     }
   };
 

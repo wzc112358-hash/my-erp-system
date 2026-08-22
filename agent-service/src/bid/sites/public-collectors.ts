@@ -9,6 +9,19 @@ import {
 } from '../domain/discovery.ts';
 import { effectiveSearchTerms } from '../domain/site-search-scope.ts';
 import { definitionFor } from './registry.ts';
+import {
+  collectCncecPublicNotices,
+  collectEpecPublicNotices as collectSinopecPublicNotices,
+  readCncecPublicCandidateDetail,
+  readEpecPublicCandidateDetail as readSinopecPublicCandidateDetail,
+} from './collectors/chemical-platforms.ts';
+
+export {
+  collectCncecPublicNotices,
+  collectSinopecPublicNotices,
+  readCncecPublicCandidateDetail,
+  readSinopecPublicCandidateDetail,
+};
 
 export type SitePublicFeedResult = {
   provider: string;
@@ -2819,7 +2832,8 @@ type RegisteredPublicFeedCollector = (input: {
 }) => Promise<SitePublicFeedResult>;
 
 const PUBLIC_FEED_COLLECTORS: Record<string, RegisteredPublicFeedCollector> = {
-  易派克: ({ task, fetchImpl }) => collectSinopecPublicHtml({ task, fetchImpl }),
+  易派克: ({ task, fetchImpl }) => collectSinopecPublicNotices({ task, fetchImpl }),
+  中国化学电子招标投标平台: ({ task, fetchImpl }) => collectCncecPublicNotices({ task, fetchImpl }),
   国能E购: ({ task, fetchImpl }) => collectGuonengEgouFeeds({ task, fetchImpl }),
   国能E招: ({ task, fetchImpl }) => collectGuonengEBidPublicNotices({ task, fetchImpl }),
   中国海油供应链平台: ({ task, fetchImpl }) => collectCnoocPublicNotices({ task, fetchImpl }),
@@ -2838,6 +2852,8 @@ export type PublicDocumentEvidencePolicy = {
 };
 
 const PUBLIC_DOCUMENT_EVIDENCE_POLICIES: Record<string, PublicDocumentEvidencePolicy> = {
+  易派克: { enabled: true, candidateDetailReader: readSinopecPublicCandidateDetail },
+  中国化学电子招标投标平台: { enabled: true, candidateDetailReader: readCncecPublicCandidateDetail },
   国能E招: { enabled: true, candidateDetailReader: readGuonengEBidPublicCandidateDetail },
   中国海油供应链平台: { enabled: true, candidateDetailReader: readCnoocPublicCandidateDetail },
   中化采购供应链平台: { enabled: true },

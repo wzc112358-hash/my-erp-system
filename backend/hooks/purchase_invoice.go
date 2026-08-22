@@ -13,7 +13,10 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 	app.OnRecordCreate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			e.Record.Set("manager_confirmed", "pending")
-			e.Record.Set("is_verified", "no")
+			// 仅当未提交时默认"未验票"，不覆盖用户提交的值
+			if e.Record.GetString("is_verified") == "" {
+				e.Record.Set("is_verified", "no")
+			}
 
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
