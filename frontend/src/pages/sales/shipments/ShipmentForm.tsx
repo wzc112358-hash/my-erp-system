@@ -5,10 +5,11 @@ import dayjs from 'dayjs';
 import { SalesContractAPI } from '@/api/sales-shipment';
 import type { SalesShipmentFormData } from '@/types/sales-shipment';
 import { extractAttachments } from '@/utils/file';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ShipmentFormProps {
   initialValues?: Partial<SalesShipmentFormData>;
-  onFinish: (values: Record<string, unknown>) => void;
+  onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -21,6 +22,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
   const { message } = App.useApp();
   const [contractOptions, setContractOptions] = useState<{ label: string; value: string }[]>([]);
   const [loadingContracts, setLoadingContracts] = useState(false);
+  const { submit, submitting } = useAsyncSubmit(onFinish);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -72,7 +74,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
     }
   };
 
-  const handleFinish = (values: Record<string, unknown>) => {
+  const handleFinish = async (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
     const attachments = extractAttachments(fileList);
     const data: SalesShipmentFormData = {
@@ -86,7 +88,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
       remark: values.remark ? String(values.remark) : undefined,
       attachments,
     };
-    onFinish(data as unknown as Record<string, unknown>);
+    await submit(data as unknown as Record<string, unknown>);
   };
 
   return (
@@ -212,7 +214,7 @@ export const ShipmentForm: React.FC<ShipmentFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

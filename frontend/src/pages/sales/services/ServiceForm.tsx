@@ -5,6 +5,7 @@ import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ServiceContractFormData, ServiceContract } from '@/types/service-contract';
 import { CustomerAPI } from '@/api/customer';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface CustomerOption {
   id: string;
@@ -13,12 +14,13 @@ interface CustomerOption {
 
 interface ServiceFormProps {
   form: FormInstance<ServiceContractFormData>;
-  onFinish: (values: ServiceContractFormData) => void;
+  onFinish: (values: ServiceContractFormData) => void | Promise<void>;
   onCancel: () => void;
   initialValues?: ServiceContract | null;
 }
 
 export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCancel, initialValues }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       initialValues={
         initialValues
           ? {
@@ -155,7 +157,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({ form, onFinish, onCanc
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

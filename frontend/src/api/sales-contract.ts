@@ -1,5 +1,7 @@
 import { pb } from '@/lib/pocketbase';
 import { createWithAttachments } from './helpers';
+import { assertAttachmentFileSize } from '@/utils/file';
+import { loadAllContractRecords } from '@/lib/contract-options';
 
 import type { 
   SalesContract, 
@@ -39,6 +41,10 @@ export const SalesContractAPI = {
     });
   },
 
+  getOptions: async () => ({
+    items: await loadAllContractRecords<SalesContract>(pb.collection('sales_contracts')),
+  }),
+
   create: async (data: SalesContractFormData) => {
     const attachments = data.attachments;
 
@@ -66,6 +72,7 @@ export const SalesContractAPI = {
   },
 
   update: async (id: string, data: Partial<SalesContractFormData>) => {
+    assertAttachmentFileSize(data.attachments);
     const formData = new FormData();
     if (data.no !== undefined) formData.append('no', data.no);
     if (data.customer !== undefined) formData.append('customer', data.customer);

@@ -1,4 +1,3 @@
-import { getPbErrorMessage } from '@/api/helpers';
 import { useEffect, useState } from 'react';
 import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
@@ -7,6 +6,7 @@ import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { PurchasePayment } from '@/types/purchase-contract';
 import dayjs from 'dayjs';
 import { extractAttachments } from '@/utils/file';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ContractOption {
   label: string;
@@ -18,7 +18,7 @@ interface ContractOption {
 
 interface PaymentFormProps {
   initialValues?: Partial<PurchasePayment>;
-  onFinish: (values: Record<string, unknown>) => void;
+  onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -30,9 +30,10 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
   const [form] = Form.useForm();
   const { message } = App.useApp();
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+  const { submit, submitting } = useAsyncSubmit(onFinish);
+  const selectedContractId = Form.useWatch('purchase_contract', form);
+  const selectedContract = contractOptions.find((contract) => contract.value === selectedContractId) || null;
 
   useEffect(() => {
     getUsdToCnyRate().then(setExchangeRate);
@@ -41,10 +42,11 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const result = await pb.collection('purchase_contracts').getList(1, 100, {
+        const contracts = await pb.collection('purchase_contracts').getFullList({
           filter: 'status = "executing"',
+          sort: '-created_at',
         });
-        const options = result.items.map((item: Record<string, unknown>) => ({
+        const options = contracts.map((item: Record<string, unknown>) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
           unit_price: item.unit_price as number,
@@ -71,14 +73,8 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
         ...rest,
         pay_date: pay_date ? dayjs(pay_date) : undefined,
       });
-      if (initialValues.purchase_contract) {
-        const contract = contractOptions.find(c => c.value === initialValues.purchase_contract);
-        if (contract) {
-          setSelectedContract(contract);
-        }
-      }
     }
-  }, [initialValues, form, contractOptions]);
+  }, [initialValues, form]);
 
   const handleProductAmountChange = (value: number | null) => {
     if (value && selectedContract?.unit_price) {
@@ -88,30 +84,22 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
   };
 
   const handleFinish = async (values: Record<string, unknown>) => {
-    setLoading(true);
-    try {
-      const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-      const attachments = extractAttachments(fileList);
+    const fileList = values.attachments as { originFileObj?: File }[] | undefined;
+    const attachments = extractAttachments(fileList);
 
-      const data = {
-        no: values.no as string,
-        product_name: values.product_name as string,
-        purchase_contract: values.purchase_contract as string,
-        amount: values.amount as number,
-        product_amount: values.product_amount as number,
-        pay_date: (values.pay_date as dayjs.Dayjs).format('YYYY-MM-DD'),
-        method: values.method as string | undefined,
-        remark: values.remark as string | undefined,
-        attachments,
-      };
+    const data = {
+      no: values.no as string,
+      product_name: values.product_name as string,
+      purchase_contract: values.purchase_contract as string,
+      amount: values.amount as number,
+      product_amount: values.product_amount as number,
+      pay_date: (values.pay_date as dayjs.Dayjs).format('YYYY-MM-DD'),
+      method: values.method as string | undefined,
+      remark: values.remark as string | undefined,
+      attachments,
+    };
 
-      onFinish(data);
-    } catch (error) {
-      const err = error as Error;
-      message.error(getPbErrorMessage(err, '操作失败'));
-    } finally {
-      setLoading(false);
-    }
+    await submit(data);
   };
 
   return (
@@ -258,7 +246,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit" loading={loading}>
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

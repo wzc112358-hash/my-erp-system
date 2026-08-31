@@ -45,7 +45,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumField(arrivals, "quantity") + newQuantity
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "到货数量"); err != nil {
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "到货数量", "quantity"); err != nil {
 				return err
 			}
 
@@ -79,7 +79,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumChildFieldExcluding(arrivals, "quantity", currentArrivalId, newQuantity)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			oldRecord, _ := GetRecordById(app, "purchase_arrivals", e.Record.Id)
+			oldRecord := e.Record.Original()
 			// 仅当 quantity 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "quantity", totalQuantity, contractTotalQuantity, 1.0, "到货数量"); err != nil {
 				return err
@@ -133,6 +133,9 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			if isContractCascadeDelete(e.Context) {
+				return e.Next()
+			}
 			return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
 		},
 		Priority: 0,

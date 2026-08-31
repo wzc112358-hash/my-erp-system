@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Tabs, Table, Modal, Descriptions, App, Tag, Button, Flex, Spin } from 'antd';
 import { DownloadOutlined, EyeOutlined } from '@ant-design/icons';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import { pb } from '@/lib/pocketbase';
 import { ServiceContractAPI } from '@/api/service-contract';
 import type { ServiceContract, ServiceOrder } from '@/types/service-contract';

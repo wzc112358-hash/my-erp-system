@@ -3,10 +3,11 @@ import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ServiceOrderFormData, ServiceOrder } from '@/types/service-contract';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ServiceOrderFormProps {
   form: FormInstance<ServiceOrderFormData>;
-  onFinish: (values: ServiceOrderFormData) => void;
+  onFinish: (values: ServiceOrderFormData) => void | Promise<void>;
   onCancel: () => void;
   contractId?: string;
   initialValues?: ServiceOrder | null;
@@ -20,6 +21,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
   initialValues,
   isCrossBorder = true,
 }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   const baseInit: Record<string, unknown> = {
     order_no: '',
     unit_price: undefined,
@@ -71,7 +73,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       initialValues={initialValues ? editInit : baseInit}
     >
       <Row gutter={16}>
@@ -242,7 +244,7 @@ export const ServiceOrderForm: React.FC<ServiceOrderFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

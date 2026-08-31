@@ -1,5 +1,6 @@
 import { pb } from '@/lib/pocketbase';
 import { calculateContractProfit } from '@/lib/contract-profit';
+import { buildContractRelationIndex, getPurchaseAllocationRatio } from '@/lib/contract-relations';
 import { businessYearUtcRange } from '@/lib/business-month';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { summarizeMonthlyProfits } from '@/lib/monthly-profit';
@@ -56,22 +57,26 @@ export const MonthlyProfitAPI = {
   getYearOverview: async (year: number): Promise<MonthlyProfitOverview> => {
     const exchangeRate = await getUsdToCnyRate();
     const yearRange = businessYearUtcRange(year);
-    const salesContracts = await pb.collection('sales_contracts').getFullList<ComparisonSalesContract>({
-      filter: `sign_date >= "${yearRange.start}" && sign_date < "${yearRange.end}" && status != "cancelled"`,
-      expand: 'customer',
-      sort: 'sign_date',
-    });
-    const purchaseContracts = await listByRelationIds<ComparisonPurchaseContract>(
-      'purchase_contracts',
-      'sales_contract',
-      salesContracts.map((contract) => contract.id),
-    );
-    const purchaseBySales = new Map<string, ComparisonPurchaseContract[]>();
-    purchaseContracts.forEach((contract) => {
-      const related = purchaseBySales.get(contract.sales_contract) || [];
-      related.push(contract);
-      purchaseBySales.set(contract.sales_contract, related);
-    });
+    const [allSalesContracts, allPurchaseContracts] = await Promise.all([
+      pb.collection('sales_contracts').getFullList<ComparisonSalesContract>({
+        filter: 'status != "cancelled"',
+        expand: 'customer',
+        sort: 'sign_date',
+      }),
+      pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
+        filter: 'status != "cancelled"',
+      }),
+    ]);
+    const salesContracts = allSalesContracts.filter((contract) => (
+      contract.sign_date >= yearRange.start && contract.sign_date < yearRange.end
+    ));
+    const relationIndex = buildContractRelationIndex(allSalesContracts, allPurchaseContracts);
+    const purchaseById = new Map(allPurchaseContracts.map((contract) => [contract.id, contract]));
+    const purchaseContracts = Array.from(new Set(salesContracts.flatMap(
+      (contract) => relationIndex.purchaseIdsBySales.get(contract.id) || [],
+    )))
+      .map((id) => purchaseById.get(id))
+      .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
 
     const arrivals = await listByRelationIds<PurchaseArrivalRecord>(
       'purchase_arrivals',
@@ -87,18 +92,45 @@ export const MonthlyProfitAPI = {
 
     let unlinkedSalesCount = 0;
     const contractProfits = salesContracts.flatMap((salesContract): MonthlyProfitContract[] => {
-      const linkedPurchases = purchaseBySales.get(salesContract.id) || [];
+      const linkedPurchases = (relationIndex.purchaseIdsBySales.get(salesContract.id) || [])
+        .map((id) => purchaseById.get(id))
+        .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
       if (!linkedPurchases.length) {
         unlinkedSalesCount += 1;
         return [];
       }
       const purchaseAmount = linkedPurchases.reduce(
-        (sum, contract) => sum + amountInCny(contract.total_amount, contract.is_cross_border, exchangeRate),
+        (sum, contract) => sum + amountInCny(
+          contract.total_amount,
+          contract.is_cross_border,
+          exchangeRate,
+        ) * getPurchaseAllocationRatio(
+          relationIndex,
+          allSalesContracts,
+          contract.id,
+          salesContract.id,
+        ),
         0,
       );
-      const costs = arrivalCostsInCny(
-        linkedPurchases.flatMap((contract) => arrivalsByPurchase.get(contract.id) || []),
-        exchangeRate,
+      const costs = linkedPurchases.reduce(
+        (totals, contract) => {
+          const contractCosts = arrivalCostsInCny(
+            arrivalsByPurchase.get(contract.id) || [],
+            exchangeRate,
+          );
+          const ratio = getPurchaseAllocationRatio(
+            relationIndex,
+            allSalesContracts,
+            contract.id,
+            salesContract.id,
+          );
+          totals.freight += contractCosts.freight * ratio;
+          totals.miscellaneous += contractCosts.miscellaneous * ratio;
+          totals.tariff += contractCosts.tariff * ratio;
+          totals.valueAddedTax += contractCosts.valueAddedTax * ratio;
+          return totals;
+        },
+        { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
       );
       const profit = calculateContractProfit({
         salesAmount: amountInCny(salesContract.total_amount, salesContract.is_cross_border, exchangeRate),

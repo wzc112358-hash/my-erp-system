@@ -6,6 +6,7 @@ import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { SaleInvoiceFormData } from '@/types/sales-contract';
 import { extractAttachments } from '@/utils/file';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ContractOption {
   label: string;
@@ -17,7 +18,7 @@ interface ContractOption {
 
 interface InvoiceFormProps {
   initialValues?: Partial<SaleInvoiceFormData>;
-  onFinish: (values: Record<string, unknown>) => void;
+  onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -32,6 +33,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+  const { submit, submitting } = useAsyncSubmit(onFinish);
 
   useEffect(() => {
     getUsdToCnyRate().then(setExchangeRate);
@@ -41,10 +43,11 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
     const fetchContracts = async () => {
       setLoadingContracts(true);
       try {
-        const result = await pb.collection('sales_contracts').getList(1, 100, {
+        const contracts = await pb.collection('sales_contracts').getFullList({
           filter: 'status = "executing"',
+          sort: '-created_at',
         });
-        const options = result.items.map((item: Record<string, unknown>) => ({
+        const options = contracts.map((item: Record<string, unknown>) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
           uninvoiced_amount: item.uninvoiced_amount as number,
@@ -109,7 +112,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
     return Promise.resolve();
   };
 
-  const handleFinish = (values: Record<string, unknown>) => {
+  const handleFinish = async (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
     const attachments = extractAttachments(fileList);
     const data: SaleInvoiceFormData = {
@@ -123,7 +126,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       remark: values.remark ? String(values.remark) : undefined,
       attachments,
     };
-    onFinish(data as unknown as Record<string, unknown>);
+    await submit(data as unknown as Record<string, unknown>);
   };
 
   return (
@@ -275,7 +278,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

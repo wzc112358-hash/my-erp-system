@@ -11,6 +11,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom', 'zustand'],
+          'data-vendor': ['pocketbase', 'axios'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

@@ -1,5 +1,6 @@
 export interface ComparisonSalesContract {
   id: string;
+  purchase_contract?: string;
   no: string;
   product_name: string;
   customer: string;
@@ -47,6 +48,7 @@ export interface OverviewContract {
   productName: string;
   quantity: number;
   totalAmount: number;
+  isCrossBorder?: boolean;
   paymentDate?: string;
   invoiceNo?: string;
   invoiceIssueDate?: string;

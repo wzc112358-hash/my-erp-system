@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm } from 'antd';
+import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm, Select } from 'antd';
 import { LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
 import { getPbErrorMessage } from '@/api/helpers';
+import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
+import { assertAttachmentFileSize } from '@/utils/file';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
@@ -245,6 +247,7 @@ const ContractDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState(isStandalonePurchase ? 'purchase' : 'sales');
   const [detailData, setDetailData] = useState<ContractDetailData | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [verificationUpdating, setVerificationUpdating] = useState<string>();
   const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
 
@@ -298,6 +301,7 @@ const ContractDetailPage: React.FC = () => {
   const handleAttachmentUpload = useCallback(async (collection: string, recordId: string, file: File) => {
     setUploading(true);
     try {
+      assertAttachmentFileSize([file]);
       const formData = new FormData();
       formData.append('attachments', file);
       await pb.collection(collection).update(recordId, formData);
@@ -314,6 +318,24 @@ const ContractDetailPage: React.FC = () => {
       setUploading(false);
     }
   }, [id, message, isStandalonePurchase]);
+
+  const handleVerificationChange = useCallback(async (recordId: string, value: 'yes' | 'no') => {
+    setVerificationUpdating(recordId);
+    try {
+      await PurchaseInvoiceAPI.updateVerification(recordId, value);
+      if (id) {
+        const data = isStandalonePurchase
+          ? await ComparisonAPI.getPurchaseContractDetail(id)
+          : await ComparisonAPI.getContractDetail(id);
+        setDetailData(data);
+      }
+      message.success('验票状态已更新');
+    } catch (error) {
+      message.error(getPbErrorMessage(error, '验票状态更新失败'));
+    } finally {
+      setVerificationUpdating(undefined);
+    }
+  }, [id, isStandalonePurchase, message]);
 
   const salesColumns = [
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
@@ -437,7 +459,26 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
-    { title: '是否验票', dataIndex: 'is_verified', key: 'is_verified', render: (v: string) => v === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag> },
+    {
+      title: '验票状态',
+      dataIndex: 'is_verified',
+      key: 'is_verified',
+      width: 110,
+      render: (value: string, record: PurchaseInvoiceRecord) => (
+        <Select
+          size="small"
+          value={value === 'yes' ? 'yes' : 'no'}
+          options={[
+            { label: '已验票', value: 'yes' },
+            { label: '未验票', value: 'no' },
+          ]}
+          loading={verificationUpdating === record.id}
+          disabled={verificationUpdating !== undefined}
+          onChange={(nextValue: 'yes' | 'no') => handleVerificationChange(record.id, nextValue)}
+          style={{ width: 92 }}
+        />
+      ),
+    },
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -835,7 +876,7 @@ const ContractDetailPage: React.FC = () => {
     ),
   }), [handleDeleteSubRecord]);
 
-  const tabItems = useMemo(() => {
+  const tabItems = (() => {
     const items = [];
     if (!isStandalonePurchase && detailData?.sales_contract) {
       items.push({
@@ -943,7 +984,7 @@ const ContractDetailPage: React.FC = () => {
       ),
     });
     return items;
-  }, [detailData, loading, isStandalonePurchase, biddingRecords, exchangeRate]);
+  })();
 
   const headerTitle = useMemo(() => {
     if (isStandalonePurchase && detailData?.purchase_contracts[0]) {

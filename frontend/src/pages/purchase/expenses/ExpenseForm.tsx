@@ -3,20 +3,22 @@ import type { FormInstance } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ExpenseRecordFormData, ExpenseRecord } from '@/types/expense-record';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ExpenseFormProps {
   form: FormInstance<ExpenseRecordFormData>;
-  onFinish: (values: ExpenseRecordFormData) => void;
+  onFinish: (values: ExpenseRecordFormData) => void | Promise<void>;
   onCancel: () => void;
   initialValues?: ExpenseRecord | null;
 }
 
 export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCancel, initialValues }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   return (
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       initialValues={
         initialValues
           ? {
@@ -129,7 +131,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ form, onFinish, onCanc
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

@@ -71,6 +71,12 @@ export const PurchaseInvoiceAPI = {
     return pb.collection('purchase_invoices').update<PurchaseInvoice>(id, formData);
   },
 
+  updateVerification: async (id: string, isVerified: 'yes' | 'no') => {
+    return pb.collection('purchase_invoices').update<PurchaseInvoice>(id, {
+      is_verified: isVerified,
+    });
+  },
+
   delete: async (id: string) => {
     return pb.collection('purchase_invoices').delete(id);
   },
@@ -78,9 +84,10 @@ export const PurchaseInvoiceAPI = {
 
 export const PurchaseContractAPI = {
   getOptions: async () => {
-    const result = await pb.collection('purchase_contracts').getList(1, 100, {
+    const items = await pb.collection('purchase_contracts').getFullList({
       filter: 'status = "executing"',
+      sort: '-created_at',
     });
-    return result;
+    return { items };
   },
 };

@@ -1,5 +1,6 @@
 import { pb } from '@/lib/pocketbase';
 import { createWithAttachments } from './helpers';
+import { assertAttachmentFileSize } from '@/utils/file';
 
 import type {
   StockMovement,
@@ -52,11 +53,16 @@ export const StockMovementAPI = {
   },
 
   update: async (id: string, data: StockMovementFormData) => {
+    assertAttachmentFileSize(data.attachments);
     const formData = new FormData();
     formData.append('inventory', data.inventory);
     formData.append('movement_type', data.movement_type);
     formData.append('quantity', String(data.quantity));
     if (data.remark) formData.append('remark', data.remark);
+    if (data.attachments !== undefined) {
+      formData.append('attachments', '');
+      data.attachments.forEach((attachment) => formData.append('attachments', attachment));
+    }
     return pb.collection('stock_movements').update<StockMovement>(id, formData);
   },
 };

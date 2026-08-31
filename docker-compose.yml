@@ -21,7 +21,8 @@ services:
   pocketbase-beijing:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      # Production deploys must provide backend/pocketbase_newbin, built off-server.
+      dockerfile: Dockerfile.localbuild
     container_name: erp-pocketbase-beijing
     command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_beijing"]
     volumes:
@@ -43,7 +44,8 @@ services:
   pocketbase-lanzhou:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      # Production deploys must provide backend/pocketbase_newbin, built off-server.
+      dockerfile: Dockerfile.localbuild
     container_name: erp-pocketbase-lanzhou
     command: ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data_lanzhou"]
     volumes:
@@ -69,6 +71,7 @@ services:
     container_name: erp-opportunity-agent
     restart: unless-stopped
     environment:
+      - NODE_OPTIONS=--max-old-space-size=192
       - POCKETBASE_URL=${POCKETBASE_URL}
       - POCKETBASE_SUPERUSER_EMAIL=${POCKETBASE_SUPERUSER_EMAIL}
       - POCKETBASE_SUPERUSER_PASSWORD=${POCKETBASE_SUPERUSER_PASSWORD}

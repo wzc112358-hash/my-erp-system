@@ -1,37 +1,26 @@
-import { pb } from '@/lib/pocketbase';
-import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { fetchAllByFieldBatches } from '@/api/helpers';
-import type { ReportData, ReportParams, ReportSummary } from '@/types/report';
-
-// 分批 OR 查询：PocketBase filter 超过 89 个 OR 条件会返回 400
-async function fetchByFieldBatches<T>(
-  collection: string,
-  ids: string[],
-  field: string,
-  expand?: string,
-): Promise<T[]> {
-  return fetchAllByFieldBatches(ids, field, async (filter) => {
-    const result = await pb.collection(collection).getList<T>(1, 1000, { filter, expand });
-    return result.items;
-  });
-}
+import { businessMonthKey } from '@/lib/business-month';
+import { buildContractRelationIndex, getPurchaseAllocationRatio } from '@/lib/contract-relations';
+import { calculateContractProfit } from '@/lib/contract-profit';
+import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { pb } from '@/lib/pocketbase';
+import type { ReportData, ReportParams, ReportResult, ReportSummary } from '@/types/report';
 
 interface SalesContractData {
   id: string;
+  purchase_contract?: string;
   no: string;
   product_name: string;
-  customer: string;
   total_quantity: number;
   unit_price: number;
   total_amount: number;
   is_price_excluding_tax: boolean;
   is_cross_border: boolean;
+  invoiced_amount: number;
+  receipted_amount: number;
   sign_date: string;
-  status: string;
   expand?: {
-    customer?: {
-      name: string;
-    };
+    customer?: { name: string };
   };
 }
 
@@ -39,29 +28,16 @@ interface PurchaseContractData {
   id: string;
   no: string;
   product_name: string;
-  supplier: string;
   sales_contract: string;
   total_quantity: number;
   unit_price: number;
   total_amount: number;
   is_cross_border: boolean;
+  invoiced_amount: number;
+  paid_amount: number;
   sign_date: string;
-  status: string;
   expand?: {
-    supplier?: {
-      name: string;
-    };
-    sales_contract?: {
-      id: string;
-      no: string;
-      customer: string;
-      sign_date: string;
-      expand?: {
-        customer?: {
-          name: string;
-        };
-      };
-    };
+    supplier?: { name: string };
   };
 }
 
@@ -74,11 +50,14 @@ interface PurchaseArrivalData {
   freight_2_currency?: 'USD' | 'CNY';
   miscellaneous_expenses: number;
   miscellaneous_expenses_currency: 'USD' | 'CNY';
+  tariff?: number;
+  value_added_tax?: number;
 }
 
 interface SalesShipmentData {
   sales_contract: string;
   date: string;
+  quantity: number;
 }
 
 interface PurchasePaymentData {
@@ -101,744 +80,465 @@ interface SaleInvoiceData {
   issue_date: string;
 }
 
-function getMonthFromDate(dateStr: string): number {
-  if (!dateStr) return 0;
-  const date = new Date(dateStr);
-  return date.getMonth() + 1;
+interface ReportActivityData {
+  arrivalsByPurchase: Map<string, PurchaseArrivalData[]>;
+  shipmentsBySales: Map<string, SalesShipmentData[]>;
+  purchasePaymentDates: Map<string, string>;
+  purchaseInvoiceDates: Map<string, string>;
+  salesReceiptDates: Map<string, string>;
+  salesInvoiceDates: Map<string, string>;
 }
 
-function getYearFromDate(dateStr: string): number {
-  if (!dateStr) return 0;
-  const date = new Date(dateStr);
-  return date.getFullYear();
+const emptySummary = (): ReportSummary => ({
+  totalSalesAmount: 0,
+  totalPurchaseAmount: 0,
+  totalSalesTaxAmount: 0,
+  totalPurchaseTaxAmount: 0,
+  totalTax: 0,
+  totalFreight: 0,
+  totalMiscellaneous: 0,
+  totalTariff: 0,
+  totalValueAddedTax: 0,
+  totalProfit: 0,
+  totalNetProfit: 0,
+  totalRealizedProfit: 0,
+});
+
+const amountInCny = (amount: number, isCrossBorder: boolean, rate: number) => (
+  (Number(amount) || 0) * (isCrossBorder ? rate : 1)
+);
+
+const progressPercent = (completed: number, total: number) => {
+  if (!(total > 0)) return 0;
+  return Math.min(100, Math.max(0, ((Number(completed) || 0) / total) * 100));
+};
+
+const isInMonthRange = (date: string, params: ReportParams) => {
+  const [contractYear, contractMonth] = businessMonthKey(date).split('-').map(Number);
+  return contractYear === params.year
+    && contractMonth >= params.startMonth
+    && contractMonth <= params.endMonth;
+};
+
+async function fetchByFieldBatches<T>(
+  collection: string,
+  ids: string[],
+  field: string,
+): Promise<T[]> {
+  return fetchAllByFieldBatches(ids, field, (filter) => (
+    pb.collection(collection).getFullList<T>({ filter })
+  ));
 }
 
-// 按币种把到货记录的运费/杂费折算为 CNY，并统计到货量
-function arrivalCostsCny(arrivals: PurchaseArrivalData[], rate: number) {
-  let freight = 0;
-  let miscellaneous = 0;
-  let quantity = 0;
-  arrivals.forEach((a) => {
-    const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
-    const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
-    const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
-    freight += (a.freight_1 || 0) * f1Rate + (a.freight_2 || 0) * f2Rate;
-    miscellaneous += (a.miscellaneous_expenses || 0) * mRate;
-    quantity += a.quantity || 0;
+const groupBy = <T>(rows: T[], keyOf: (row: T) => string) => {
+  const grouped = new Map<string, T[]>();
+  rows.forEach((row) => {
+    const key = keyOf(row);
+    const existing = grouped.get(key) || [];
+    existing.push(row);
+    grouped.set(key, existing);
   });
-  return { freight, miscellaneous, quantity };
-}
+  return grouped;
+};
 
-export const ReportAPI = {
-  getReportData: async (params: ReportParams): Promise<{ data: ReportData[]; summary: ReportSummary }> => {
-    const { startMonth, endMonth, year } = params;
-    const rate = await getUsdToCnyRate();
+const latestDateMap = <T>(
+  rows: T[],
+  keyOf: (row: T) => string,
+  dateOf: (row: T) => string,
+) => {
+  const dates = new Map<string, string>();
+  rows.forEach((row) => {
+    const key = keyOf(row);
+    const date = dateOf(row);
+    const current = dates.get(key);
+    if (key && date && (!current || date > current)) dates.set(key, date);
+  });
+  return dates;
+};
 
-    const [salesContractsResult, purchaseContractsResult] = await Promise.all([
-      pb.collection('sales_contracts').getList<SalesContractData>(1, 500, {
-        filter: 'status = "completed"',
-        expand: 'customer',
-      }),
-      pb.collection('purchase_contracts').getList<PurchaseContractData>(1, 500, {
-        filter: 'status = "completed"',
-        expand: 'supplier,sales_contract.customer',
-      }),
-    ]);
+const arrivalTotals = (arrivals: PurchaseArrivalData[], rate: number) => arrivals.reduce(
+  (totals, arrival) => {
+    const freight1Rate = arrival.freight_1_currency === 'USD' ? rate : 1;
+    const freight2Rate = arrival.freight_2_currency === 'USD' ? rate : 1;
+    const miscellaneousRate = arrival.miscellaneous_expenses_currency === 'USD' ? rate : 1;
+    totals.quantity += Number(arrival.quantity) || 0;
+    totals.freight += (Number(arrival.freight_1) || 0) * freight1Rate
+      + (Number(arrival.freight_2) || 0) * freight2Rate;
+    totals.miscellaneous += (Number(arrival.miscellaneous_expenses) || 0) * miscellaneousRate;
+    totals.tariff += Number(arrival.tariff) || 0;
+    totals.valueAddedTax += Number(arrival.value_added_tax) || 0;
+    return totals;
+  },
+  { quantity: 0, freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
+);
 
-    const salesContracts = salesContractsResult.items;
-    const purchaseContracts = purchaseContractsResult.items;
+const loadActivityData = async (
+  salesContracts: SalesContractData[],
+  purchaseContracts: PurchaseContractData[],
+): Promise<ReportActivityData> => {
+  const salesIds = salesContracts.map((contract) => contract.id);
+  const purchaseIds = purchaseContracts.map((contract) => contract.id);
+  const [arrivals, shipments, payments, purchaseInvoices, receipts, salesInvoices] = await Promise.all([
+    fetchByFieldBatches<PurchaseArrivalData>('purchase_arrivals', purchaseIds, 'purchase_contract'),
+    fetchByFieldBatches<SalesShipmentData>('sales_shipments', salesIds, 'sales_contract'),
+    fetchByFieldBatches<PurchasePaymentData>('purchase_payments', purchaseIds, 'purchase_contract'),
+    fetchByFieldBatches<PurchaseInvoiceData>('purchase_invoices', purchaseIds, 'purchase_contract'),
+    fetchByFieldBatches<SaleReceiptData>('sale_receipts', salesIds, 'sales_contract'),
+    fetchByFieldBatches<SaleInvoiceData>('sale_invoices', salesIds, 'sales_contract'),
+  ]);
 
-    const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
-    const salesContractIds = salesContracts.map((sc) => sc.id);
+  return {
+    arrivalsByPurchase: groupBy(arrivals, (row) => row.purchase_contract),
+    shipmentsBySales: groupBy(shipments, (row) => row.sales_contract),
+    purchasePaymentDates: latestDateMap(payments, (row) => row.purchase_contract, (row) => row.pay_date),
+    purchaseInvoiceDates: latestDateMap(purchaseInvoices, (row) => row.purchase_contract, (row) => row.receive_date),
+    salesReceiptDates: latestDateMap(receipts, (row) => row.sales_contract, (row) => row.receive_date),
+    salesInvoiceDates: latestDateMap(salesInvoices, (row) => row.sales_contract, (row) => row.issue_date),
+  };
+};
 
-    const [purchaseArrivalsAll, salesShipmentsAll, purchasePaymentsAll, purchaseInvoicesAll, saleReceiptsAll, saleInvoicesAll] = await Promise.all([
-      fetchByFieldBatches<PurchaseArrivalData>('purchase_arrivals', purchaseContractIds, 'purchase_contract'),
-      fetchByFieldBatches<SalesShipmentData>('sales_shipments', salesContractIds, 'sales_contract'),
-      fetchByFieldBatches<PurchasePaymentData>('purchase_payments', purchaseContractIds, 'purchase_contract'),
-      fetchByFieldBatches<PurchaseInvoiceData>('purchase_invoices', purchaseContractIds, 'purchase_contract'),
-      fetchByFieldBatches<SaleReceiptData>('sale_receipts', salesContractIds, 'sales_contract'),
-      fetchByFieldBatches<SaleInvoiceData>('sale_invoices', salesContractIds, 'sales_contract'),
-    ]);
+const basePurchaseFields = (
+  purchase: PurchaseContractData,
+  activity: ReportActivityData,
+  rate: number,
+) => {
+  const costs = arrivalTotals(activity.arrivalsByPurchase.get(purchase.id) || [], rate);
+  const purchaseAmountIncTax = amountInCny(purchase.total_amount, purchase.is_cross_border, rate);
+  return {
+    costs,
+    fields: {
+      purchaseContractId: purchase.id,
+      purchaseContractNo: purchase.no,
+      purchaseSignDate: purchase.sign_date,
+      purchaseProductName: purchase.product_name,
+      productName: purchase.product_name,
+      supplierName: purchase.expand?.supplier?.name || '',
+      purchaseQuantity: Number(purchase.total_quantity) || 0,
+      purchaseUnitPrice: amountInCny(purchase.unit_price, purchase.is_cross_border, rate),
+      purchaseTotalAmount: purchaseAmountIncTax / 1.13,
+      purchaseTaxTotalAmount: purchaseAmountIncTax,
+      purchasePaymentDate: activity.purchasePaymentDates.get(purchase.id) || '',
+      purchaseInvoiceDate: activity.purchaseInvoiceDates.get(purchase.id) || '',
+      purchasePaymentProgress: progressPercent(purchase.paid_amount, purchase.total_amount),
+      purchaseInvoiceProgress: progressPercent(purchase.invoiced_amount, purchase.total_amount),
+      freight: costs.freight,
+      miscellaneous: costs.miscellaneous,
+      tariff: costs.tariff,
+      valueAddedTax: costs.valueAddedTax,
+    },
+  };
+};
 
-    const purchaseArrivalsMap = new Map<string, PurchaseArrivalData[]>();
-    purchaseArrivalsAll.forEach((arrival) => {
-      const existing = purchaseArrivalsMap.get(arrival.purchase_contract) || [];
-      existing.push(arrival);
-      purchaseArrivalsMap.set(arrival.purchase_contract, existing);
+const emptyPurchaseFields = {
+  purchaseContractId: '',
+  purchaseContractNo: '',
+  purchaseSignDate: '',
+  purchaseProductName: '',
+  supplierName: '',
+  purchaseQuantity: 0,
+  purchaseUnitPrice: 0,
+  purchaseTotalAmount: 0,
+  purchaseTaxTotalAmount: 0,
+  purchasePaymentDate: '',
+  purchaseInvoiceDate: '',
+  purchasePaymentProgress: 0,
+  purchaseInvoiceProgress: 0,
+};
+
+const emptySalesFields = {
+  salesContractId: '',
+  salesContractNo: '',
+  salesSignDate: '',
+  salesProductName: '',
+  customerName: '',
+  salesQuantity: 0,
+  salesUnitPrice: 0,
+  salesTotalAmount: 0,
+  salesTaxTotalAmount: 0,
+  salesReceiptProgress: 0,
+  salesInvoiceProgress: 0,
+  arrivalDate: '',
+  salesReceiptDate: '',
+  salesInvoiceDate: '',
+};
+
+const buildReportRows = async (
+  salesContracts: SalesContractData[],
+  purchaseContracts: PurchaseContractData[],
+  rate: number,
+  relationSalesContracts: SalesContractData[],
+  relationPurchaseContracts: PurchaseContractData[],
+) => {
+  const activity = await loadActivityData(salesContracts, purchaseContracts);
+  const relationIndex = buildContractRelationIndex(relationSalesContracts, relationPurchaseContracts);
+  const purchasesById = new Map(purchaseContracts.map((contract) => [contract.id, contract]));
+  const reportData: ReportData[] = [];
+
+  salesContracts.forEach((sales) => {
+    const purchases = (relationIndex.purchaseIdsBySales.get(sales.id) || [])
+      .map((purchaseId) => purchasesById.get(purchaseId))
+      .filter((purchase): purchase is PurchaseContractData => Boolean(purchase));
+    const salesAmount = amountInCny(sales.total_amount, sales.is_cross_border, rate);
+    const salesUnitPrice = amountInCny(sales.unit_price, sales.is_cross_border, rate);
+    const salesBase = calculateContractProfit({
+      salesAmount,
+      salesPriceExcludingTax: sales.is_price_excluding_tax,
+      purchaseAmount: 0,
+      freight: 0,
+      miscellaneous: 0,
+      tariff: 0,
+      valueAddedTax: 0,
     });
+    const shipmentDates = latestDateMap(
+      activity.shipmentsBySales.get(sales.id) || [],
+      () => sales.id,
+      (row) => row.date,
+    );
+    const salesFields = {
+      salesContractId: sales.id,
+      salesContractNo: sales.no,
+      salesSignDate: sales.sign_date,
+      salesProductName: sales.product_name,
+      customerName: sales.expand?.customer?.name || '',
+      salesQuantity: Number(sales.total_quantity) || 0,
+      salesUnitPrice,
+      salesTotalAmount: salesBase.salesAmountExTax,
+      salesTaxTotalAmount: salesBase.salesAmountIncTax,
+      salesReceiptProgress: progressPercent(sales.receipted_amount, sales.total_amount),
+      salesInvoiceProgress: progressPercent(sales.invoiced_amount, sales.total_amount),
+      arrivalDate: shipmentDates.get(sales.id) || '',
+      salesReceiptDate: activity.salesReceiptDates.get(sales.id) || '',
+      salesInvoiceDate: activity.salesInvoiceDates.get(sales.id) || '',
+    };
 
-    const salesShipmentsMap = new Map<string, string>();
-    salesShipmentsAll.forEach((shipment) => {
-      if (shipment.date) {
-        salesShipmentsMap.set(shipment.sales_contract, shipment.date);
-      }
-    });
-
-    const purchasePaymentDateMap = new Map<string, string>();
-    purchasePaymentsAll.forEach((p) => {
-      if (!p.pay_date) return;
-      const existing = purchasePaymentDateMap.get(p.purchase_contract);
-      if (!existing || p.pay_date > existing) {
-        purchasePaymentDateMap.set(p.purchase_contract, p.pay_date);
-      }
-    });
-
-    const purchaseInvoiceDateMap = new Map<string, string>();
-    purchaseInvoicesAll.forEach((inv) => {
-      if (!inv.receive_date) return;
-      const existing = purchaseInvoiceDateMap.get(inv.purchase_contract);
-      if (!existing || inv.receive_date > existing) {
-        purchaseInvoiceDateMap.set(inv.purchase_contract, inv.receive_date);
-      }
-    });
-
-    const salesReceiptDateMap = new Map<string, string>();
-    saleReceiptsAll.forEach((r) => {
-      if (!r.receive_date) return;
-      const existing = salesReceiptDateMap.get(r.sales_contract);
-      if (!existing || r.receive_date > existing) {
-        salesReceiptDateMap.set(r.sales_contract, r.receive_date);
-      }
-    });
-
-    const salesInvoiceDateMap = new Map<string, string>();
-    saleInvoicesAll.forEach((inv) => {
-      if (!inv.issue_date) return;
-      const existing = salesInvoiceDateMap.get(inv.sales_contract);
-      if (!existing || inv.issue_date > existing) {
-        salesInvoiceDateMap.set(inv.sales_contract, inv.issue_date);
-      }
-    });
-
-    const reportData: ReportData[] = [];
-    const salesContractMap = new Map<string, SalesContractData>();
-    const salesContractRows = new Map<string, number>();
-    
-    salesContracts.forEach((sc) => {
-      const month = getMonthFromDate(sc.sign_date);
-      const contractYear = getYearFromDate(sc.sign_date);
-      if (contractYear === year && month >= startMonth && month <= endMonth) {
-        salesContractMap.set(sc.id, sc);
-      }
-    });
-
-    purchaseContracts.forEach((pc) => {
-      const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
-
-      let salesContract: SalesContractData | undefined;
-      let customerName = '';
-      let salesSignDate = '';
-      let salesQuantity = 0;
-      let salesUnitPrice = 0;
-      let salesTotalAmount = 0;
-
-      if (pc.expand?.sales_contract) {
-        salesContract = salesContractMap.get(pc.expand.sales_contract.id);
-        if (salesContract) {
-          customerName = salesContract.expand?.customer?.name || '';
-          salesSignDate = salesContract.sign_date;
-          salesQuantity = salesContract.total_quantity;
-          salesUnitPrice = salesContract.unit_price;
-          const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
-          salesTotalAmount = salesContract.is_price_excluding_tax ? salesAmountCny : salesAmountCny / 1.13;
-
-          const existingCount = salesContractRows.get(pc.expand.sales_contract.id) || 0;
-          salesContractRows.set(pc.expand.sales_contract.id, existingCount + 1);
-        }
-      }
-
-      const supplierName = pc.expand?.supplier?.name || '';
-      const purchaseAmountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-      const purchaseTaxTotalAmount = purchaseAmountCny;
-      const purchaseTotalAmount = purchaseAmountCny / 1.13;
-      const arrivalDate = salesShipmentsMap.get(pc.expand?.sales_contract?.id || '') || '';
-
-      if (!salesContract) {
-        return;
-      }
-
+    if (purchases.length === 0) {
       reportData.push({
-        purchaseContractNo: pc.no,
-        purchaseSignDate: pc.sign_date,
-        productName: pc.product_name,
-        supplierName,
-        purchaseQuantity: pc.total_quantity,
-        purchaseUnitPrice: pc.unit_price,
-        purchaseTotalAmount,
-        purchaseTaxTotalAmount,
-        purchasePaymentDate: purchasePaymentDateMap.get(pc.id) || '',
-        purchaseInvoiceDate: purchaseInvoiceDateMap.get(pc.id) || '',
-        salesContractNo: salesContract.no,
-        salesSignDate,
-        customerName,
-        salesQuantity,
-        salesUnitPrice,
-        salesTotalAmount,
-        salesTaxTotalAmount: 0,
-        freight,
-        miscellaneous,
-        arrivalDate,
-        salesReceiptDate: salesReceiptDateMap.get(pc.expand?.sales_contract?.id || '') || '',
-        salesInvoiceDate: salesInvoiceDateMap.get(pc.expand?.sales_contract?.id || '') || '',
+        ...emptyPurchaseFields,
+        ...salesFields,
+        productName: sales.product_name,
+        freight: 0,
+        miscellaneous: 0,
+        tariff: 0,
+        valueAddedTax: 0,
+        purchaseAllocationRatio: 0,
+        allocatedPurchaseTaxAmount: 0,
         tax: 0,
         profit: 0,
         netProfit: 0,
         realizedProfit: 0,
-        salesRowSpan: 0,
-        purchaseRowSpan: 1,
-        isSalesRow: false,
-      });
-    });
-
-    const salesContractRowCounts = new Map<string, number>();
-    const salesContractPurchaseTotal = new Map<string, number>();
-    const salesContractFreightTotal = new Map<string, number>();
-    const salesContractMiscTotal = new Map<string, number>();
-    const salesContractTaxTotal = new Map<string, number>();
-    // 每个销售合同关联的采购已到货量（用于已执行利润）
-    const salesContractArrivedQty = new Map<string, number>();
-
-    reportData.forEach((row) => {
-      if (row.salesContractNo) {
-        const count = salesContractRowCounts.get(row.salesContractNo) || 0;
-        salesContractRowCounts.set(row.salesContractNo, count + 1);
-
-        const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
-        salesContractPurchaseTotal.set(row.salesContractNo, purchaseTotal + row.purchaseTotalAmount);
-
-        const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
-        salesContractFreightTotal.set(row.salesContractNo, freightTotal + row.freight);
-
-        const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
-        salesContractMiscTotal.set(row.salesContractNo, miscTotal + row.miscellaneous);
-
-        if (count === 0) {
-          for (const sc of salesContracts) {
-            if (sc.no === row.salesContractNo) {
-              const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
-              salesContractTaxTotal.set(row.salesContractNo, sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny);
-              break;
-            }
-          }
-        }
-      }
-    });
-
-    // 统计每个销售合同关联的采购已到货量
-    salesContracts.forEach((sc) => {
-      const relatedPurchases = purchaseContracts.filter((pc) => pc.expand?.sales_contract?.id === sc.id);
-      let arrivedQty = 0;
-      relatedPurchases.forEach((pc) => {
-        const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-        arrivedQty += arrivalCostsCny(arrivals, rate).quantity;
-      });
-      salesContractArrivedQty.set(sc.no, arrivedQty);
-    });
-
-    let currentSalesNo = '';
-
-    reportData.forEach((row) => {
-      const salesRowCount = salesContractRowCounts.get(row.salesContractNo) || 1;
-
-      if (row.salesContractNo !== currentSalesNo) {
-        currentSalesNo = row.salesContractNo;
-        row.salesRowSpan = salesRowCount;
-        const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
-        const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
-        const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
-        const salesTaxTotal = salesContractTaxTotal.get(row.salesContractNo) || 0;
-        const purchaseTaxTotal = salesContractPurchaseTotal.get(row.salesContractNo) ? (purchaseTotal * 1.13) : 0;
-
-        row.salesTaxTotalAmount = salesTaxTotal;
-        row.tax = (salesTaxTotal - purchaseTaxTotal) * 0.1881;
-        row.profit = salesTaxTotal / 1.13 - purchaseTotal - freightTotal - miscTotal;
-        row.netProfit = salesTaxTotal / 1.13 - purchaseTotal - row.tax - miscTotal - freightTotal;
-
-        // 已执行利润：按销售合同关联的采购已到货量核算
-        // 销售已实现收入（含税）= 销售含税单价 × 已到货量
-        const sc = salesContracts.find((s) => s.no === row.salesContractNo);
-        const arrivedQty = salesContractArrivedQty.get(row.salesContractNo) || 0;
-        let realizedProfit = 0;
-        if (sc) {
-          const salesUnitPriceCny = sc.is_cross_border ? sc.unit_price * rate : sc.unit_price;
-          const isExTax = sc.is_price_excluding_tax;
-          const realizedSalesInc = salesUnitPriceCny * arrivedQty * (isExTax ? 1.13 : 1);
-          const realizedSalesEx = salesUnitPriceCny * arrivedQty * (isExTax ? 1 : 1 / 1.13);
-          // 采购已实现成本：按到货比例分摊（已到货即视为已实现成本）
-          const purchaseRatio = sc.total_quantity > 0 ? Math.min(arrivedQty / sc.total_quantity, 1) : 0;
-          const realizedPurchaseInc = purchaseTaxTotal * purchaseRatio;
-          const realizedTax = (realizedSalesInc - realizedPurchaseInc) * 0.1881;
-          const realizedFreight = freightTotal * purchaseRatio;
-          const realizedMisc = miscTotal * purchaseRatio;
-          realizedProfit = realizedSalesEx - realizedPurchaseInc / 1.13 - realizedTax - realizedFreight - realizedMisc;
-        }
-        row.realizedProfit = realizedProfit;
-      } else {
-        row.salesRowSpan = 0;
-        row.salesTaxTotalAmount = 0;
-        row.profit = 0;
-        row.tax = 0;
-        row.netProfit = 0;
-        row.realizedProfit = 0;
-      }
-    });
-
-    salesContracts.forEach((sc) => {
-      const month = getMonthFromDate(sc.sign_date);
-      const contractYear = getYearFromDate(sc.sign_date);
-      if (contractYear !== year || month < startMonth || month > endMonth) {
-        return;
-      }
-
-      const relatedPurchases = purchaseContracts.filter(
-        (pc) => pc.expand?.sales_contract?.id === sc.id
-      );
-
-      if (relatedPurchases.length > 0) {
-        return;
-      }
-
-      const arrivals = purchaseArrivalsMap.get(sc.id) || [];
-      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
-
-      const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
-      const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
-      const salesIncTax = sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny;
-
-      reportData.push({
-        purchaseContractNo: '',
-        purchaseSignDate: '',
-        productName: sc.product_name,
-        supplierName: '',
-        purchaseQuantity: 0,
-        purchaseUnitPrice: 0,
-        purchaseTotalAmount: 0,
-        purchaseTaxTotalAmount: 0,
-        purchasePaymentDate: '',
-        purchaseInvoiceDate: '',
-        salesContractNo: sc.no,
-        salesSignDate: sc.sign_date,
-        customerName: sc.expand?.customer?.name || '',
-        salesQuantity: sc.total_quantity,
-        salesUnitPrice: sc.unit_price,
-        salesTotalAmount: salesExTax,
-        salesTaxTotalAmount: salesIncTax,
-        freight,
-        miscellaneous,
-        arrivalDate: salesShipmentsMap.get(sc.id) || '',
-        salesReceiptDate: salesReceiptDateMap.get(sc.id) || '',
-        salesInvoiceDate: salesInvoiceDateMap.get(sc.id) || '',
-        tax: salesIncTax * 0.1881,
-        profit: salesExTax - freight - miscellaneous,
-        netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
-        realizedProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: true,
       });
+      return;
+    }
+
+    const purchaseDetails = purchases.map((purchase) => ({
+      purchase,
+      allocationRatio: getPurchaseAllocationRatio(
+        relationIndex,
+        relationSalesContracts,
+        purchase.id,
+        sales.id,
+      ),
+      ...basePurchaseFields(purchase, activity, rate),
+    }));
+    const purchaseAmount = purchaseDetails.reduce(
+      (sum, detail) => sum + detail.fields.purchaseTaxTotalAmount * detail.allocationRatio,
+      0,
+    );
+    const costs = purchaseDetails.reduce(
+      (totals, detail) => ({
+        freight: totals.freight + detail.costs.freight * detail.allocationRatio,
+        miscellaneous: totals.miscellaneous + detail.costs.miscellaneous * detail.allocationRatio,
+        tariff: totals.tariff + detail.costs.tariff * detail.allocationRatio,
+        valueAddedTax: totals.valueAddedTax + detail.costs.valueAddedTax * detail.allocationRatio,
+      }),
+      { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
+    );
+    const profit = calculateContractProfit({
+      salesAmount,
+      salesPriceExcludingTax: sales.is_price_excluding_tax,
+      purchaseAmount,
+      ...costs,
     });
 
-    const summary: ReportSummary = {
-      totalSalesAmount: 0,
-      totalPurchaseAmount: 0,
-      totalSalesTaxAmount: 0,
-      totalPurchaseTaxAmount: 0,
-      totalTax: 0,
-      totalFreight: 0,
-      totalMiscellaneous: 0,
-      totalProfit: 0,
-      totalNetProfit: 0,
-      totalRealizedProfit: 0,
-    };
-
-    const processedSalesContracts = new Set<string>();
-    const processedPurchaseContracts = new Set<string>();
-
-    reportData.forEach((row) => {
-      if (row.purchaseContractNo && !processedPurchaseContracts.has(row.purchaseContractNo)) {
-        summary.totalPurchaseAmount += row.purchaseTotalAmount;
-        summary.totalPurchaseTaxAmount += row.purchaseTaxTotalAmount;
-        summary.totalFreight += row.freight;
-        summary.totalMiscellaneous += row.miscellaneous;
-        processedPurchaseContracts.add(row.purchaseContractNo);
-      }
-
-      if (row.salesContractNo && !processedSalesContracts.has(row.salesContractNo)) {
-        summary.totalSalesAmount += row.salesTotalAmount;
-        summary.totalSalesTaxAmount += row.salesTaxTotalAmount;
-        processedSalesContracts.add(row.salesContractNo);
-      }
-
-      summary.totalProfit += row.profit;
-      summary.totalNetProfit += row.netProfit;
-      summary.totalRealizedProfit += row.realizedProfit;
+    const shippedQuantity = (activity.shipmentsBySales.get(sales.id) || []).reduce(
+      (sum, shipment) => sum + (Number(shipment.quantity) || 0),
+      0,
+    );
+    const realizedPurchaseAmount = purchaseDetails.reduce((sum, detail) => {
+      const purchaseQuantity = Number(detail.purchase.total_quantity) || 0;
+      const ratio = purchaseQuantity > 0 ? detail.costs.quantity / purchaseQuantity : 0;
+      return sum + detail.fields.purchaseTaxTotalAmount * ratio * detail.allocationRatio;
+    }, 0);
+    const realizedProfit = calculateContractProfit({
+      salesAmount: salesUnitPrice * shippedQuantity,
+      salesPriceExcludingTax: sales.is_price_excluding_tax,
+      purchaseAmount: realizedPurchaseAmount,
+      ...costs,
     });
 
-    summary.totalTax = (summary.totalSalesTaxAmount - summary.totalPurchaseTaxAmount) * 0.1881;
+    purchaseDetails.forEach((detail, index) => {
+      const isFirst = index === 0;
+      reportData.push({
+        ...detail.fields,
+        ...salesFields,
+        purchaseAllocationRatio: detail.allocationRatio,
+        allocatedPurchaseTaxAmount: detail.fields.purchaseTaxTotalAmount * detail.allocationRatio,
+        tax: isFirst ? profit.taxAmount : 0,
+        profit: isFirst ? profit.operatingProfit : 0,
+        netProfit: isFirst ? profit.netProfit : 0,
+        realizedProfit: isFirst ? realizedProfit.netProfit : 0,
+        salesRowSpan: isFirst ? purchaseDetails.length : 0,
+        purchaseRowSpan: 1,
+        isSalesRow: false,
+      });
+    });
+  });
 
-    return { data: reportData, summary };
+  purchaseContracts.filter((purchase) => (
+    (relationIndex.salesIdsByPurchase.get(purchase.id) || []).length === 0
+  )).forEach((purchase) => {
+    const detail = basePurchaseFields(purchase, activity, rate);
+    reportData.push({
+      ...detail.fields,
+      ...emptySalesFields,
+      tax: 0,
+      profit: 0,
+      netProfit: 0,
+      realizedProfit: 0,
+      purchaseAllocationRatio: 0,
+      allocatedPurchaseTaxAmount: 0,
+      salesRowSpan: 0,
+      purchaseRowSpan: 1,
+      isSalesRow: false,
+    });
+  });
+
+  return reportData;
+};
+
+const summarizeReport = (rows: ReportData[]): ReportSummary => {
+  const summary = emptySummary();
+  const processedSales = new Set<string>();
+  const processedPurchases = new Set<string>();
+
+  rows.forEach((row) => {
+    if (row.purchaseContractId && !processedPurchases.has(row.purchaseContractId)) {
+      summary.totalPurchaseAmount += row.purchaseTotalAmount;
+      summary.totalPurchaseTaxAmount += row.purchaseTaxTotalAmount;
+      summary.totalFreight += row.freight;
+      summary.totalMiscellaneous += row.miscellaneous;
+      summary.totalTariff += row.tariff;
+      summary.totalValueAddedTax += row.valueAddedTax;
+      processedPurchases.add(row.purchaseContractId);
+    }
+    if (row.salesContractId && !processedSales.has(row.salesContractId)) {
+      summary.totalSalesAmount += row.salesTotalAmount;
+      summary.totalSalesTaxAmount += row.salesTaxTotalAmount;
+      processedSales.add(row.salesContractId);
+    }
+    summary.totalTax += row.tax;
+    summary.totalProfit += row.profit;
+    summary.totalNetProfit += row.netProfit;
+    summary.totalRealizedProfit += row.realizedProfit;
+  });
+
+  return summary;
+};
+
+const buildReport = async (
+  salesContracts: SalesContractData[],
+  purchaseContracts: PurchaseContractData[],
+  rate: number,
+  relationSalesContracts: SalesContractData[] = salesContracts,
+  relationPurchaseContracts: PurchaseContractData[] = purchaseContracts,
+) => {
+  const data = await buildReportRows(
+    salesContracts,
+    purchaseContracts,
+    rate,
+    relationSalesContracts,
+    relationPurchaseContracts,
+  );
+  return { data, summary: summarizeReport(data), exchangeRate: rate };
+};
+
+export const ReportAPI = {
+  getReportData: async (params: ReportParams): Promise<ReportResult> => {
+    const rate = await getUsdToCnyRate();
+    const [allSales, allPurchases] = await Promise.all([
+      pb.collection('sales_contracts').getFullList<SalesContractData>({
+        filter: 'status = "completed"',
+        expand: 'customer',
+        sort: 'sign_date,no',
+      }),
+      pb.collection('purchase_contracts').getFullList<PurchaseContractData>({
+        filter: 'status = "completed"',
+        expand: 'supplier',
+        sort: 'sign_date,no',
+      }),
+    ]);
+
+    const salesContracts = allSales.filter((contract) => isInMonthRange(contract.sign_date, params));
+    const relationIndex = buildContractRelationIndex(allSales, allPurchases);
+    const relatedPurchaseIds = new Set(salesContracts.flatMap(
+      (contract) => relationIndex.purchaseIdsBySales.get(contract.id) || [],
+    ));
+    const purchaseContracts = allPurchases.filter((contract) => (
+      relatedPurchaseIds.has(contract.id)
+      || ((relationIndex.salesIdsByPurchase.get(contract.id) || []).length === 0
+        && isInMonthRange(contract.sign_date, params))
+    ));
+
+    return buildReport(salesContracts, purchaseContracts, rate, allSales, allPurchases);
   },
 
   getReportByContractIds: async (
     salesIds: string[],
-    purchaseIds: string[]
-  ): Promise<{ data: ReportData[]; summary: ReportSummary }> => {
+    purchaseIds: string[],
+  ): Promise<ReportResult> => {
     const rate = await getUsdToCnyRate();
-    const allIds = [...salesIds, ...purchaseIds];
-    if (allIds.length === 0) {
-      return { data: [], summary: { totalSalesAmount: 0, totalPurchaseAmount: 0, totalSalesTaxAmount: 0, totalPurchaseTaxAmount: 0, totalTax: 0, totalFreight: 0, totalMiscellaneous: 0, totalProfit: 0, totalNetProfit: 0, totalRealizedProfit: 0 } };
+    if (salesIds.length === 0 && purchaseIds.length === 0) {
+      return { data: [], summary: emptySummary(), exchangeRate: rate };
     }
 
-    const [salesContractsList, purchaseContractsList] = await Promise.all([
-      fetchByFieldBatches<SalesContractData>('sales_contracts', salesIds, 'id', 'customer'),
-      fetchByFieldBatches<PurchaseContractData>('purchase_contracts', purchaseIds, 'id', 'supplier,sales_contract.customer'),
+    const [allSales, allPurchases] = await Promise.all([
+      pb.collection('sales_contracts').getFullList<SalesContractData>({ expand: 'customer' }),
+      pb.collection('purchase_contracts').getFullList<PurchaseContractData>({ expand: 'supplier' }),
     ]);
+    const relationIndex = buildContractRelationIndex(allSales, allPurchases);
+    const selectedSalesIds = new Set(salesIds);
+    const selectedPurchaseIds = new Set(purchaseIds);
 
-    const salesContracts = salesContractsList;
-    const purchaseContracts = purchaseContractsList;
-
-    const linkedSalesIds = new Set(salesIds);
-    purchaseContracts.forEach((pc) => {
-      if (pc.sales_contract) {
-        linkedSalesIds.add(pc.sales_contract);
-      }
-    });
-
-    if (linkedSalesIds.size > 0) {
-      const additionalSales = await fetchByFieldBatches<SalesContractData>('sales_contracts', Array.from(linkedSalesIds), 'id', 'customer');
-      additionalSales.forEach((sc) => {
-        if (!salesContracts.find((existing) => existing.id === sc.id)) {
-          salesContracts.push(sc);
-        }
-      });
-    }
-
-    if (salesIds.length > 0) {
-      const linkedPurchases = await fetchByFieldBatches<PurchaseContractData>('purchase_contracts', salesIds, 'sales_contract', 'supplier,sales_contract.customer');
-      linkedPurchases.forEach((pc) => {
-        if (!purchaseContracts.find((existing) => existing.id === pc.id)) {
-          purchaseContracts.push(pc);
-        }
-      });
-    }
-
-    const allPurchaseIds = purchaseContracts.map((pc) => pc.id);
-    const allSalesIds = salesContracts.map((sc) => sc.id);
-
-    const [purchaseArrivalsAll, salesShipmentsAll, purchasePaymentsAll, purchaseInvoicesAll, saleReceiptsAll, saleInvoicesAll] = await Promise.all([
-      fetchByFieldBatches<PurchaseArrivalData>('purchase_arrivals', allPurchaseIds, 'purchase_contract'),
-      fetchByFieldBatches<SalesShipmentData>('sales_shipments', allSalesIds, 'sales_contract'),
-      fetchByFieldBatches<PurchasePaymentData>('purchase_payments', allPurchaseIds, 'purchase_contract'),
-      fetchByFieldBatches<PurchaseInvoiceData>('purchase_invoices', allPurchaseIds, 'purchase_contract'),
-      fetchByFieldBatches<SaleReceiptData>('sale_receipts', allSalesIds, 'sales_contract'),
-      fetchByFieldBatches<SaleInvoiceData>('sale_invoices', allSalesIds, 'sales_contract'),
-    ]);
-
-    const purchaseArrivalsMap = new Map<string, PurchaseArrivalData[]>();
-    purchaseArrivalsAll.forEach((arrival) => {
-      const existing = purchaseArrivalsMap.get(arrival.purchase_contract) || [];
-      existing.push(arrival);
-      purchaseArrivalsMap.set(arrival.purchase_contract, existing);
-    });
-
-    const salesShipmentsMap = new Map<string, string>();
-    salesShipmentsAll.forEach((shipment) => {
-      if (shipment.date) {
-        salesShipmentsMap.set(shipment.sales_contract, shipment.date);
-      }
-    });
-
-    const purchasePaymentDateMap = new Map<string, string>();
-    purchasePaymentsAll.forEach((p) => {
-      if (!p.pay_date) return;
-      const existing = purchasePaymentDateMap.get(p.purchase_contract);
-      if (!existing || p.pay_date > existing) {
-        purchasePaymentDateMap.set(p.purchase_contract, p.pay_date);
-      }
-    });
-
-    const purchaseInvoiceDateMap = new Map<string, string>();
-    purchaseInvoicesAll.forEach((inv) => {
-      if (!inv.receive_date) return;
-      const existing = purchaseInvoiceDateMap.get(inv.purchase_contract);
-      if (!existing || inv.receive_date > existing) {
-        purchaseInvoiceDateMap.set(inv.purchase_contract, inv.receive_date);
-      }
-    });
-
-    const salesReceiptDateMap = new Map<string, string>();
-    saleReceiptsAll.forEach((r) => {
-      if (!r.receive_date) return;
-      const existing = salesReceiptDateMap.get(r.sales_contract);
-      if (!existing || r.receive_date > existing) {
-        salesReceiptDateMap.set(r.sales_contract, r.receive_date);
-      }
-    });
-
-    const salesInvoiceDateMap = new Map<string, string>();
-    saleInvoicesAll.forEach((inv) => {
-      if (!inv.issue_date) return;
-      const existing = salesInvoiceDateMap.get(inv.sales_contract);
-      if (!existing || inv.issue_date > existing) {
-        salesInvoiceDateMap.set(inv.sales_contract, inv.issue_date);
-      }
-    });
-
-    const reportData: ReportData[] = [];
-    const salesContractMap = new Map<string, SalesContractData>();
-    const salesContractRows = new Map<string, number>();
-
-    salesContracts.forEach((sc) => {
-      salesContractMap.set(sc.id, sc);
-    });
-
-    purchaseContracts.forEach((pc) => {
-      const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
-
-      let salesContract: SalesContractData | undefined;
-      let customerName = '';
-      let salesSignDate = '';
-      let salesQuantity = 0;
-      let salesUnitPrice = 0;
-      let salesTotalAmount = 0;
-
-      if (pc.expand?.sales_contract) {
-        salesContract = salesContractMap.get(pc.expand.sales_contract.id);
-        if (salesContract) {
-          customerName = salesContract.expand?.customer?.name || '';
-          salesSignDate = salesContract.sign_date;
-          salesQuantity = salesContract.total_quantity;
-          salesUnitPrice = salesContract.unit_price;
-          const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
-          salesTotalAmount = salesContract.is_price_excluding_tax ? salesAmountCny : salesAmountCny / 1.13;
-
-          const existingCount = salesContractRows.get(pc.expand.sales_contract.id) || 0;
-          salesContractRows.set(pc.expand.sales_contract.id, existingCount + 1);
-        }
-      }
-
-      const supplierName = pc.expand?.supplier?.name || '';
-      const purchaseAmountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-      const purchaseTaxTotalAmount = purchaseAmountCny;
-      const purchaseTotalAmount = purchaseAmountCny / 1.13;
-      const arrivalDate = salesShipmentsMap.get(pc.expand?.sales_contract?.id || '') || '';
-
-      if (!salesContract) {
-        return;
-      }
-
-      reportData.push({
-        purchaseContractNo: pc.no,
-        purchaseSignDate: pc.sign_date,
-        productName: pc.product_name,
-        supplierName,
-        purchaseQuantity: pc.total_quantity,
-        purchaseUnitPrice: pc.unit_price,
-        purchaseTotalAmount,
-        purchaseTaxTotalAmount,
-        purchasePaymentDate: purchasePaymentDateMap.get(pc.id) || '',
-        purchaseInvoiceDate: purchaseInvoiceDateMap.get(pc.id) || '',
-        salesContractNo: salesContract.no,
-        salesSignDate,
-        customerName,
-        salesQuantity,
-        salesUnitPrice,
-        salesTotalAmount,
-        salesTaxTotalAmount: 0,
-        freight,
-        miscellaneous,
-        arrivalDate,
-        salesReceiptDate: salesReceiptDateMap.get(pc.expand?.sales_contract?.id || '') || '',
-        salesInvoiceDate: salesInvoiceDateMap.get(pc.expand?.sales_contract?.id || '') || '',
-        tax: 0,
-        profit: 0,
-        netProfit: 0,
-        realizedProfit: 0,
-        salesRowSpan: 0,
-        purchaseRowSpan: 1,
-        isSalesRow: false,
-      });
-    });
-
-    const salesContractRowCounts = new Map<string, number>();
-    const salesContractPurchaseTotal = new Map<string, number>();
-    const salesContractFreightTotal = new Map<string, number>();
-    const salesContractMiscTotal = new Map<string, number>();
-    const salesContractTaxTotal = new Map<string, number>();
-    const salesContractArrivedQty = new Map<string, number>();
-
-    reportData.forEach((row) => {
-      if (row.salesContractNo) {
-        const count = salesContractRowCounts.get(row.salesContractNo) || 0;
-        salesContractRowCounts.set(row.salesContractNo, count + 1);
-
-        const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
-        salesContractPurchaseTotal.set(row.salesContractNo, purchaseTotal + row.purchaseTotalAmount);
-
-        const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
-        salesContractFreightTotal.set(row.salesContractNo, freightTotal + row.freight);
-
-        const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
-        salesContractMiscTotal.set(row.salesContractNo, miscTotal + row.miscellaneous);
-
-        if (count === 0) {
-          for (const sc of salesContracts) {
-            if (sc.no === row.salesContractNo) {
-              const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
-              salesContractTaxTotal.set(row.salesContractNo, sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny);
-              break;
-            }
+    let changed = true;
+    while (changed) {
+      changed = false;
+      Array.from(selectedSalesIds).forEach((salesId) => {
+        (relationIndex.purchaseIdsBySales.get(salesId) || []).forEach((purchaseId) => {
+          if (!selectedPurchaseIds.has(purchaseId)) {
+            selectedPurchaseIds.add(purchaseId);
+            changed = true;
           }
-        }
-      }
-    });
-
-    salesContracts.forEach((sc) => {
-      const relatedPurchases = purchaseContracts.filter(
-        (pc) => pc.expand?.sales_contract?.id === sc.id || pc.sales_contract === sc.id
-      );
-      let arrivedQty = 0;
-      relatedPurchases.forEach((pc) => {
-        const arrivals = purchaseArrivalsMap.get(pc.id) || [];
-        arrivedQty += arrivalCostsCny(arrivals, rate).quantity;
+        });
       });
-      salesContractArrivedQty.set(sc.no, arrivedQty);
-    });
-
-    let currentSalesNo = '';
-
-    reportData.forEach((row) => {
-      const salesRowCount = salesContractRowCounts.get(row.salesContractNo) || 1;
-
-      if (row.salesContractNo !== currentSalesNo) {
-        currentSalesNo = row.salesContractNo;
-        row.salesRowSpan = salesRowCount;
-        const purchaseTotal = salesContractPurchaseTotal.get(row.salesContractNo) || 0;
-        const freightTotal = salesContractFreightTotal.get(row.salesContractNo) || 0;
-        const miscTotal = salesContractMiscTotal.get(row.salesContractNo) || 0;
-        const salesTaxTotal = salesContractTaxTotal.get(row.salesContractNo) || 0;
-        const purchaseTaxTotal = salesContractPurchaseTotal.get(row.salesContractNo) ? (purchaseTotal * 1.13) : 0;
-
-        row.salesTaxTotalAmount = salesTaxTotal;
-        row.tax = (salesTaxTotal - purchaseTaxTotal) * 0.1881;
-        row.profit = salesTaxTotal / 1.13 - purchaseTotal - freightTotal - miscTotal;
-        row.netProfit = salesTaxTotal / 1.13 - purchaseTotal - row.tax - miscTotal - freightTotal;
-
-        const sc = salesContracts.find((s) => s.no === row.salesContractNo);
-        const arrivedQty = salesContractArrivedQty.get(row.salesContractNo) || 0;
-        let realizedProfit = 0;
-        if (sc) {
-          const salesUnitPriceCny = sc.is_cross_border ? sc.unit_price * rate : sc.unit_price;
-          const isExTax = sc.is_price_excluding_tax;
-          const realizedSalesInc = salesUnitPriceCny * arrivedQty * (isExTax ? 1.13 : 1);
-          const realizedSalesEx = salesUnitPriceCny * arrivedQty * (isExTax ? 1 : 1 / 1.13);
-          const purchaseRatio = sc.total_quantity > 0 ? Math.min(arrivedQty / sc.total_quantity, 1) : 0;
-          const realizedPurchaseInc = purchaseTaxTotal * purchaseRatio;
-          const realizedTax = (realizedSalesInc - realizedPurchaseInc) * 0.1881;
-          const realizedFreight = freightTotal * purchaseRatio;
-          const realizedMisc = miscTotal * purchaseRatio;
-          realizedProfit = realizedSalesEx - realizedPurchaseInc / 1.13 - realizedTax - realizedFreight - realizedMisc;
-        }
-        row.realizedProfit = realizedProfit;
-      } else {
-        row.salesRowSpan = 0;
-        row.salesTaxTotalAmount = 0;
-        row.profit = 0;
-        row.tax = 0;
-        row.netProfit = 0;
-        row.realizedProfit = 0;
-      }
-    });
-
-    salesContracts.forEach((sc) => {
-      const relatedPurchases = purchaseContracts.filter(
-        (pc) => pc.expand?.sales_contract?.id === sc.id || pc.sales_contract === sc.id
-      );
-
-      if (relatedPurchases.length > 0) {
-        return;
-      }
-
-      const arrivals = purchaseArrivalsMap.get(sc.id) || [];
-      const { freight, miscellaneous } = arrivalCostsCny(arrivals, rate);
-
-      const scAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
-      const salesExTax = sc.is_price_excluding_tax ? scAmountCny : scAmountCny / 1.13;
-      const salesIncTax = sc.is_price_excluding_tax ? scAmountCny * 1.13 : scAmountCny;
-
-      reportData.push({
-        purchaseContractNo: '',
-        purchaseSignDate: '',
-        productName: sc.product_name,
-        supplierName: '',
-        purchaseQuantity: 0,
-        purchaseUnitPrice: 0,
-        purchaseTotalAmount: 0,
-        purchaseTaxTotalAmount: 0,
-        purchasePaymentDate: '',
-        purchaseInvoiceDate: '',
-        salesContractNo: sc.no,
-        salesSignDate: sc.sign_date,
-        customerName: sc.expand?.customer?.name || '',
-        salesQuantity: sc.total_quantity,
-        salesUnitPrice: sc.unit_price,
-        salesTotalAmount: salesExTax,
-        salesTaxTotalAmount: salesIncTax,
-        freight,
-        miscellaneous,
-        arrivalDate: salesShipmentsMap.get(sc.id) || '',
-        salesReceiptDate: salesReceiptDateMap.get(sc.id) || '',
-        salesInvoiceDate: salesInvoiceDateMap.get(sc.id) || '',
-        tax: salesIncTax * 0.1881,
-        profit: salesExTax - freight - miscellaneous,
-        netProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
-        realizedProfit: salesExTax - salesIncTax * 0.1881 - freight - miscellaneous,
-        salesRowSpan: 1,
-        purchaseRowSpan: 1,
-        isSalesRow: true,
+      Array.from(selectedPurchaseIds).forEach((purchaseId) => {
+        (relationIndex.salesIdsByPurchase.get(purchaseId) || []).forEach((salesId) => {
+          if (!selectedSalesIds.has(salesId)) {
+            selectedSalesIds.add(salesId);
+            changed = true;
+          }
+        });
       });
-    });
+    }
 
-    const summary: ReportSummary = {
-      totalSalesAmount: 0,
-      totalPurchaseAmount: 0,
-      totalSalesTaxAmount: 0,
-      totalPurchaseTaxAmount: 0,
-      totalTax: 0,
-      totalFreight: 0,
-      totalMiscellaneous: 0,
-      totalProfit: 0,
-      totalNetProfit: 0,
-      totalRealizedProfit: 0,
-    };
-
-    const processedSalesContracts = new Set<string>();
-    const processedPurchaseContracts = new Set<string>();
-
-    reportData.forEach((row) => {
-      if (row.purchaseContractNo && !processedPurchaseContracts.has(row.purchaseContractNo)) {
-        summary.totalPurchaseAmount += row.purchaseTotalAmount;
-        summary.totalPurchaseTaxAmount += row.purchaseTaxTotalAmount;
-        summary.totalFreight += row.freight;
-        summary.totalMiscellaneous += row.miscellaneous;
-        processedPurchaseContracts.add(row.purchaseContractNo);
-      }
-
-      if (row.salesContractNo && !processedSalesContracts.has(row.salesContractNo)) {
-        summary.totalSalesAmount += row.salesTotalAmount;
-        summary.totalSalesTaxAmount += row.salesTaxTotalAmount;
-        processedSalesContracts.add(row.salesContractNo);
-      }
-
-      summary.totalProfit += row.profit;
-      summary.totalNetProfit += row.netProfit;
-      summary.totalRealizedProfit += row.realizedProfit;
-    });
-
-    summary.totalTax = (summary.totalSalesTaxAmount - summary.totalPurchaseTaxAmount) * 0.1881;
-
-    return { data: reportData, summary };
+    return buildReport(
+      allSales.filter((contract) => selectedSalesIds.has(contract.id)),
+      allPurchases.filter((contract) => selectedPurchaseIds.has(contract.id)),
+      rate,
+      allSales,
+      allPurchases,
+    );
   },
 };

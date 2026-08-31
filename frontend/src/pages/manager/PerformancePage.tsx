@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, Table, Tabs, DatePicker, Button, Space, Modal } from 'antd';
 import dayjs from 'dayjs';
 import { PerformanceAPI } from '@/api/performance';
@@ -58,7 +58,7 @@ export const PerformancePage: React.FC = () => {
   const [modalTitle, setModalTitle] = useState('');
   const [modalContracts, setModalContracts] = useState<ContractDetail[]>([]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const start = dateRange?.[0]?.format('YYYY-MM-DD') || undefined;
@@ -76,11 +76,11 @@ export const PerformancePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateRange]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleRowClick = (record: UserPerformance) => {
     setModalTitle(`${record.userName} 的合同明细`);

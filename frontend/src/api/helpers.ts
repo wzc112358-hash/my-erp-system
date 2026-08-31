@@ -1,4 +1,15 @@
 import { pb } from '@/lib/pocketbase';
+import { assertAttachmentFileSize } from '@/utils/file';
+
+export class RecordCreatedAttachmentError extends Error {
+  readonly recordId: string;
+
+  constructor(recordId: string, detail: string, cause: unknown) {
+    super(`记录已创建，但附件上传失败：${detail}。请进入记录详情重新上传附件，不要重复创建。`, { cause });
+    this.name = 'RecordCreatedAttachmentError';
+    this.recordId = recordId;
+  }
+}
 
 /**
  * PocketBase rejects filter expressions with 90+ OR conditions with a 400
@@ -40,13 +51,23 @@ export const createWithAttachments = async <T>(
   formDataWithoutFiles: FormData,
   attachments: (File | string)[] | undefined,
 ): Promise<T> => {
+  assertAttachmentFileSize(attachments);
   const record = await pb.collection(collectionName).create<T>(formDataWithoutFiles);
 
   const files = (attachments || []).filter((f) => f instanceof File);
   if (files.length > 0) {
     const fileFormData = new FormData();
     files.forEach((file) => fileFormData.append('attachments', file as File));
-    return await pb.collection(collectionName).update<T>((record as { id: string }).id, fileFormData);
+    const recordId = (record as { id: string }).id;
+    try {
+      return await pb.collection(collectionName).update<T>(recordId, fileFormData);
+    } catch (error) {
+      throw new RecordCreatedAttachmentError(
+        recordId,
+        getPbErrorMessage(error, '请检查网络或附件格式'),
+        error,
+      );
+    }
   }
 
   return record;

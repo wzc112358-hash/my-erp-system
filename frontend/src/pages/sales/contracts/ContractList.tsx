@@ -1,11 +1,20 @@
 import { getPbErrorMessage } from '@/api/helpers';
-import { useState, useEffect } from 'react';
-import { Table, Button, Space, Form, Input, Select, App, Popconfirm, Modal, Progress, Tag } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
+import { useState, useEffect, useMemo } from 'react';
+import { Table, Button, Space, Form, Input, Select, App, Popconfirm, Modal, Progress, Tag, Tooltip, Segmented } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { SalesContractAPI } from '@/api/sales-contract';
+import { PurchaseContractAPI } from '@/api/purchase-contract';
+import { ComparisonAPI } from '@/api/comparison';
 import type { SalesContract, SalesContractFormData } from '@/types/sales-contract';
+import type { PurchaseContract } from '@/types/purchase-contract';
+import { ContractLinkModal } from '@/components/common/ContractLinkModal';
+import {
+  hasSalesContractRelation,
+  matchesContractRelationFilter,
+  type ContractRelationFilter,
+} from '@/lib/contract-relations';
 import { ContractForm } from './ContractForm';
 import { extractAttachments } from '@/utils/file';
 
@@ -21,26 +30,23 @@ export const ContractList: React.FC = () => {
   const { message } = App.useApp();
   const [data, setData] = useState<SalesContract[]>([]);
   const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string | undefined>();
+  const [relationFilter, setRelationFilter] = useState<ContractRelationFilter>('all');
   const [formVisible, setFormVisible] = useState(false);
   const [editingContract, setEditingContract] = useState<SalesContract | null>(null);
+  const [purchaseContracts, setPurchaseContracts] = useState<PurchaseContract[]>([]);
+  const [linkingContract, setLinkingContract] = useState<SalesContract | null>(null);
+  const [linking, setLinking] = useState(false);
   const [form] = Form.useForm();
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const result = await SalesContractAPI.list({
-        page,
-        per_page: pageSize,
-        search: search || undefined,
-        status,
-      });
+      const result = await SalesContractAPI.getOptions();
       setData(result.items);
-      setTotal(result.totalItems);
     } catch (err) {
       const error = err as { name?: string; message?: string; cause?: { name?: string } };
       const isAborted =
@@ -59,10 +65,24 @@ export const ContractList: React.FC = () => {
     }
   };
 
+  const fetchLinkTargets = async () => {
+    try {
+      const result = await PurchaseContractAPI.getOptions();
+      setPurchaseContracts(result.items);
+    } catch (error) {
+      message.error(getPbErrorMessage(error, '加载采购合同失败'));
+    }
+  };
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, search, status]);
+  }, []);
+
+  useEffect(() => {
+    fetchLinkTargets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const purchaseContractId = searchParams.get('purchaseContract');
@@ -73,11 +93,10 @@ export const ContractList: React.FC = () => {
       setFormVisible(true);
       window.history.replaceState({}, '', '/sales/contracts');
     }
-  }, [searchParams]);
+  }, [searchParams, form]);
 
   const handleSearch = () => {
     setPage(1);
-    fetchData();
   };
 
   const handleAdd = () => {
@@ -128,6 +147,21 @@ export const ContractList: React.FC = () => {
     navigate(`/sales/contracts/${record.id}`);
   };
 
+  const handleLink = async (purchaseId: string) => {
+    if (!linkingContract) return;
+    setLinking(true);
+    try {
+      await ComparisonAPI.linkPurchaseToSales(purchaseId, linkingContract.id);
+      message.success('合同关联成功');
+      setLinkingContract(null);
+      await Promise.all([fetchData(), fetchLinkTargets()]);
+    } catch (error) {
+      message.error(getPbErrorMessage(error, '合同关联失败'));
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const handleFormFinish = async (values: SalesContractFormData) => {
     let attachments: (File | string)[] | undefined;
     
@@ -165,6 +199,20 @@ export const ContractList: React.FC = () => {
     }
   };
 
+  const filteredData = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return data.filter((contract) => {
+      const hasRelation = hasSalesContractRelation(contract, purchaseContracts);
+      const matchesSearch = !normalizedSearch
+        || contract.no.toLowerCase().includes(normalizedSearch)
+        || contract.product_name.toLowerCase().includes(normalizedSearch);
+      const matchesStatus = !status || contract.status === status;
+      return matchesSearch
+        && matchesStatus
+        && matchesContractRelationFilter(hasRelation, relationFilter);
+    });
+  }, [data, purchaseContracts, relationFilter, search, status]);
+
   const columns = [
     {
       title: '合同编号',
@@ -177,6 +225,15 @@ export const ContractList: React.FC = () => {
       dataIndex: 'product_name',
       key: 'product_name',
       width: 140,
+    },
+    {
+      title: '关联状态',
+      key: 'relation_status',
+      width: 110,
+      render: (_: unknown, record: SalesContract) => {
+        const hasRelation = hasSalesContractRelation(record, purchaseContracts);
+        return <Tag color={hasRelation ? 'green' : 'gold'}>{hasRelation ? '已关联合同' : '独立合同'}</Tag>;
+      },
     },
     {
       title: '签订日期',
@@ -253,7 +310,7 @@ export const ContractList: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 160,
       fixed: 'right' as const,
       render: (_: unknown, record: SalesContract) => (
         <Space size="small">
@@ -267,6 +324,15 @@ export const ContractList: React.FC = () => {
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           />
+          {!hasSalesContractRelation(record, purchaseContracts) && (
+            <Tooltip title="关联合同">
+              <Button
+                type="text"
+                icon={<LinkOutlined />}
+                onClick={() => setLinkingContract(record)}
+              />
+            </Tooltip>
+          )}
           <Popconfirm
             title="确定删除此合同？"
             onConfirm={() => handleDelete(record.id)}
@@ -289,10 +355,28 @@ export const ContractList: React.FC = () => {
       <div style={{ marginBottom: 16 }}>
         <Form layout="inline">
           <Form.Item>
+            <Segmented
+              aria-label="合同关联状态"
+              value={relationFilter}
+              onChange={(value) => {
+                setRelationFilter(value as ContractRelationFilter);
+                setPage(1);
+              }}
+              options={[
+                { label: '全部合同', value: 'all' },
+                { label: '独立合同', value: 'unlinked' },
+                { label: '关联合同', value: 'linked' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item>
             <Input
               placeholder="搜索合同编号或产品名称"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               onPressEnter={handleSearch}
               style={{ width: 220 }}
             />
@@ -301,7 +385,10 @@ export const ContractList: React.FC = () => {
             <Select
               placeholder="选择状态"
               value={status}
-              onChange={setStatus}
+              onChange={(value) => {
+                setStatus(value);
+                setPage(1);
+              }}
               allowClear
               style={{ width: 120 }}
               options={[
@@ -326,13 +413,13 @@ export const ContractList: React.FC = () => {
 
       <Table
         columns={columns}
-        dataSource={data}
+        dataSource={filteredData}
         rowKey="id"
         loading={loading}
         pagination={{
           current: page,
           pageSize,
-          total,
+          total: filteredData.length,
           showSizeChanger: true,
           showTotal: (total) => `共 ${total} 条`,
           onChange: (p: number, ps: number) => {
@@ -358,6 +445,24 @@ export const ContractList: React.FC = () => {
           initialValues={editingContract}
         />
       </Modal>
+
+      <ContractLinkModal
+        open={linkingContract !== null}
+        source={linkingContract ? {
+          id: linkingContract.id,
+          no: linkingContract.no,
+          productName: linkingContract.product_name,
+        } : undefined}
+        targetLabel="采购合同"
+        targets={purchaseContracts.map((contract) => ({
+          id: contract.id,
+          no: contract.no,
+          productName: contract.product_name,
+        }))}
+        confirmLoading={linking}
+        onCancel={() => setLinkingContract(null)}
+        onConfirm={handleLink}
+      />
     </div>
   );
 };

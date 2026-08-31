@@ -12,19 +12,47 @@ CONFIG_FILE="/root/.ossutilconfig"
 BUCKET="erp-backup-henghuacheng"
 ENDPOINT="oss-cn-hangzhou.aliyuncs.com"   # ECS 在北京、OSS 在杭州，跨地域走外网
 ERP_DIR="/root/my-erp-system"
-BACKUP_DIR="/tmp/erp-backup-staging"       # 临时打包目录
+BACKUP_ROOT="/tmp/erp-backup-staging"
+LOCAL_FALLBACK_DIR="$ERP_DIR/backups/daily-local"
+LOCAL_FALLBACK_KEEP=7
 LOG_FILE="/var/log/erp-backup.log"
+OSSUTIL_BIN="/usr/local/bin/ossutil64"
 
 TS=$(date +%Y%m%d_%H%M%S)
 DATE_TAG=$(date +%Y%m%d)       # 用于 OSS 路径分组
 WEEK_TAG=$(date +%Y_w%V)       # 周备路径
+BACKUP_DIR="${BACKUP_ROOT}/${TS}"
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG_FILE"; }
 
+preserve_local_fallback() {
+  mkdir -p "$LOCAL_FALLBACK_DIR"
+  local fallback_archive="$LOCAL_FALLBACK_DIR/$(basename "$ARCHIVE")"
+  mv "$ARCHIVE" "$fallback_archive"
+  rm -rf "$BACKUP_DIR"
+
+  mapfile -t local_archives < <(
+    find "$LOCAL_FALLBACK_DIR" -maxdepth 1 -type f -name 'erp-backup-*.tar.gz' \
+      -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2-
+  )
+  for ((i = LOCAL_FALLBACK_KEEP; i < ${#local_archives[@]}; i++)); do
+    rm -f -- "${local_archives[$i]}"
+  done
+
+  log "  本地兜底备份已保留: $fallback_archive"
+  log "  本地兜底策略: 最近 $LOCAL_FALLBACK_KEEP 份"
+}
+
 # ---- 0. 前置检查 ----
+# 云端不可用不能阻止本地备份，先完成快照，再转存到持久目录。
+OSS_AVAILABLE=1
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[FATAL] ossutil 配置文件 $CONFIG_FILE 不存在，无法备份" >&2
-  exit 1
+  OSS_AVAILABLE=0
+  log "  OSS 配置文件不存在，将只保留本地备份: $CONFIG_FILE"
+fi
+if [ ! -x "$OSSUTIL_BIN" ]; then
+  OSS_AVAILABLE=0
+  log "  ossutil 不可执行，将只保留本地备份: $OSSUTIL_BIN"
 fi
 
 mkdir -p "$BACKUP_DIR"
@@ -82,12 +110,19 @@ log "  总包大小: $ARCHIVE_SIZE"
 
 # 上传到 OSS（日备路径）
 OSS_PATH="oss://${BUCKET}/daily/${DATE_TAG}/erp-backup-${TS}.tar.gz"
-if ! ossutil64 cp "$ARCHIVE" "$OSS_PATH" \
+if [ "$OSS_AVAILABLE" -ne 1 ]; then
+  preserve_local_fallback
+  log "========== 本地备份完成，OSS 未尝试 (耗时约 $SECONDS 秒) =========="
+  exit 0
+fi
+if ! "$OSSUTIL_BIN" cp "$ARCHIVE" "$OSS_PATH" \
   -c "$CONFIG_FILE" \
   -e "$ENDPOINT" \
   --force 2>>"$LOG_FILE"; then
-  log "  ❌ OSS 日备上传失败，本地归档已保留: $ARCHIVE"
-  exit 1
+  log "  OSS 日备上传失败，启用本地兜底"
+  preserve_local_fallback
+  log "========== 本地备份完成，OSS 上传失败 (耗时约 $SECONDS 秒) =========="
+  exit 0
 fi
 log "  ✅ 已上传日备: $OSS_PATH"
 
@@ -95,14 +130,14 @@ log "  ✅ 已上传日备: $OSS_PATH"
 DOW=$(date +%u)  # 1=周一 ... 7=周日
 if [ "$DOW" = "7" ]; then
   WEEK_PATH="oss://${BUCKET}/weekly/${WEEK_TAG}/erp-backup-${TS}.tar.gz"
-  if ! ossutil64 cp "$ARCHIVE" "$WEEK_PATH" \
+  if ! "$OSSUTIL_BIN" cp "$ARCHIVE" "$WEEK_PATH" \
     -c "$CONFIG_FILE" \
     -e "$ENDPOINT" \
     --force 2>>"$LOG_FILE"; then
-    log "  ❌ OSS 周备上传失败，本地归档已保留: $ARCHIVE"
-    exit 1
+    log "  OSS 周备上传失败；日备已上传成功，继续完成清理"
+  else
+    log "  ✅ 已上传周备（周日）: $WEEK_PATH"
   fi
-  log "  ✅ 已上传周备（周日）: $WEEK_PATH"
 fi
 
 # ---- 5. 清理本地临时文件 ----

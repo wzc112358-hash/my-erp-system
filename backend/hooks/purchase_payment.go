@@ -36,7 +36,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(payments, "product_amount") + newPaymentProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量"); err != nil {
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量", "product_amount"); err != nil {
 				return err
 			}
 
@@ -71,7 +71,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumChildFieldExcluding(payments, "product_amount", currentPaymentId, newPaymentProductAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			oldRecord, _ := GetRecordById(app, "purchase_payments", e.Record.Id)
+			oldRecord := e.Record.Original()
 			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量"); err != nil {
 				return err
@@ -118,6 +118,9 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			if isContractCascadeDelete(e.Context) {
+				return e.Next()
+			}
 			return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), nil)
 		},
 		Priority: 0,

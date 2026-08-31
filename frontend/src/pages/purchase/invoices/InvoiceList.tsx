@@ -1,10 +1,10 @@
 import { getPbErrorMessage } from '@/api/helpers';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Select, Tag } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
-import type { PurchaseInvoice } from '@/types/purchase-contract';
+import type { PurchaseInvoice, PurchaseInvoiceFormData } from '@/types/purchase-contract';
 import { InvoiceForm } from './InvoiceForm';
 import { pb } from '@/lib/pocketbase';
 
@@ -41,10 +41,11 @@ export const InvoiceList: React.FC = () => {
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const result = await pb.collection('purchase_contracts').getList(1, 100, {
+        const contracts = await pb.collection('purchase_contracts').getFullList({
           filter: 'status = "executing"',
+          sort: '-created_at',
         });
-        const options = result.items.map((item: Record<string, unknown>) => ({
+        const options = contracts.map((item: Record<string, unknown>) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
         }));
@@ -56,7 +57,7 @@ export const InvoiceList: React.FC = () => {
     fetchContracts();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const result = await PurchaseInvoiceAPI.list({
@@ -83,11 +84,11 @@ export const InvoiceList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, search, contractId, message]);
 
   useEffect(() => {
     fetchData();
-  }, [page, pageSize, search, contractId]);
+  }, [fetchData]);
 
   const handleSearch = () => {
     setPage(1);
@@ -317,7 +318,7 @@ export const InvoiceList: React.FC = () => {
               status: 'done',
               url: name,
             })),
-          } as any : initialFormValues}
+          } as unknown as Partial<PurchaseInvoiceFormData> & Record<string, unknown> : initialFormValues}
           onFinish={handleFormFinish}
           onCancel={() => setFormVisible(false)}
         />

@@ -5,10 +5,11 @@ import dayjs from 'dayjs';
 import { PurchaseContractAPI, SalesContractAPI } from '@/api/purchase-arrival';
 import type { PurchaseArrivalFormData } from '@/types/purchase-arrival';
 import { extractAttachments } from '@/utils/file';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ArrivalFormProps {
   initialValues?: Partial<PurchaseArrivalFormData>;
-  onFinish: (values: Record<string, unknown>) => void;
+  onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -23,6 +24,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
   const [salesContractOptions, setSalesContractOptions] = useState<{ label: string; value: string }[]>([]);
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [wetherTransit, setWetherTransit] = useState<'yes' | 'no'>('no');
+  const { submit, submitting } = useAsyncSubmit(onFinish);
 
   useEffect(() => {
     const fetchContracts = async () => {
@@ -102,7 +104,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
     }
   };
 
-  const handleFinish = (values: Record<string, unknown>) => {
+  const handleFinish = async (values: Record<string, unknown>) => {
     const fileList = values.attachments as { originFileObj?: File }[] | undefined;
     const attachments = extractAttachments(fileList);
     
@@ -135,7 +137,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       value_added_tax: values.value_added_tax !== undefined ? Number(values.value_added_tax) : undefined,
       attachments,
     };
-    onFinish(data as unknown as Record<string, unknown>);
+    await submit(data as unknown as Record<string, unknown>);
   };
 
   return (
@@ -505,7 +507,7 @@ export const ArrivalForm: React.FC<ArrivalFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

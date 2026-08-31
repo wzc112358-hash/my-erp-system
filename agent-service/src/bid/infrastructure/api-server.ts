@@ -20,6 +20,7 @@ import { createLocalHelperPairing } from './local-helper-pairing.ts';
 import { PocketBaseBidNoticeRepository } from './pocketbase-repository.ts';
 import { PocketBaseClient, type PocketBaseRecord } from './pocketbase-client.ts';
 import { PocketBaseBidRunRepository, type BidSourceRecord } from './run-repository.ts';
+import { pruneExpiredAndLimit } from './bounded-cache.ts';
 
 type JsonResponse = http.ServerResponse<http.IncomingMessage>;
 
@@ -137,6 +138,7 @@ type ErpIdentity = {
 };
 
 const tokenCache = new Map<string, { expiresAt: number; identity: ErpIdentity }>();
+const TOKEN_CACHE_LIMIT = 500;
 
 const authenticateErpToken = async ({
   request,
@@ -153,6 +155,7 @@ const authenticateErpToken = async ({
   const cacheKey = `${region}:${digest}`;
   const cached = tokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.identity;
+  if (cached) tokenCache.delete(cacheKey);
   const baseUrl = region === 'lanzhou'
     ? env.ERP_LANZHOU_API_URL || 'https://api-lanzhou.henghuacheng.cn'
     : env.ERP_BEIJING_API_URL || env.POCKETBASE_URL || 'https://api-beijing.henghuacheng.cn';
@@ -171,7 +174,9 @@ const authenticateErpToken = async ({
     region,
   };
   if (!identity.id) return null;
+  tokenCache.delete(cacheKey);
   tokenCache.set(cacheKey, { expiresAt: Date.now() + 5 * 60_000, identity });
+  pruneExpiredAndLimit(tokenCache, TOKEN_CACHE_LIMIT);
   return identity;
 };
 

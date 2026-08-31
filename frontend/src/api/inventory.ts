@@ -1,5 +1,6 @@
 import { pb } from '@/lib/pocketbase';
 import { createWithAttachments } from './helpers';
+import { assertAttachmentFileSize } from '@/utils/file';
 
 import type {
   Inventory,
@@ -47,9 +48,14 @@ export const InventoryAPI = {
   },
 
   update: async (id: string, data: Partial<InventoryFormData>) => {
+    assertAttachmentFileSize(data.attachments);
     const formData = new FormData();
     if (data.product_name !== undefined) formData.append('product_name', data.product_name);
     if (data.remark !== undefined) formData.append('remark', data.remark || '');
+    if (data.attachments !== undefined) {
+      formData.append('attachments', '');
+      data.attachments.forEach((attachment) => formData.append('attachments', attachment));
+    }
     return pb.collection('inventory').update<Inventory>(id, formData);
   },
 

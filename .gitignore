@@ -32,6 +32,10 @@ backend/pb_migrations/*
 !backend/pb_migrations/202607300001_create_local_helper_pairing_devices.js
 !backend/pb_migrations/202607300002_repair_local_helper_pairing_device_fields.js
 !backend/pb_migrations/202608090001_add_cncec_bid_source.js
+!backend/pb_migrations/202608250001_increase_attachment_upload_limit.js
+!backend/pb_migrations/202608260001_increase_attachment_upload_limit_100mb.js
+!backend/pb_migrations/202608260002_create_contract_operation_logs.js
+!backend/pb_migrations/202608270001_repair_contract_operation_logs.js
 
 # Backend binary
 backend/pocketbase

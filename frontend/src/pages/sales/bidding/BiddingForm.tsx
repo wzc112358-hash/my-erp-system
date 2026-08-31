@@ -6,10 +6,11 @@ import { useEffect, useState } from 'react';
 import { pb } from '@/lib/pocketbase';
 import type { BiddingRecordFormData, BiddingRecord } from '@/types/bidding-record';
 import { BiddingBusinessFields } from './BiddingBusinessFields';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface BiddingFormProps {
   form: FormInstance<BiddingRecordFormData>;
-  onFinish: (values: BiddingRecordFormData) => void;
+  onFinish: (values: BiddingRecordFormData) => void | Promise<void>;
   onCancel: () => void;
   initialValues?: BiddingRecord | null;
 }
@@ -21,6 +22,7 @@ interface SalesContractOption {
 }
 
 export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCancel, initialValues }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   const [contractOptions, setContractOptions] = useState<SalesContractOption[]>([]);
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       initialValues={
         initialValues
           ? {
@@ -274,7 +276,7 @@ export const BiddingForm: React.FC<BiddingFormProps> = ({ form, onFinish, onCanc
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

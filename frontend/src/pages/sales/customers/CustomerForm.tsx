@@ -1,18 +1,20 @@
 import { Form, Input, Button, Row, Col, Space } from 'antd';
 import type { CustomerFormData } from '@/types/customer';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface CustomerFormProps {
   form: typeof Form.prototype;
-  onFinish: (values: CustomerFormData) => void;
+  onFinish: (values: CustomerFormData) => void | Promise<void>;
   onCancel: () => void;
 }
 
 export const CustomerForm: React.FC<CustomerFormProps> = ({ form, onFinish, onCancel }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   return (
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       initialValues={{
         name: '',
         contact: '',
@@ -93,7 +95,7 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ form, onFinish, onCa
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
 import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -31,7 +31,7 @@ export const NotificationList: React.FC = () => {
   const [selectedContract, setSelectedContract] = useState<SalesContract | null>(null);
   const [contractLoading, setContractLoading] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const result = await NotificationAPI.list({
@@ -47,11 +47,11 @@ export const NotificationList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, message]);
 
   useEffect(() => {
     fetchData();
-  }, [page, pageSize]);
+  }, [fetchData]);
 
   const handleViewDetail = async (record: Notification) => {
     try {

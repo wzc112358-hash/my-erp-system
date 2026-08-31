@@ -72,9 +72,10 @@ export const SaleInvoiceAPI = {
 
 export const SalesContractAPI = {
   getOptions: async () => {
-    const result = await pb.collection('sales_contracts').getList(1, 100, {
+    const items = await pb.collection('sales_contracts').getFullList({
       filter: 'status = "executing"',
+      sort: '-created_at',
     });
-    return result;
+    return { items };
   },
 };

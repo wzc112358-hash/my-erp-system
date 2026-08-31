@@ -1,5 +1,5 @@
 import { getPbErrorMessage } from '@/api/helpers';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Table,
@@ -56,34 +56,10 @@ const InventoryPage: React.FC = () => {
 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [movementFileList, setMovementFileList] = useState<UploadFile[]>([]);
-
-  // Handle navigation state for opening modals from detail page
-  useEffect(() => {
-    const state = location.state as { 
-      openEditModal?: boolean; 
-      openMovementModal?: boolean; 
-      inventoryId?: string;
-      movementType?: 'in' | 'out';
-    } | null;
-    
-    if (!state?.inventoryId || inventoryList.length === 0) return;
-    
-    if (state?.openEditModal) {
-      const record = inventoryList.find(i => i.id === state.inventoryId);
-      if (record) {
-        handleEdit(record);
-        // Only clear state after successfully opening the modal
-        navigate(location.pathname, { replace: true, state: {} });
-      }
-    } else if (state?.openMovementModal) {
-      const record = inventoryList.find(i => i.id === state.inventoryId);
-      if (record) {
-        handleMovement(record, state.movementType || 'in');
-        // Only clear state after successfully opening the modal
-        navigate(location.pathname, { replace: true, state: {} });
-      }
-    }
-  }, [location.state, inventoryList]);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [movementSubmitting, setMovementSubmitting] = useState(false);
+  const formSubmitLock = useRef(false);
+  const movementSubmitLock = useRef(false);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -110,7 +86,7 @@ const InventoryPage: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleEdit = (record: Inventory) => {
+  const handleEdit = useCallback((record: Inventory) => {
     setModalType('edit');
     setSelectedInventory(record);
     form.setFieldsValue({
@@ -127,13 +103,13 @@ const InventoryPage: React.FC = () => {
     }));
     setFileList(existingFiles);
     setModalVisible(true);
-  };
+  }, [form]);
 
   const handleView = (record: Inventory) => {
     navigate(`/manager/inventory/${record.id}`);
   };
 
-  const handleMovement = (record: Inventory, type: 'in' | 'out') => {
+  const handleMovement = useCallback((record: Inventory, type: 'in' | 'out') => {
     setSelectedInventory(record);
     setMovementType(type);
     movementForm.resetFields();
@@ -144,7 +120,30 @@ const InventoryPage: React.FC = () => {
     });
     setMovementFileList([]);
     setMovementModalVisible(true);
-  };
+  }, [movementForm]);
+
+  // Handle navigation state for opening modals from detail page.
+  useEffect(() => {
+    const state = location.state as {
+      openEditModal?: boolean;
+      openMovementModal?: boolean;
+      inventoryId?: string;
+      movementType?: 'in' | 'out';
+    } | null;
+
+    if (!state?.inventoryId || inventoryList.length === 0) return;
+
+    const record = inventoryList.find((item) => item.id === state.inventoryId);
+    if (!record) return;
+
+    if (state.openEditModal) {
+      handleEdit(record);
+      navigate(location.pathname, { replace: true, state: {} });
+    } else if (state.openMovementModal) {
+      handleMovement(record, state.movementType || 'in');
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [handleEdit, handleMovement, inventoryList, location.pathname, location.state, navigate]);
 
   const handleQuantitySave = async (record: Inventory) => {
     try {
@@ -172,6 +171,9 @@ const InventoryPage: React.FC = () => {
   };
 
   const handleFormSubmit = async () => {
+    if (formSubmitLock.current) return;
+    formSubmitLock.current = true;
+    setFormSubmitting(true);
     try {
       const values = await form.validateFields();
 
@@ -205,10 +207,16 @@ const InventoryPage: React.FC = () => {
     } catch (error) {
       console.error('Form submit error:', error);
       message.error(getPbErrorMessage(error, '操作失败'));
+    } finally {
+      formSubmitLock.current = false;
+      setFormSubmitting(false);
     }
   };
 
   const handleMovementSubmit = async () => {
+    if (movementSubmitLock.current) return;
+    movementSubmitLock.current = true;
+    setMovementSubmitting(true);
     try {
       const values = await movementForm.validateFields();
       const inventory = selectedInventory;
@@ -228,37 +236,15 @@ const InventoryPage: React.FC = () => {
         attachments,
       });
 
-      const newRemaining = values.movement_type === 'in'
-        ? inventory.remaining_quantity + values.quantity
-        : inventory.remaining_quantity - values.quantity;
-
-      const newTotalIn = values.movement_type === 'in'
-        ? inventory.total_in_quantity + values.quantity
-        : inventory.total_in_quantity;
-
-      const newTotalOut = values.movement_type === 'out'
-        ? inventory.total_out_quantity + values.quantity
-        : inventory.total_out_quantity;
-
-      const now = new Date().toISOString();
-
-      const updateData = new FormData();
-      updateData.append('remaining_quantity', String(newRemaining));
-      updateData.append('total_in_quantity', String(newTotalIn));
-      updateData.append('total_out_quantity', String(newTotalOut));
-      if (values.movement_type === 'in') {
-        updateData.append('last_in_date', now);
-      } else {
-        updateData.append('last_out_date', now);
-      }
-      await pb.collection('inventory').update(inventory.id, updateData);
-
       message.success(values.movement_type === 'in' ? '入库成功' : '出库成功');
       setMovementModalVisible(false);
       fetchInventory();
     } catch (error) {
       console.error('Movement submit error:', error);
       message.error(getPbErrorMessage(error, '操作失败'));
+    } finally {
+      movementSubmitLock.current = false;
+      setMovementSubmitting(false);
     }
   };
 
@@ -390,7 +376,7 @@ const InventoryPage: React.FC = () => {
           <Button key="cancel" onClick={() => setModalVisible(false)}>
             取消
           </Button>,
-          <Button key="submit" type="primary" onClick={handleFormSubmit}>
+          <Button key="submit" type="primary" loading={formSubmitting} onClick={handleFormSubmit}>
             {modalType === 'create' ? '创建' : '保存'}
           </Button>,
         ]}
@@ -430,7 +416,7 @@ const InventoryPage: React.FC = () => {
           <Button key="cancel" onClick={() => setMovementModalVisible(false)}>
             取消
           </Button>,
-          <Button key="submit" type="primary" onClick={handleMovementSubmit}>
+          <Button key="submit" type="primary" loading={movementSubmitting} onClick={handleMovementSubmit}>
             确认
           </Button>,
         ]}

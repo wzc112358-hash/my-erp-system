@@ -1,4 +1,3 @@
-import { getPbErrorMessage } from '@/api/helpers';
 import { useEffect, useState } from 'react';
 import { Form, Input, InputNumber, Select, DatePicker, Upload, Button, Row, Col, App, Space, Switch, Alert } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
@@ -7,6 +6,7 @@ import { getUsdToCnyRate, formatRemainingAmount } from '@/lib/exchange-rate';
 import type { SaleReceipt } from '@/types';
 import dayjs from 'dayjs';
 import { extractAttachments } from '@/utils/file';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface ContractOption {
   label: string;
@@ -19,7 +19,7 @@ interface ContractOption {
 
 interface ReceiptFormProps {
   initialValues?: Partial<SaleReceipt>;
-  onFinish: (values: Record<string, unknown>) => void;
+  onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -31,9 +31,10 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   const [form] = Form.useForm();
   const { message } = App.useApp();
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedContract, setSelectedContract] = useState<ContractOption | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+  const { submit, submitting } = useAsyncSubmit(onFinish);
+  const selectedContractId = Form.useWatch('sales_contract', form);
+  const selectedContract = contractOptions.find((contract) => contract.value === selectedContractId) || null;
 
   useEffect(() => {
     getUsdToCnyRate().then(setExchangeRate);
@@ -42,10 +43,11 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const result = await pb.collection('sales_contracts').getList(1, 100, {
+        const contracts = await pb.collection('sales_contracts').getFullList({
           filter: 'status = "executing"',
+          sort: '-created_at',
         });
-        const options = result.items.map((item: Record<string, unknown>) => ({
+        const options = contracts.map((item: Record<string, unknown>) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
           unit_price: item.unit_price as number,
@@ -72,14 +74,8 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
         ...initialValues,
         receive_date: initialValues.receive_date ? dayjs(initialValues.receive_date) : undefined,
       });
-      if (initialValues.sales_contract) {
-        const contract = contractOptions.find(c => c.value === initialValues.sales_contract);
-        if (contract) {
-          setSelectedContract(contract);
-        }
-      }
     }
-  }, [initialValues, form, contractOptions]);
+  }, [initialValues, form]);
 
   const handleProductAmountChange = (value: number | null) => {
     if (value && selectedContract?.unit_price) {
@@ -102,31 +98,23 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   };
 
   const handleFinish = async (values: Record<string, unknown>) => {
-    setLoading(true);
-    try {
-      const fileList = values.attachments as { originFileObj?: File }[] | undefined;
-      const attachments = extractAttachments(fileList);
+    const fileList = values.attachments as { originFileObj?: File }[] | undefined;
+    const attachments = extractAttachments(fileList);
 
-      const data = {
-        product_name: values.product_name as string,
-        sales_contract: values.sales_contract as string,
-        amount: values.amount as number,
-        product_amount: values.product_amount as number,
-        receive_date: (values.receive_date as dayjs.Dayjs).format('YYYY-MM-DD'),
-        is_tax_included: values.is_tax_included as boolean | undefined,
-        method: values.method as string | undefined,
-        account: values.account as string | undefined,
-        remark: values.remark as string | undefined,
-        attachments,
-      };
+    const data = {
+      product_name: values.product_name as string,
+      sales_contract: values.sales_contract as string,
+      amount: values.amount as number,
+      product_amount: values.product_amount as number,
+      receive_date: (values.receive_date as dayjs.Dayjs).format('YYYY-MM-DD'),
+      is_tax_included: values.is_tax_included as boolean | undefined,
+      method: values.method as string | undefined,
+      account: values.account as string | undefined,
+      remark: values.remark as string | undefined,
+      attachments,
+    };
 
-      onFinish(data);
-    } catch (error) {
-      const err = error as Error;
-      message.error(getPbErrorMessage(err, '操作失败'));
-    } finally {
-      setLoading(false);
-    }
+    await submit(data);
   };
 
   return (
@@ -150,9 +138,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               }
               options={contractOptions}
               disabled={!!initialValues?.sales_contract}
-              onChange={(value: string) => {
-                const contract = contractOptions.find(c => c.value === value);
-                setSelectedContract(contract || null);
+              onChange={() => {
                 form.setFieldsValue({ is_tax_included: undefined });
               }}
             />
@@ -288,7 +274,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit" loading={loading}>
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

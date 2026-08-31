@@ -1,2 +1,5 @@
 pb_data*/
 *.bak*
+pocketbase
+!pocketbase_newbin
+Dockerfile.localbuild

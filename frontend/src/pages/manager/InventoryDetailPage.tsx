@@ -29,6 +29,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { pb } from '@/lib/pocketbase';
+import { getPbErrorMessage } from '@/api/helpers';
 import { InventoryAPI } from '@/api/inventory';
 import { StockMovementAPI } from '@/api/stock-movement';
 import type { Inventory } from '@/types/inventory';
@@ -68,6 +69,7 @@ const InventoryDetailPage: React.FC = () => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingMovement, setEditingMovement] = useState<StockMovement | null>(null);
   const [editFileList, setEditFileList] = useState<UploadFile[]>([]);
+  const [editSubmitting, setEditSubmitting] = useState(false);
   const [editForm] = Form.useForm();
 
   const fetchData = useCallback(async () => {
@@ -121,58 +123,14 @@ const InventoryDetailPage: React.FC = () => {
     });
   };
 
-  const recalcInventory = async (
-    movement: StockMovement,
-    action: 'delete' | 'edit',
-    newMovement?: { movement_type: string; quantity: number },
-  ) => {
-    if (!inventory) return;
-
-    let deltaRemaining = 0;
-    let deltaIn = 0;
-    let deltaOut = 0;
-
-    if (action === 'delete') {
-      if (movement.movement_type === 'in') {
-        deltaRemaining = -movement.quantity;
-        deltaIn = -movement.quantity;
-      } else {
-        deltaRemaining = movement.quantity;
-        deltaOut = -movement.quantity;
-      }
-    } else if (action === 'edit' && newMovement) {
-      if (movement.movement_type === 'in') {
-        deltaRemaining = -movement.quantity;
-        deltaIn = -movement.quantity;
-      } else {
-        deltaRemaining = movement.quantity;
-        deltaOut = -movement.quantity;
-      }
-      if (newMovement.movement_type === 'in') {
-        deltaRemaining += newMovement.quantity;
-        deltaIn += newMovement.quantity;
-      } else {
-        deltaRemaining -= newMovement.quantity;
-        deltaOut += newMovement.quantity;
-      }
-    }
-
-    const fd = new FormData();
-    fd.append('remaining_quantity', String(inventory.remaining_quantity + deltaRemaining));
-    fd.append('total_in_quantity', String(inventory.total_in_quantity + deltaIn));
-    fd.append('total_out_quantity', String(inventory.total_out_quantity + deltaOut));
-    await pb.collection('inventory').update(inventory.id, fd);
-  };
-
   const handleDeleteMovement = async (movement: StockMovement) => {
     try {
-      await recalcInventory(movement, 'delete');
       await StockMovementAPI.delete(movement.id);
       message.success('删除成功');
       fetchData();
     } catch (error) {
       console.error('Delete movement error:', error);
-      message.error('删除失败');
+      message.error(getPbErrorMessage(error, '删除失败'));
     }
   };
 
@@ -196,6 +154,8 @@ const InventoryDetailPage: React.FC = () => {
 
   const handleEditSubmit = async () => {
     if (!editingMovement || !inventory) return;
+    if (editSubmitting) return;
+    setEditSubmitting(true);
     try {
       const values = await editForm.validateFields();
 
@@ -214,11 +174,6 @@ const InventoryDetailPage: React.FC = () => {
         return f.name;
       });
 
-      await recalcInventory(editingMovement, 'edit', {
-        movement_type: values.movement_type,
-        quantity: values.quantity,
-      });
-
       const formData: StockMovementFormData = {
         inventory: inventory.id,
         movement_type: values.movement_type,
@@ -233,7 +188,9 @@ const InventoryDetailPage: React.FC = () => {
       fetchData();
     } catch (error) {
       console.error('Edit movement error:', error);
-      message.error('修改失败');
+      message.error(getPbErrorMessage(error, '修改失败'));
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -377,6 +334,7 @@ const InventoryDetailPage: React.FC = () => {
         open={editModalVisible}
         onCancel={() => setEditModalVisible(false)}
         onOk={handleEditSubmit}
+        confirmLoading={editSubmitting}
         okText="保存"
         cancelText="取消"
         width={500}

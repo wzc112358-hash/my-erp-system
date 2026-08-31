@@ -3,6 +3,7 @@ package hooks
 import (
 	"fmt"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -22,9 +23,12 @@ func ComputePercent(total, denominator float64) float64 {
 // total quantity (1.0 for most collections, 1.05 for sale_receipts which allow
 // a 5% overage). itemLabel is used verbatim in the user-facing error message,
 // e.g. "收款产品数量" / "发货数量".
-func CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier float64, itemLabel string) error {
+func CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier float64, itemLabel, fieldName string) error {
 	if totalProductAmount > contractTotalQuantity*toleranceMultiplier {
-		return fmt.Errorf("%s总和(%.2f)不能超过合同总数量(%.2f)", itemLabel, totalProductAmount, contractTotalQuantity)
+		message := fmt.Sprintf("%s总和(%.2f)不能超过合同总数量(%.2f)", itemLabel, totalProductAmount, contractTotalQuantity)
+		return validation.Errors{
+			fieldName: validation.NewError("overage", message),
+		}
 	}
 	return nil
 }
@@ -58,10 +62,10 @@ func SumChildFieldExcluding(records []*core.Record, sumField, currentRecordId st
 // to always checking, preserving the previous behavior.
 func CheckOverageIfChanged(oldRecord, newRecord *core.Record, fieldName string, totalProductAmount, contractTotalQuantity, toleranceMultiplier float64, itemLabel string) error {
 	if oldRecord == nil {
-		return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel)
+		return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel, fieldName)
 	}
 	if oldRecord.GetFloat(fieldName) == newRecord.GetFloat(fieldName) {
 		return nil
 	}
-	return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel)
+	return CheckOverage(totalProductAmount, contractTotalQuantity, toleranceMultiplier, itemLabel, fieldName)
 }

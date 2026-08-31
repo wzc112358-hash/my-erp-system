@@ -1,6 +1,7 @@
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { fetchAllByFieldBatches } from '@/api/helpers';
+import { buildContractRelationIndex } from '@/lib/contract-relations';
 
 import type {
   ComparisonSalesContract,
@@ -47,6 +48,31 @@ const contractProgress = (completedAmount: number, totalAmount: number) => {
   if (totalAmount <= 0) return 0;
   return Math.min(100, Math.max(0, (completedAmount / totalAmount) * 100));
 };
+
+const getPurchasesForSales = async (salesContract: ComparisonSalesContract) => {
+  const [forwardPurchases, reversePurchase] = await Promise.all([
+    pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
+      filter: `sales_contract="${salesContract.id}"`,
+      expand: 'supplier',
+    }),
+    salesContract.purchase_contract
+      ? pb.collection('purchase_contracts')
+        .getOne<ComparisonPurchaseContract>(salesContract.purchase_contract, { expand: 'supplier' })
+        .catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
+
+  return Array.from(new Map(
+    [...forwardPurchases, ...(reversePurchase ? [reversePurchase] : [])]
+      .map((contract) => [contract.id, contract]),
+  ).values());
+};
+
+const getPurchaseRecords = <T>(collectionName: string, purchaseIds: string[]) => (
+  fetchAllByFieldBatches<T>(purchaseIds, 'purchase_contract', (filter) => (
+    pb.collection(collectionName).getFullList<T>({ filter })
+  ))
+);
 
 // 到货记录中参与运费/杂费折算与到货量统计的最小字段集
 interface ArrivalForRealized {
@@ -147,28 +173,32 @@ function computeRealizedProfit(
 
 export const ComparisonAPI = {
   getSalesContracts: async () => {
-    const result = await pb.collection('sales_contracts').getList(
-      1,
-      500,
-      {}
-    );
-    return result;
+    const items = await pb.collection('sales_contracts').getFullList();
+    return { page: 1, perPage: items.length, totalItems: items.length, totalPages: 1, items };
   },
 
   getAllContractsForOverview: async () => {
-    const [salesResult, purchaseResult, saleInvoicesResult, purchaseInvoicesResult, saleReceiptsResult, purchasePaymentsResult, purchaseArrivalsResult] = await Promise.all([
-      pb.collection('sales_contracts').getList(1, 500, {
+    const [salesItems, purchaseItems, saleInvoiceItems, purchaseInvoiceItems, saleReceiptItems, purchasePaymentItems, purchaseArrivalItems] = await Promise.all([
+      pb.collection('sales_contracts').getFullList({
         expand: 'customer',
       }),
-      pb.collection('purchase_contracts').getList(1, 500, {
+      pb.collection('purchase_contracts').getFullList({
         expand: 'supplier',
       }),
-      pb.collection('sale_invoices').getList(1, 500, {}),
-      pb.collection('purchase_invoices').getList(1, 500, {}),
-      pb.collection('sale_receipts').getList(1, 500, {}),
-      pb.collection('purchase_payments').getList(1, 500, {}),
-      pb.collection('purchase_arrivals').getList(1, 500, {}),
+      pb.collection('sale_invoices').getFullList(),
+      pb.collection('purchase_invoices').getFullList(),
+      pb.collection('sale_receipts').getFullList(),
+      pb.collection('purchase_payments').getFullList(),
+      pb.collection('purchase_arrivals').getFullList(),
     ]);
+
+    const salesResult = { items: salesItems };
+    const purchaseResult = { items: purchaseItems };
+    const saleInvoicesResult = { items: saleInvoiceItems };
+    const purchaseInvoicesResult = { items: purchaseInvoiceItems };
+    const saleReceiptsResult = { items: saleReceiptItems };
+    const purchasePaymentsResult = { items: purchasePaymentItems };
+    const purchaseArrivalsResult = { items: purchaseArrivalItems };
 
     const salesContracts = salesResult.items as unknown as ComparisonSalesContract[];
     const purchaseContracts = purchaseResult.items as unknown as ComparisonPurchaseContract[];
@@ -177,6 +207,7 @@ export const ComparisonAPI = {
     const saleReceipts = saleReceiptsResult.items as unknown as SaleReceipt[];
     const purchasePayments = purchasePaymentsResult.items as unknown as PurchasePayment[];
     const purchaseArrivals = purchaseArrivalsResult.items as unknown as PurchaseArrivalItem[];
+    const relationIndex = buildContractRelationIndex(salesContracts, purchaseContracts);
 
     const saleInvoiceMap = new Map<string, { no: string; issueDate: string }>();
     const saleReceiptsMap = new Map<string, string>();
@@ -251,41 +282,33 @@ export const ComparisonAPI = {
     });
     
     // 采购子信息中的待确认（需要关联到销售合同）
-    const purchaseToSalesMap = new Map<string, string>();
-    purchaseContracts.forEach(pc => {
-      if (pc.sales_contract) {
-        purchaseToSalesMap.set(pc.id, pc.sales_contract);
-      }
-    });
-    
+    const addPurchasePending = (purchaseId: string) => {
+      (relationIndex.salesIdsByPurchase.get(purchaseId) || []).forEach((salesId) => {
+        pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
+      });
+    };
+
     (purchaseArrivalsResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(arrival => {
       if (arrival.manager_confirmed === 'pending') {
-        const salesId = purchaseToSalesMap.get(arrival.purchase_contract);
-        if (salesId) {
-          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
-        }
+        addPurchasePending(arrival.purchase_contract);
       }
     });
     (purchaseInvoicesResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(inv => {
       if (inv.manager_confirmed === 'pending') {
-        const salesId = purchaseToSalesMap.get(inv.purchase_contract);
-        if (salesId) {
-          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
-        }
+        addPurchasePending(inv.purchase_contract);
       }
     });
     (purchasePaymentsResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(payment => {
       if (payment.manager_confirmed === 'pending') {
-        const salesId = purchaseToSalesMap.get(payment.purchase_contract);
-        if (salesId) {
-          pendingCountMap.set(salesId, (pendingCountMap.get(salesId) || 0) + 1);
-        }
+        addPurchasePending(payment.purchase_contract);
       }
     });
 
     const overviewSalesContracts: OverviewContract[] = salesContracts.map(sc => {
-      const associatedPurchases = purchaseContracts.filter(pc => pc.sales_contract === sc.id);
-      const purchaseIds = associatedPurchases.map(pc => pc.id);
+      const purchaseIds = relationIndex.purchaseIdsBySales.get(sc.id) || [];
+      const associatedPurchases = purchaseIds
+        .map((purchaseId) => purchaseContracts.find((contract) => contract.id === purchaseId))
+        .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
       const purchaseNos = associatedPurchases.map(pc => pc.no);
       
       const allShipmentDates: string[] = [];
@@ -304,6 +327,7 @@ export const ComparisonAPI = {
         productName: sc.product_name,
         quantity: sc.total_quantity,
         totalAmount: sc.total_amount,
+        isCrossBorder: sc.is_cross_border,
         paymentDate: saleReceiptsMap.get(sc.id) || undefined,
         invoiceNo: saleInvoiceMap.get(sc.id)?.no || undefined,
         invoiceIssueDate: saleInvoiceMap.get(sc.id)?.issueDate || undefined,
@@ -332,6 +356,7 @@ export const ComparisonAPI = {
       productName: pc.product_name,
       quantity: pc.total_quantity,
       totalAmount: pc.total_amount,
+      isCrossBorder: pc.is_cross_border,
       paymentDate: purchasePaymentsMap.get(pc.id) || undefined,
       shipmentDate: purchaseArrivalsMap.get(pc.id) || undefined,
       signDate: pc.sign_date || '',
@@ -341,11 +366,11 @@ export const ComparisonAPI = {
       settlementProgress: contractProgress(pc.paid_amount, pc.total_amount),
       executionProgress: pc.execution_percent ?? 0,
       supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
-      associatedSalesIds: [pc.sales_contract].filter(Boolean),
+      associatedSalesIds: relationIndex.salesIdsByPurchase.get(pc.id) || [],
     }));
 
     const associatedPurchaseIds = new Set(
-      purchaseContracts.filter(pc => pc.sales_contract).map(pc => pc.id)
+      relationIndex.edges.map((edge) => edge.purchaseId)
     );
 
     const standalonePurchaseContracts: OverviewContract[] = purchaseContracts
@@ -357,6 +382,7 @@ export const ComparisonAPI = {
         productName: pc.product_name,
         quantity: pc.total_quantity,
         totalAmount: pc.total_amount,
+        isCrossBorder: pc.is_cross_border,
         paymentDate: purchasePaymentsMap.get(pc.id) || undefined,
         shipmentDate: purchaseArrivalsMap.get(pc.id) || undefined,
         signDate: pc.sign_date || '',
@@ -375,62 +401,38 @@ export const ComparisonAPI = {
     };
   },
 
+  linkPurchaseToSales: async (purchaseContractId: string, salesContractId: string) => {
+    return pb.send<{ success: boolean }>('/api/erp/contracts/link', {
+      method: 'POST',
+      body: { purchaseId: purchaseContractId, salesId: salesContractId },
+    });
+  },
+
   getComparisonData: async (salesContractId: string) => {
-    const rate = await getUsdToCnyRate();
-    const [salesContract, purchaseContractsResult] = await Promise.all([
+    const [rate, salesContract] = await Promise.all([
+      getUsdToCnyRate(),
       pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
         expand: 'customer',
       }),
-      pb.collection('purchase_contracts').getList<ComparisonPurchaseContract>(1, 100, {
-        filter: `sales_contract="${salesContractId}"`,
-        expand: 'supplier',
-      }),
     ]);
-
-    const purchaseContracts = purchaseContractsResult.items;
+    const purchaseContracts = await getPurchasesForSales(salesContract);
     const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
 
-    const filterForPurchase = purchaseContractIds.length > 0
-      ? purchaseContractIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-      : '1=0';
-
-    const [salesShipments, purchaseArrivals, saleReceipts, purchasePayments, saleInvoices, purchaseInvoices] =
+    const [salesShipmentsList, purchaseArrivalsList, saleReceiptsList, purchasePaymentsList, saleInvoicesList, purchaseInvoicesList] =
       await Promise.all([
-        pb.collection('sales_shipments').getList(1, 100, {
+        pb.collection('sales_shipments').getFullList<{ quantity: number }>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_arrivals').getList(1, 100, {
-          filter: filterForPurchase,
-        }),
-        pb.collection('sale_receipts').getList(1, 100, {
+        getPurchaseRecords<ArrivalForRealized>('purchase_arrivals', purchaseContractIds),
+        pb.collection('sale_receipts').getFullList<{ amount: number }>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_payments').getList(1, 100, {
-          filter: filterForPurchase,
-        }),
-        pb.collection('sale_invoices').getList(1, 100, {
+        getPurchaseRecords<{ amount: number; purchase_contract: string }>('purchase_payments', purchaseContractIds),
+        pb.collection('sale_invoices').getFullList<{ amount: number }>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_invoices').getList(1, 100, {
-          filter: filterForPurchase,
-        }),
+        getPurchaseRecords<{ amount: number; purchase_contract: string }>('purchase_invoices', purchaseContractIds),
       ]);
-
-    const salesShipmentsList = salesShipments.items as unknown as { quantity: number }[];
-    const purchaseArrivalsList = purchaseArrivals.items as unknown as {
-      quantity: number;
-      purchase_contract: string;
-      freight_1: number;
-      freight_1_currency: 'USD' | 'CNY';
-      freight_2?: number;
-      freight_2_currency?: 'USD' | 'CNY';
-      miscellaneous_expenses: number;
-      miscellaneous_expenses_currency: 'USD' | 'CNY';
-    }[];
-    const saleReceiptsList = saleReceipts.items as unknown as { amount: number }[];
-    const purchasePaymentsList = purchasePayments.items as unknown as { amount: number; purchase_contract: string }[];
-    const saleInvoicesList = saleInvoices.items as unknown as { amount: number }[];
-    const purchaseInvoicesList = purchaseInvoices.items as unknown as { amount: number; purchase_contract: string }[];
 
     const salesShipped = salesShipmentsList.reduce((sum, s) => sum + s.quantity, 0);
     const salesReceipted = saleReceiptsList.reduce((sum, r) => sum + r.amount, 0);
@@ -588,50 +590,38 @@ export const ComparisonAPI = {
   },
 
   getProgressDetail: async (salesContractId: string, type: ProgressDetailType) => {
-    const purchaseContractsResult = await pb.collection('purchase_contracts').getList(1, 100, {
-      filter: `sales_contract="${salesContractId}"`,
-    }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
-
-    const purchaseContracts = purchaseContractsResult.items;
+    const salesContract = await pb.collection('sales_contracts')
+      .getOne<ComparisonSalesContract>(salesContractId);
+    const purchaseContracts = await getPurchasesForSales(salesContract);
     const purchaseContractIds = purchaseContracts.map((pc: { id: string }) => pc.id);
-
-    const filterForPurchase = purchaseContractIds.length > 0
-      ? purchaseContractIds.map((id: string) => `purchase_contract="${id}"`).join(' || ')
-      : '1=0';
 
     switch (type) {
       case 'shipment': {
-        const salesShipments = await pb.collection('sales_shipments').getList(1, 100, {
+        const salesShipments = await pb.collection('sales_shipments').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        }).catch(() => []);
         
-        const purchaseArrivals = await pb.collection('purchase_arrivals').getList(1, 100, {
-          filter: filterForPurchase,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        const purchaseArrivals = await getPurchaseRecords('purchase_arrivals', purchaseContractIds).catch(() => []);
         
-        return { sales: salesShipments.items, purchase: purchaseArrivals.items };
+        return { sales: salesShipments, purchase: purchaseArrivals };
       }
       case 'payment': {
-        const saleReceipts = await pb.collection('sale_receipts').getList(1, 100, {
+        const saleReceipts = await pb.collection('sale_receipts').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        }).catch(() => []);
         
-        const purchasePayments = await pb.collection('purchase_payments').getList(1, 100, {
-          filter: filterForPurchase,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        const purchasePayments = await getPurchaseRecords('purchase_payments', purchaseContractIds).catch(() => []);
         
-        return { sales: saleReceipts.items, purchase: purchasePayments.items };
+        return { sales: saleReceipts, purchase: purchasePayments };
       }
       case 'invoice': {
-        const saleInvoices = await pb.collection('sale_invoices').getList(1, 100, {
+        const saleInvoices = await pb.collection('sale_invoices').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        }).catch(() => []);
         
-        const purchaseInvoices = await pb.collection('purchase_invoices').getList(1, 100, {
-          filter: filterForPurchase,
-        }).catch(() => ({ items: [], totalItems: 0, totalPages: 1 }));
+        const purchaseInvoices = await getPurchaseRecords('purchase_invoices', purchaseContractIds).catch(() => []);
         
-        return { sales: saleInvoices.items, purchase: purchaseInvoices.items };
+        return { sales: saleInvoices, purchase: purchaseInvoices };
       }
       default:
         return { sales: [], purchase: [] };
@@ -639,52 +629,30 @@ export const ComparisonAPI = {
   },
 
   getContractDetail: async (salesContractId: string): Promise<ContractDetailData> => {
-    const rate = await getUsdToCnyRate();
-    const [salesContract, purchaseContractsResult] = await Promise.all([
+    const [rate, salesContract] = await Promise.all([
+      getUsdToCnyRate(),
       pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
         expand: 'customer',
       }),
-      pb.collection('purchase_contracts').getList<ComparisonPurchaseContract>(1, 100, {
-        filter: `sales_contract="${salesContractId}"`,
-        expand: 'supplier',
-      }),
     ]);
-
-    const purchaseContracts = purchaseContractsResult.items;
+    const purchaseContracts = await getPurchasesForSales(salesContract);
     const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
 
-    const filterForPurchase = purchaseContractIds.length > 0
-      ? purchaseContractIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-      : '1=0';
-
-    const [salesShipmentsResult, purchaseArrivalsResult, saleReceiptsResult, purchasePaymentsResult, saleInvoicesResult, purchaseInvoicesResult] =
+    const [salesShipments, purchaseArrivals, saleReceipts, purchasePayments, saleInvoices, purchaseInvoices] =
       await Promise.all([
-        pb.collection('sales_shipments').getList<SalesShipmentRecord>(1, 100, {
+        pb.collection('sales_shipments').getFullList<SalesShipmentRecord>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_arrivals').getList<PurchaseArrivalRecord>(1, 100, {
-          filter: filterForPurchase,
-        }),
-        pb.collection('sale_receipts').getList<SaleReceiptRecord>(1, 100, {
+        getPurchaseRecords<PurchaseArrivalRecord>('purchase_arrivals', purchaseContractIds),
+        pb.collection('sale_receipts').getFullList<SaleReceiptRecord>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_payments').getList<PurchasePaymentRecord>(1, 100, {
-          filter: filterForPurchase,
-        }),
-        pb.collection('sale_invoices').getList<SaleInvoiceRecord>(1, 100, {
+        getPurchaseRecords<PurchasePaymentRecord>('purchase_payments', purchaseContractIds),
+        pb.collection('sale_invoices').getFullList<SaleInvoiceRecord>({
           filter: `sales_contract="${salesContractId}"`,
         }),
-        pb.collection('purchase_invoices').getList<PurchaseInvoiceRecord>(1, 100, {
-          filter: filterForPurchase,
-        }),
+        getPurchaseRecords<PurchaseInvoiceRecord>('purchase_invoices', purchaseContractIds),
       ]);
-
-    const salesShipments = salesShipmentsResult.items as unknown as SalesShipmentRecord[];
-    const purchaseArrivals = purchaseArrivalsResult.items as unknown as PurchaseArrivalRecord[];
-    const saleReceipts = saleReceiptsResult.items as unknown as SaleReceiptRecord[];
-    const purchasePayments = purchasePaymentsResult.items as unknown as PurchasePaymentRecord[];
-    const saleInvoices = saleInvoicesResult.items as unknown as SaleInvoiceRecord[];
-    const purchaseInvoices = purchaseInvoicesResult.items as unknown as PurchaseInvoiceRecord[];
 
     const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => {
       const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
@@ -695,7 +663,7 @@ export const ComparisonAPI = {
 
     let totalFreight = 0;
     let totalMiscellaneous = 0;
-    const arrivalsRaw = purchaseArrivalsResult.items as unknown as {
+    const arrivalsRaw = purchaseArrivals as unknown as {
       freight_1: number;
       freight_1_currency: 'USD' | 'CNY';
       freight_2?: number;
@@ -760,28 +728,24 @@ export const ComparisonAPI = {
 
     const filterForPurchase = `purchase_contract="${purchaseContractId}"`;
 
-    const [purchaseArrivalsResult, purchasePaymentsResult, purchaseInvoicesResult] =
+    const [purchaseArrivals, purchasePayments, purchaseInvoices] =
       await Promise.all([
-        pb.collection('purchase_arrivals').getList<PurchaseArrivalRecord>(1, 100, {
+        pb.collection('purchase_arrivals').getFullList<PurchaseArrivalRecord>({
           filter: filterForPurchase,
         }),
-        pb.collection('purchase_payments').getList<PurchasePaymentRecord>(1, 100, {
+        pb.collection('purchase_payments').getFullList<PurchasePaymentRecord>({
           filter: filterForPurchase,
         }),
-        pb.collection('purchase_invoices').getList<PurchaseInvoiceRecord>(1, 100, {
+        pb.collection('purchase_invoices').getFullList<PurchaseInvoiceRecord>({
           filter: filterForPurchase,
         }),
       ]);
-
-    const purchaseArrivals = purchaseArrivalsResult.items as unknown as PurchaseArrivalRecord[];
-    const purchasePayments = purchasePaymentsResult.items as unknown as PurchasePaymentRecord[];
-    const purchaseInvoices = purchaseInvoicesResult.items as unknown as PurchaseInvoiceRecord[];
 
     const purchaseTotalAmount = purchaseContract.is_cross_border ? purchaseContract.total_amount * rate : purchaseContract.total_amount;
 
     let totalFreight = 0;
     let totalMiscellaneous = 0;
-    const arrivalsRaw = purchaseArrivalsResult.items as unknown as {
+    const arrivalsRaw = purchaseArrivals as unknown as {
       freight_1: number;
       freight_1_currency: 'USD' | 'CNY';
       freight_2?: number;
@@ -829,47 +793,35 @@ export const ComparisonAPI = {
   },
 
   getUncompletedContracts: async (): Promise<FlowContractOption[]> => {
-    const salesResult = await pb.collection('sales_contracts').getList<ComparisonSalesContract>(1, 500, {
-      sort: '-created_at',
-      expand: 'customer',
-    });
-
-    const salesIds = salesResult.items.map((sc) => sc.id);
+    const [salesItems, allPurchaseContracts] = await Promise.all([
+      pb.collection('sales_contracts').getFullList<ComparisonSalesContract>({
+        sort: '-created_at',
+        expand: 'customer',
+      }),
+      pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
+        sort: '-created_at',
+      }),
+    ]);
+    const salesResult = { items: salesItems };
+    const salesIds = salesItems.map((sc) => sc.id);
+    const relationIndex = buildContractRelationIndex(salesItems, allPurchaseContracts);
+    const relatedPurchaseIds = new Set(relationIndex.edges.map((edge) => edge.purchaseId));
+    const purchaseItems = allPurchaseContracts.filter((contract) => relatedPurchaseIds.has(contract.id));
+    const purchaseIds = purchaseItems.map((contract) => contract.id);
 
     // 分批 OR 查询：PocketBase filter 超过 89 个 OR 条件会返回 400
-    const [purchaseItems, saleInvoiceItems, saleReceiptItems, purchaseArrivalItems, purchaseInvoiceItems, purchasePaymentItems] = await Promise.all([
-      fetchAllByFieldBatches<{ id: string; sales_contract?: string; status?: string }>(salesIds, 'sales_contract', async (filter) => {
-        const r = await pb.collection('purchase_contracts').getList(1, 500, { filter });
-        return r.items as unknown as { id: string; sales_contract?: string; status?: string }[];
+    const [saleInvoiceItems, saleReceiptItems, purchaseArrivalItems, purchaseInvoiceItems, purchasePaymentItems] = await Promise.all([
+      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
+        return pb.collection('sale_invoices').getFullList({ filter });
       }),
       fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
-        const r = await pb.collection('sale_invoices').getList(1, 500, { filter });
-        return r.items as unknown as { sales_contract?: string; manager_confirmed?: string; updated?: string }[];
+        return pb.collection('sale_receipts').getFullList({ filter });
       }),
-      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
-        const r = await pb.collection('sale_receipts').getList(1, 500, { filter });
-        return r.items as unknown as { sales_contract?: string; manager_confirmed?: string; updated?: string }[];
-      }),
-    ]).then(async ([pi, si, sr]) => {
-      const purchaseIds = pi.map((pc) => pc.id);
-      const [pa, pinv, ppay] = await Promise.all([
-        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
-          const r = await pb.collection('purchase_arrivals').getList(1, 500, { filter });
-          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
-        }),
-        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
-          const r = await pb.collection('purchase_invoices').getList(1, 500, { filter });
-          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
-        }),
-        fetchAllByFieldBatches<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>(purchaseIds, 'purchase_contract', async (filter) => {
-          const r = await pb.collection('purchase_payments').getList(1, 500, { filter });
-          return r.items as unknown as { purchase_contract?: string; manager_confirmed?: string; updated?: string }[];
-        }),
-      ]);
-      return [pi, si, sr, pa, pinv, ppay];
-    });
+      getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_arrivals', purchaseIds),
+      getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_invoices', purchaseIds),
+      getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_payments', purchaseIds),
+    ]);
 
-    const purchaseResult = { items: purchaseItems };
     const saleInvoices = { items: saleInvoiceItems };
     const saleReceipts = { items: saleReceiptItems };
     const purchaseArrivals = { items: purchaseArrivalItems };
@@ -877,8 +829,7 @@ export const ComparisonAPI = {
     const purchasePayments = { items: purchasePaymentItems };
 
     const getRelatedPcIds = (scId: string): string[] =>
-      (purchaseResult.items as unknown as { id: string; sales_contract?: string }[])
-        .filter((pc) => pc.sales_contract === scId).map((pc) => pc.id);
+      relationIndex.purchaseIdsBySales.get(scId) || [];
 
     const countPending = (scId: string): number => {
       let count = 0;
@@ -900,8 +851,8 @@ export const ComparisonAPI = {
     const hasPending = (scId: string): boolean => countPending(scId) > 0;
 
     const allPurchaseCompleted = (scId: string): boolean => {
-      const related = (purchaseResult.items as unknown as { id: string; sales_contract?: string; status?: string }[])
-        .filter((pc) => pc.sales_contract === scId);
+      const relatedIds = relationIndex.purchaseIdsBySales.get(scId) || [];
+      const related = purchaseItems.filter((contract) => relatedIds.includes(contract.id));
       return related.length === 0 || related.every((pc) => pc.status === 'completed');
     };
 
@@ -951,25 +902,29 @@ export const ComparisonAPI = {
         pendingCount: countPending(sc.id),
       }));
 
-    const standalonePurchases = await pb.collection('purchase_contracts').getList(1, 500, {
-      filter: "sales_contract = ''",
-      sort: '-created_at',
-    });
+    const standalonePurchases = {
+      items: allPurchaseContracts.filter((contract) => (
+        (relationIndex.salesIdsByPurchase.get(contract.id) || []).length === 0
+      )),
+    };
 
     // 查询独立采购合同的子记录，用于判断 completed 合同是否仍有待确认项
     const standaloneIds = (standalonePurchases.items as unknown as { id: string }[]).map((pc) => pc.id);
-    const standaloneChildFilter = standaloneIds.length > 0
-      ? standaloneIds.map((id) => `purchase_contract="${id}"`).join(' || ')
-      : '1=0';
-
-    const [standaloneArrivals, standaloneInvoices, standalonePayments] = await Promise.all([
-      pb.collection('purchase_arrivals').getList(1, 500, { filter: standaloneChildFilter })
-        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
-      pb.collection('purchase_invoices').getList(1, 500, { filter: standaloneChildFilter })
-        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
-      pb.collection('purchase_payments').getList(1, 500, { filter: standaloneChildFilter })
-        .catch(() => ({ items: [], totalItems: 0, totalPages: 1 })),
+    const [standaloneArrivalItems, standaloneInvoiceItems, standalonePaymentItems] = await Promise.all([
+      fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
+        return pb.collection('purchase_arrivals').getFullList({ filter });
+      }).catch(() => []),
+      fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
+        return pb.collection('purchase_invoices').getFullList({ filter });
+      }).catch(() => []),
+      fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
+        return pb.collection('purchase_payments').getFullList({ filter });
+      }).catch(() => []),
     ]);
+
+    const standaloneArrivals = { items: standaloneArrivalItems };
+    const standaloneInvoices = { items: standaloneInvoiceItems };
+    const standalonePayments = { items: standalonePaymentItems };
 
     const countStandalonePending = (pcId: string): number => {
       let count = 0;

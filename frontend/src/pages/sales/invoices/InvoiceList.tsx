@@ -41,10 +41,11 @@ export const InvoiceList: React.FC = () => {
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const result = await pb.collection('sales_contracts').getList(1, 100, {
+        const contracts = await pb.collection('sales_contracts').getFullList({
           filter: 'status = "executing"',
+          sort: '-created_at',
         });
-        const options = result.items.map((item: Record<string, unknown>) => ({
+        const options = contracts.map((item: Record<string, unknown>) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id as string,
         }));

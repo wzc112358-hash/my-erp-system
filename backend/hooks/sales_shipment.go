@@ -33,7 +33,7 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumField(shipments, "quantity") + newQuantity
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量"); err != nil {
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量", "quantity"); err != nil {
 				return err
 			}
 
@@ -67,7 +67,7 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			totalQuantity := SumChildFieldExcluding(shipments, "quantity", currentShipmentId, newQuantity)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量"); err != nil {
+			if err := CheckOverage(totalQuantity, contractTotalQuantity, 1.0, "发货数量", "quantity"); err != nil {
 				return err
 			}
 
@@ -92,6 +92,9 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			if isContractCascadeDelete(e.Context) {
+				return e.Next()
+			}
 			return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
 		},
 		Priority: 0,

@@ -83,7 +83,6 @@ export const SalesShipmentAPI = {
 
 export const SalesContractAPI = {
   getOptions: async () => {
-    const result = await SCAPI.list({ per_page: 100 });
-    return result;
+    return SCAPI.getOptions();
   },
 };

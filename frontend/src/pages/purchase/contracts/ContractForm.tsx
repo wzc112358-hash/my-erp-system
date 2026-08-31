@@ -6,6 +6,7 @@ import type { PurchaseContractFormData, PurchaseContract } from '@/types/purchas
 import { SupplierAPI } from '@/api/supplier';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
+import { useAsyncSubmit } from '@/hooks/useAsyncSubmit';
 
 interface SupplierOption {
   id: string;
@@ -20,7 +21,7 @@ interface SalesContractOption {
 
 interface ContractFormProps {
   form: typeof Form.prototype;
-  onFinish: (values: PurchaseContractFormData) => void;
+  onFinish: (values: PurchaseContractFormData) => void | Promise<void>;
   onCancel: () => void;
   initialValues?: PurchaseContract | null;
 }
@@ -31,6 +32,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
   onCancel,
   initialValues,
 }) => {
+  const { submit, submitting } = useAsyncSubmit(onFinish);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [salesContracts, setSalesContracts] = useState<SalesContractOption[]>([]);
   const [totalAmount, setTotalAmount] = useState<number>(0);
@@ -46,7 +48,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
       try {
         const [supplierResult, salesResult] = await Promise.all([
           SupplierAPI.list({ per_page: 100 }),
-          SalesContractAPI.list({ per_page: 100 }),
+          SalesContractAPI.getOptions(),
         ]);
         setSuppliers(supplierResult.items.map((s) => ({ id: s.id, name: s.name })));
         setSalesContracts(
@@ -83,7 +85,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
     <Form
       form={form}
       layout="vertical"
-      onFinish={onFinish}
+      onFinish={submit}
       onValuesChange={handleValuesChange}
       initialValues={
         initialValues
@@ -281,7 +283,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
       <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" htmlType="submit">
+          <Button type="primary" htmlType="submit" loading={submitting}>
             提交
           </Button>
         </Space>

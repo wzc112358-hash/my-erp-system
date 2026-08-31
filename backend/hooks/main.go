@@ -21,6 +21,10 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	RegisterExpenseRecordHooks(app)
 	RegisterBiddingRecordHooks(app)
 	RegisterSettingsHooks(app)
+	RegisterInventoryHooks(app)
+	RegisterContractRelationHooks(app)
+	RegisterContractOperationRoutes(app)
+	RegisterBusinessRecordAuditHooks(app)
 
 	log.Println("Hooks registered successfully")
 }

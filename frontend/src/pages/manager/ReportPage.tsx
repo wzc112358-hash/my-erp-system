@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Select, Space, Tag, App, Spin, Empty } from 'antd';
 import { DownloadOutlined, CloseOutlined } from '@ant-design/icons';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import dayjs from 'dayjs';
+
+import { handleApiError } from '@/api/helpers';
 import { ReportAPI } from '@/api/report';
+import { buildReportWorkbook } from '@/pages/manager/report/report-workbook';
 import type { ReportData, ReportSummary } from '@/types/report';
 
 const { Option } = Select;
@@ -16,13 +19,23 @@ const monthOptions = Array.from({ length: 12 }, (_, i) => ({
   label: `${i + 1}月`,
 }));
 
+const formatAmount = (value: number) => (Number(value) || 0).toFixed(2);
+
 export const ReportPage: React.FC = () => {
   const { message } = App.useApp();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const urlSelectedSales = searchParams.get('selectedSales')?.split(',').filter(Boolean) || [];
-  const urlSelectedPurchase = searchParams.get('selectedPurchase')?.split(',').filter(Boolean) || [];
+  const selectedSalesParam = searchParams.get('selectedSales') || '';
+  const selectedPurchaseParam = searchParams.get('selectedPurchase') || '';
+  const urlSelectedSales = useMemo(
+    () => selectedSalesParam.split(',').filter(Boolean),
+    [selectedSalesParam],
+  );
+  const urlSelectedPurchase = useMemo(
+    () => selectedPurchaseParam.split(',').filter(Boolean),
+    [selectedPurchaseParam],
+  );
   const urlSortField = searchParams.get('sortField') || undefined;
   const urlSortOrder = searchParams.get('sortOrder') as 'asc' | 'desc' | null;
   const hasContractFilter = urlSelectedSales.length > 0 || urlSelectedPurchase.length > 0;
@@ -31,7 +44,9 @@ export const ReportPage: React.FC = () => {
   const [endMonth, setEndMonth] = useState<number>(12);
   const [year, setYear] = useState<number>(currentYear);
   const [loading, setLoading] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(0);
   const [reportData, setReportData] = useState<ReportData[]>([]);
+  const requestIdRef = useRef(0);
   const [summary, setSummary] = useState<ReportSummary>({
     totalSalesAmount: 0,
     totalPurchaseAmount: 0,
@@ -40,13 +55,16 @@ export const ReportPage: React.FC = () => {
     totalTax: 0,
     totalFreight: 0,
     totalMiscellaneous: 0,
+    totalTariff: 0,
+    totalValueAddedTax: 0,
     totalProfit: 0,
     totalNetProfit: 0,
     totalRealizedProfit: 0,
   });
 
   const fetchReportData = useCallback(async () => {
-    let cancelled = false;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
 
     try {
@@ -56,31 +74,25 @@ export const ReportPage: React.FC = () => {
       } else {
         result = await ReportAPI.getReportData({ startMonth, endMonth, year });
       }
-      if (!cancelled) {
+      if (requestIdRef.current === requestId) {
         setReportData(result.data);
         setSummary(result.summary);
+        setExchangeRate(result.exchangeRate);
       }
     } catch (error) {
-      const err = error as { response?: { status?: number }; message?: string };
-      if (err.response?.status === 0 || err.message?.includes('aborted')) {
-        return;
-      }
-      console.error('Fetch report error:', error);
-      message.error('加载报表失败');
+      handleApiError(error, '加载报表失败', (content) => message.error(content), 'Fetch report');
     } finally {
-      if (!cancelled) {
+      if (requestIdRef.current === requestId) {
         setLoading(false);
       }
     }
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startMonth, endMonth, year, hasContractFilter]);
+  }, [startMonth, endMonth, year, hasContractFilter, urlSelectedSales, urlSelectedPurchase, message]);
 
   useEffect(() => {
-    fetchReportData();
+    void fetchReportData();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [fetchReportData]);
 
   const sortedReportData = useMemo(() => {
@@ -117,7 +129,7 @@ export const ReportPage: React.FC = () => {
   };
 
   const handleSearch = () => {
-    fetchReportData();
+    void fetchReportData();
   };
 
   const handleExport = () => {
@@ -126,200 +138,35 @@ export const ReportPage: React.FC = () => {
       return;
     }
 
-    const exportData: Record<string, unknown>[] = [];
-    const mergeInfo: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
-
-    const salesGroupMap = new Map<string, { rows: ReportData[]; firstIndex: number }>();
-    let rowIndex = 0;
-
-    displayData.forEach((row) => {
-      if (!row.salesContractNo || row.salesRowSpan === 0) {
-        exportData.push({
-          采购合同编号: row.purchaseContractNo,
-          '签订日期(采购)': row.purchaseSignDate
-            ? new Date(row.purchaseSignDate).toLocaleDateString()
-            : '',
-          产品名称: row.productName,
-          供应商名称: row.supplierName,
-          '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(6) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(6) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(6) || '0.00',
-          采购付款日期: '',
-          采购收票日期: '',
-          运费: row.freight?.toFixed(6) || '0.00',
-          杂费: row.miscellaneous?.toFixed(6) || '0.00',
-          销售合同号: '',
-          '签订日期(销售)': '',
-          客户名称: '',
-          产品数量销售: '',
-          销售单价: '',
-          '销售总价(不含税)': '',
-          销售含税总价: '',
-          客户到货时间: '',
-          销售收款日期: '',
-          销售开票日期: '',
-          税额: '',
-          毛利: '',
-        });
-        rowIndex++;
-        return;
-      }
-
-      const existing = salesGroupMap.get(row.salesContractNo);
-      if (existing) {
-        existing.rows.push(row);
-        exportData.push({
-          采购合同编号: row.purchaseContractNo,
-          '签订日期(采购)': row.purchaseSignDate
-            ? new Date(row.purchaseSignDate).toLocaleDateString()
-            : '',
-          产品名称: row.productName,
-          供应商名称: row.supplierName,
-          '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(6) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(6) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(6) || '0.00',
-          采购付款日期: row.purchasePaymentDate ? new Date(row.purchasePaymentDate).toLocaleDateString() : '',
-          采购收票日期: row.purchaseInvoiceDate ? new Date(row.purchaseInvoiceDate).toLocaleDateString() : '',
-          运费: row.freight?.toFixed(6) || '0.00',
-          杂费: row.miscellaneous?.toFixed(6) || '0.00',
-          销售合同号: '',
-          '签订日期(销售)': '',
-          客户名称: '',
-          产品数量销售: '',
-          销售单价: '',
-          '销售总价(不含税)': '',
-          销售含税总价: '',
-          客户到货时间: '',
-          销售收款日期: '',
-          销售开票日期: '',
-          税额: '',
-          营业利润: '',
-          净利润: '',
-          已执行利润: '',
-        });
-      } else {
-        salesGroupMap.set(row.salesContractNo, { rows: [row], firstIndex: rowIndex });
-        exportData.push({
-          采购合同编号: row.purchaseContractNo,
-          '签订日期(采购)': row.purchaseSignDate
-            ? new Date(row.purchaseSignDate).toLocaleDateString()
-            : '',
-          产品名称: row.productName,
-          供应商名称: row.supplierName,
-          '产品数量(吨)': row.purchaseQuantity,
-          采购单价: row.purchaseUnitPrice?.toFixed(6) || '0.00',
-          '采购总价(不含税)': row.purchaseTotalAmount?.toFixed(6) || '0.00',
-          采购含税总价: row.purchaseTaxTotalAmount?.toFixed(6) || '0.00',
-          采购付款日期: row.purchasePaymentDate ? new Date(row.purchasePaymentDate).toLocaleDateString() : '',
-          采购收票日期: row.purchaseInvoiceDate ? new Date(row.purchaseInvoiceDate).toLocaleDateString() : '',
-          运费: row.freight?.toFixed(6) || '0.00',
-          杂费: row.miscellaneous?.toFixed(6) || '0.00',
-          销售合同号: row.salesContractNo,
-          '签订日期(销售)': row.salesSignDate
-            ? new Date(row.salesSignDate).toLocaleDateString()
-            : '',
-          客户名称: row.customerName,
-          产品数量销售: row.salesQuantity,
-          销售单价: row.salesUnitPrice?.toFixed(6) || '0.00',
-          '销售总价(不含税)': row.salesTotalAmount?.toFixed(6) || '0.00',
-          销售含税总价: row.salesTaxTotalAmount?.toFixed(6) || '0.00',
-          客户到货时间: row.arrivalDate
-            ? new Date(row.arrivalDate).toLocaleDateString()
-            : '',
-          销售收款日期: row.salesReceiptDate ? new Date(row.salesReceiptDate).toLocaleDateString() : '',
-          销售开票日期: row.salesInvoiceDate ? new Date(row.salesInvoiceDate).toLocaleDateString() : '',
-          税额: row.tax?.toFixed(6) || '0.00',
-          营业利润: row.profit?.toFixed(6) || '0.00',
-          净利润: row.netProfit?.toFixed(6) || '0.00',
-          已执行利润: row.realizedProfit?.toFixed(6) || '0.00',
-        });
-      }
-      rowIndex++;
-    });
-
-    salesGroupMap.forEach((group) => {
-      if (group.rows.length > 1) {
-        const startRow = group.firstIndex;
-        const endRow = startRow + group.rows.length - 1;
-        for (let c = 13; c <= 23; c++) {
-          mergeInfo.push({
-            s: { r: startRow, c },
-            e: { r: endRow, c },
-          });
-        }
-      }
-    });
-
-    const summaryRow = {
-      采购合同编号: '总计',
-      '签订日期(采购)': '',
-      产品名称: '',
-      供应商名称: '',
-      '产品数量(吨)': '',
-      采购单价: '',
-      '采购总价(不含税)': summary.totalPurchaseAmount.toFixed(6),
-      采购含税总价: summary.totalPurchaseTaxAmount.toFixed(6),
-      采购付款日期: '',
-      采购收票日期: '',
-      运费: summary.totalFreight.toFixed(6),
-      杂费: summary.totalMiscellaneous.toFixed(6),
-      销售合同号: '',
-      '签订日期(销售)': '',
-      客户名称: '',
-      产品数量销售: '',
-      销售单价: '',
-      '销售总价(不含税)': summary.totalSalesAmount.toFixed(6),
-      销售含税总价: summary.totalSalesTaxAmount.toFixed(6),
-      客户到货时间: '',
-      销售收款日期: '',
-      销售开票日期: '',
-      税额: summary.totalTax.toFixed(6),
-      营业利润: summary.totalProfit.toFixed(6),
-      净利润: summary.totalNetProfit.toFixed(6),
-      已执行利润: summary.totalRealizedProfit.toFixed(6),
-    };
-
-    const ws = XLSX.utils.json_to_sheet([...exportData, summaryRow] as Record<string, unknown>[]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '数据报表');
-
-    if (mergeInfo.length > 0) {
-      ws['!merges'] = mergeInfo;
+    try {
+      const scopeLabel = hasContractFilter
+        ? `合同筛选：${urlSelectedSales.length} 个销售合同，${urlSelectedPurchase.length} 个采购合同`
+        : `${year}年${startMonth}月至${endMonth}月`;
+      const workbook = buildReportWorkbook(displayData, summary, { scopeLabel, exchangeRate });
+      const fileName = hasContractFilter
+        ? `合同关联与利润报表_筛选${displayData.length}条.xlsx`
+        : `合同关联与利润报表_${year}年${startMonth}-${endMonth}月.xlsx`;
+      const bytes = XLSX.write(workbook, {
+        type: 'array',
+        bookType: 'xlsx',
+        cellStyles: true,
+        compression: true,
+      });
+      const downloadUrl = URL.createObjectURL(new Blob([bytes], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }));
+      const downloadLink = document.createElement('a');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = fileName;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+      message.success('Excel导出成功');
+    } catch (error) {
+      console.error('Export report error:', error);
+      message.error('Excel导出失败，请重试');
     }
-
-    const colWidths = [
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-    ];
-    ws['!cols'] = colWidths;
-
-    XLSX.writeFile(wb, hasContractFilter ? `数据报表_筛选${displayData.length}条.xlsx` : `数据报表_${year}年${startMonth}-${endMonth}月.xlsx`);
-    message.success('导出成功');
   };
 
   const columns = [
@@ -356,28 +203,28 @@ export const ReportPage: React.FC = () => {
       align: 'right' as const,
     },
     {
-      title: '采购单价',
+      title: '采购单价(CNY)',
       dataIndex: 'purchaseUnitPrice',
       key: 'purchaseUnitPrice',
       width: 100,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
-      title: '采购总价(不含税)(不含税)',
+      title: '采购总价(不含税/CNY)',
       dataIndex: 'purchaseTotalAmount',
       key: 'purchaseTotalAmount',
       width: 120,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
-      title: '采购含税总价',
+      title: '采购含税总价(CNY)',
       dataIndex: 'purchaseTaxTotalAmount',
       key: 'purchaseTaxTotalAmount',
       width: 120,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '采购付款日期',
@@ -399,7 +246,7 @@ export const ReportPage: React.FC = () => {
       key: 'freight',
       width: 80,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '杂费',
@@ -407,7 +254,23 @@ export const ReportPage: React.FC = () => {
       key: 'miscellaneous',
       width: 80,
       align: 'right' as const,
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
+    },
+    {
+      title: '关税',
+      dataIndex: 'tariff',
+      key: 'tariff',
+      width: 80,
+      align: 'right' as const,
+      render: formatAmount,
+    },
+    {
+      title: '增值税',
+      dataIndex: 'valueAddedTax',
+      key: 'valueAddedTax',
+      width: 90,
+      align: 'right' as const,
+      render: formatAmount,
     },
     {
       title: '销售合同号',
@@ -448,7 +311,7 @@ export const ReportPage: React.FC = () => {
       }),
     },
     {
-      title: '销售单价',
+      title: '销售单价(CNY)',
       dataIndex: 'salesUnitPrice',
       key: 'salesUnitPrice',
       width: 100,
@@ -456,10 +319,10 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
-      title: '销售总价(不含税)(不含税)',
+      title: '销售总价(不含税/CNY)',
       dataIndex: 'salesTotalAmount',
       key: 'salesTotalAmount',
       width: 120,
@@ -467,10 +330,10 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
-      title: '销售含税总价',
+      title: '销售含税总价(CNY)',
       dataIndex: 'salesTaxTotalAmount',
       key: 'salesTaxTotalAmount',
       width: 120,
@@ -478,7 +341,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '客户到货时间',
@@ -519,7 +382,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '营业利润',
@@ -530,7 +393,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '净利润',
@@ -541,7 +404,7 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
     {
       title: '已执行利润',
@@ -552,37 +415,9 @@ export const ReportPage: React.FC = () => {
       onCell: (record: ReportData) => ({
         rowSpan: record.salesRowSpan,
       }),
-      render: (val: number) => val?.toFixed(6) || '0.00',
+      render: formatAmount,
     },
   ];
-
-  const summaryColumns = columns.map((col) => ({
-    ...col,
-    footer: (_: unknown, record?: ReportData) => {
-      if (record) return undefined;
-      return col.dataIndex === 'purchaseTotalAmount'
-        ? summary.totalPurchaseAmount.toFixed(6)
-        : col.dataIndex === 'purchaseTaxTotalAmount'
-        ? summary.totalPurchaseTaxAmount.toFixed(6)
-        : col.dataIndex === 'salesTotalAmount'
-        ? summary.totalSalesAmount.toFixed(6)
-        : col.dataIndex === 'salesTaxTotalAmount'
-        ? summary.totalSalesTaxAmount.toFixed(6)
-        : col.dataIndex === 'tax'
-        ? summary.totalTax.toFixed(6)
-        : col.dataIndex === 'freight'
-        ? summary.totalFreight.toFixed(6)
-        : col.dataIndex === 'miscellaneous'
-        ? summary.totalMiscellaneous.toFixed(6)
-        : col.dataIndex === 'profit'
-        ? summary.totalProfit.toFixed(6)
-        : col.dataIndex === 'netProfit'
-        ? summary.totalNetProfit.toFixed(6)
-        : col.dataIndex === 'realizedProfit'
-        ? summary.totalRealizedProfit.toFixed(6)
-        : undefined;
-    },
-  }));
 
   return (
     <div style={{ padding: 24 }}>
@@ -664,20 +499,20 @@ export const ReportPage: React.FC = () => {
         ) : (
           <Table
             dataSource={displayData}
-            columns={summaryColumns}
-            rowKey={(_, index) => String(index)}
-            scroll={{ x: 2700 }}
+            columns={columns}
+            rowKey={(record) => `${record.salesContractId || 'no-sales'}:${record.purchaseContractId || 'no-purchase'}`}
+            scroll={{ x: 2900 }}
             pagination={false}
             size="small"
             footer={() => (
               <div style={{ fontWeight: 'bold' }}>
-                总计: 采购总价(不含税) {summary.totalPurchaseAmount.toFixed(6)} | 采购含税总价{' '}
-                {summary.totalPurchaseTaxAmount.toFixed(6)} | 运费{' '}
-                {summary.totalFreight.toFixed(6)} | 杂费 {summary.totalMiscellaneous.toFixed(6)} | 销售总价(不含税){' '}
-                {summary.totalSalesAmount.toFixed(6)} | 销售含税总价 {summary.totalSalesTaxAmount.toFixed(6)} | 税额{' '}
-                {summary.totalTax.toFixed(6)} | 营业利润{' '}
-                {summary.totalProfit.toFixed(6)} | 净利润 {summary.totalNetProfit.toFixed(6)} | 已执行利润{' '}
-                {summary.totalRealizedProfit.toFixed(6)}
+                总计: 采购总价(不含税) {formatAmount(summary.totalPurchaseAmount)} | 采购含税总价{' '}
+                {formatAmount(summary.totalPurchaseTaxAmount)} | 运费 {formatAmount(summary.totalFreight)} | 杂费{' '}
+                {formatAmount(summary.totalMiscellaneous)} | 关税 {formatAmount(summary.totalTariff)} | 增值税{' '}
+                {formatAmount(summary.totalValueAddedTax)} | 销售总价(不含税) {formatAmount(summary.totalSalesAmount)} | 销售含税总价{' '}
+                {formatAmount(summary.totalSalesTaxAmount)} | 税额 {formatAmount(summary.totalTax)} | 营业利润{' '}
+                {formatAmount(summary.totalProfit)} | 净利润 {formatAmount(summary.totalNetProfit)} | 已执行利润{' '}
+                {formatAmount(summary.totalRealizedProfit)}
               </div>
             )}
           />

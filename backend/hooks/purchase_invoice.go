@@ -10,6 +10,24 @@ import (
 )
 
 func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
+	app.OnRecordUpdateRequest("purchase_invoices").Bind(&hook.Handler[*core.RecordRequestEvent]{
+		Func: func(e *core.RecordRequestEvent) error {
+			requestInfo, err := e.RequestInfo()
+			if err != nil {
+				return e.Next()
+			}
+			current, err := app.FindRecordById("purchase_invoices", e.Record.Id)
+			if err == nil && shouldPreservePurchaseInvoiceAttachments(
+				current.GetStringSlice("attachments"),
+				e.Record.GetStringSlice("attachments"),
+				requestInfo.Body,
+			) {
+				e.Record.Set("attachments", current.GetStringSlice("attachments"))
+			}
+			return e.Next()
+		},
+	})
+
 	app.OnRecordCreate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			e.Record.Set("manager_confirmed", "pending")
@@ -40,7 +58,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(invoices, "product_amount") + newInvoiceProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量", "product_amount"); err != nil {
 				return err
 			}
 
@@ -120,7 +138,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumChildFieldExcluding(invoices, "product_amount", currentInvoiceId, newInvoiceProductAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			oldRecord, _ := GetRecordById(app, "purchase_invoices", e.Record.Id)
+			oldRecord := e.Record.Original()
 			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
 				return err
@@ -178,10 +196,22 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			if isContractCascadeDelete(e.Context) {
+				return e.Next()
+			}
 			return updatePurchaseContractInvoiceProgress(app, e.Record.GetString("purchase_contract"))
 		},
 		Priority: 0,
 	})
+}
+
+func shouldPreservePurchaseInvoiceAttachments(oldAttachments, newAttachments []string, submittedFields map[string]any) bool {
+	if len(oldAttachments) == 0 || len(newAttachments) > 0 {
+		return false
+	}
+	_, verificationChanged := submittedFields["is_verified"]
+	_, confirmationChanged := submittedFields["manager_confirmed"]
+	return verificationChanged || confirmationChanged
 }
 
 func updatePurchaseContractInvoiceProgress(app *pocketbase.PocketBase, contractId string) error {

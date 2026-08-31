@@ -107,16 +107,19 @@ export const PurchaseArrivalAPI = {
 
 export const PurchaseContractAPI = {
   getOptions: async () => {
-    const result = await pb.collection('purchase_contracts').getList(1, 100, {
+    const items = await pb.collection('purchase_contracts').getFullList({
       filter: 'status = "executing"',
+      sort: '-created_at',
     });
-    return result;
+    return { items };
   },
 };
 
 export const SalesContractAPI = {
   getSalesOptions: async () => {
-    const result = await pb.collection('sales_contracts').getList(1, 100, {});
-    return result;
+    const items = await pb.collection('sales_contracts').getFullList({
+      sort: '-created_at',
+    });
+    return { items };
   },
 };

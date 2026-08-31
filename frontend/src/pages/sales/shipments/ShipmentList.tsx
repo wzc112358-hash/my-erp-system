@@ -36,7 +36,7 @@ export const ShipmentList: React.FC = () => {
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const result = await SalesContractAPI.list({ per_page: 100 });
+        const result = await SalesContractAPI.getOptions();
         const options = result.items.map((item) => ({
           label: `${item.no} - ${item.product_name}`,
           value: item.id,

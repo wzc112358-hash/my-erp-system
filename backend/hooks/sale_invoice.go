@@ -36,7 +36,7 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			totalProductAmount := SumField(invoices, "product_amount") + newInvoiceProductAmount
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
+			if err := CheckOverage(totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量", "product_amount"); err != nil {
 				return err
 			}
 
@@ -130,7 +130,7 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 			totalAmount := SumChildFieldExcluding(invoices, "amount", currentInvoiceId, newInvoiceAmount)
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
-			oldRecord, _ := GetRecordById(app, "sale_invoices", e.Record.Id)
+			oldRecord := e.Record.Original()
 			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.0, "发票产品数量"); err != nil {
 				return err
@@ -189,6 +189,9 @@ func RegisterSaleInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("sale_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			if isContractCascadeDelete(e.Context) {
+				return e.Next()
+			}
 			contractId := e.Record.GetString("sales_contract")
 			if contractId == "" {
 				log.Println("[SaleInvoice] sales_contract is empty")
