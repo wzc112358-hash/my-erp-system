@@ -119,14 +119,18 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+			return finishPostCommit(e, "PurchaseArrival.AfterCreate", func() error {
+				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+			})
 		},
 		Priority: 0,
 	})
 
 	app.OnRecordAfterUpdateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+			return finishPostCommit(e, "PurchaseArrival.AfterUpdate", func() error {
+				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+			})
 		},
 		Priority: 0,
 	})

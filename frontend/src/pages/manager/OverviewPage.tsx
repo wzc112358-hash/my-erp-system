@@ -161,15 +161,15 @@ export const OverviewPage: React.FC = () => {
       ? '发货、销售收款和销售开票记录'
       : '到货、采购收票和采购付款记录';
     modal.confirm({
-      title: `解除关联并删除 ${contract.no}？`,
-      content: `系统会永久删除该合同及其${ownedRecords}和附件；其他合同或跨侧业务记录只解除引用。删除前的字段会写入审计日志，附件内容只能从服务器备份恢复。`,
-      okText: '确认删除',
+      title: `解除关联并将 ${contract.no} 移入回收站？`,
+      content: `该合同及其${ownedRecords}会进入同一回收批次，附件仍保留；其他合同只解除引用。可在“数据安全”页面恢复。`,
+      okText: '移入回收站',
       cancelText: '取消',
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await ContractOperationsAPI.unlinkAndDelete(contract.type, contract.id);
-          message.success('合同及其关联业务记录已删除');
+          message.success('合同及其关联业务记录已移入回收站');
           await fetchData();
         } catch (error) {
           message.error(getPbErrorMessage(error, '删除失败'));
@@ -230,7 +230,7 @@ export const OverviewPage: React.FC = () => {
         onPageChange={setCurrentPage}
         onSelect={selectContract}
         onView={viewContract}
-        onViewFlow={(contract) => navigate(`/manager/progress-flow?contractId=${contract.id}&type=sales`)}
+        onViewFlow={(contract) => navigate(`/manager/progress-flow?contractId=${contract.id}&type=${contract.type}`)}
         onLink={(contract) => setLinkSource({ type: contract.type, contract })}
         onUnlink={handleUnlink}
         onDelete={handleDelete}

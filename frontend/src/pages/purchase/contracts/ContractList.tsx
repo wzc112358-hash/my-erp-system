@@ -17,6 +17,7 @@ import {
 } from '@/lib/contract-relations';
 import { ContractForm } from './ContractForm';
 import { extractAttachments } from '@/utils/file';
+import { findDuplicateContractNumber } from '@/lib/contract-number';
 
 const statusMap: Record<string, { text: string; color: string }> = {
   executing: { text: '执行中', color: '#1890ff' },
@@ -27,7 +28,7 @@ const statusMap: Record<string, { text: string; color: string }> = {
 export const ContractList: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [data, setData] = useState<PurchaseContract[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -128,7 +129,7 @@ export const ContractList: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await PurchaseContractAPI.delete(id);
-      message.success('删除成功');
+      message.success('合同及关联子记录已移入回收站');
       fetchData();
     } catch (error) {
       console.error('Delete contract error:', error);
@@ -163,6 +164,17 @@ export const ContractList: React.FC = () => {
   };
 
   const handleFormFinish = async (values: PurchaseContractFormData) => {
+    if (!editingContract) {
+      const duplicate = findDuplicateContractNumber(data, values.no);
+      if (duplicate) {
+        modal.warning({
+          title: '采购合同号已存在',
+          content: `合同 ${duplicate.no}（${duplicate.product_name}）已经存在，请打开原合同补充数据，不要重复创建。`,
+          okText: '知道了',
+        });
+        return;
+      }
+    }
     let attachments: (File | string)[] | undefined;
     
     if (values.attachments) {
@@ -178,24 +190,29 @@ export const ContractList: React.FC = () => {
       }
     }
 
-    const data = {
+    const payload = {
       ...Object.fromEntries(rawEntries),
       attachments,
     } as PurchaseContractFormData;
 
     try {
       if (editingContract) {
-        await PurchaseContractAPI.update(editingContract.id, data);
+        await PurchaseContractAPI.update(editingContract.id, payload);
         message.success('更新成功');
       } else {
-        await PurchaseContractAPI.create(data);
-        message.success('创建成功');
+        const created = await PurchaseContractAPI.create(payload);
+        setData((current) => current.some((item) => item.id === created.id) ? current : [created, ...current]);
+        message.success(`采购合同 ${created.no || payload.no} 已写入数据库，记录 ID：${created.id}`);
       }
       setFormVisible(false);
-      fetchData();
+      void fetchData();
     } catch (error) {
-      const err = error as Error;
-      message.error(getPbErrorMessage(err, editingContract ? '更新失败' : '创建失败'));
+      const errorMessage = getPbErrorMessage(error, editingContract ? '更新失败' : '创建失败');
+      if (!editingContract && errorMessage.includes('已存在')) {
+        modal.warning({ title: '采购合同号已存在', content: errorMessage, okText: '知道了' });
+      } else {
+        message.error(errorMessage);
+      }
     }
   };
 
@@ -326,7 +343,8 @@ export const ContractList: React.FC = () => {
             </Tooltip>
           )}
           <Popconfirm
-            title="确定删除此合同？"
+            title="将此合同移入回收站？"
+            description="到货、收票和付款记录会一并移入；附件保留，经理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"

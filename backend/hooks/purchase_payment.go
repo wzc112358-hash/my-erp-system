@@ -104,14 +104,18 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
+			return finishPostCommit(e, "PurchasePayment.AfterCreate", func() error {
+				return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
+			})
 		},
 		Priority: 0,
 	})
 
 	app.OnRecordAfterUpdateSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
+			return finishPostCommit(e, "PurchasePayment.AfterUpdate", func() error {
+				return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
+			})
 		},
 		Priority: 0,
 	})

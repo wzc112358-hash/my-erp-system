@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { RecycleBinAPI } from './recycle-bin';
 import { createWithAttachments } from './helpers';
 
 import type { SalesShipment, SalesShipmentFormData, SalesShipmentListParams } from '@/types/sales-shipment';
@@ -9,7 +10,7 @@ export const SalesShipmentAPI = {
     const filters: string[] = [];
     if (params.sales_contract) filters.push(`sales_contract = "${params.sales_contract}"`);
     if (params.search) {
-      filters.push(`(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}")`);
+      filters.push(`(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}" || sales_contract.no ~ "${params.search}")`);
     }
 
     const result = await pb.collection('sales_shipments').getList<SalesShipment>(
@@ -77,7 +78,7 @@ export const SalesShipmentAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('sales_shipments').delete(id);
+    return RecycleBinAPI.remove('sales_shipments', id);
   },
 };
 

@@ -44,7 +44,6 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
     const fetchContracts = async () => {
       try {
         const contracts = await pb.collection('sales_contracts').getFullList({
-          filter: 'status = "executing"',
           sort: '-created_at',
         });
         const options = contracts.map((item: Record<string, unknown>) => ({

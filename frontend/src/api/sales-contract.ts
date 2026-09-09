@@ -2,6 +2,7 @@ import { pb } from '@/lib/pocketbase';
 import { createWithAttachments } from './helpers';
 import { assertAttachmentFileSize } from '@/utils/file';
 import { loadAllContractRecords } from '@/lib/contract-options';
+import { RecycleBinAPI } from './recycle-bin';
 
 import type { 
   SalesContract, 
@@ -105,7 +106,7 @@ export const SalesContractAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('sales_contracts').delete(id);
+    return RecycleBinAPI.remove('sales_contracts', id);
   },
 
   getShipments: async (contractId: string) => {

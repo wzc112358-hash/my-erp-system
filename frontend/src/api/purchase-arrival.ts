@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { RecycleBinAPI } from './recycle-bin';
 import { createWithAttachments } from './helpers';
 
 import type {
@@ -14,7 +15,7 @@ export const PurchaseArrivalAPI = {
       filters.push(`purchase_contract = "${params.purchase_contract}"`);
     if (params.search) {
       filters.push(
-        `(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}")`
+        `(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}" || purchase_contract.no ~ "${params.search}")`
       );
     }
 
@@ -101,14 +102,13 @@ export const PurchaseArrivalAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('purchase_arrivals').delete(id);
+    return RecycleBinAPI.remove('purchase_arrivals', id);
   },
 };
 
 export const PurchaseContractAPI = {
   getOptions: async () => {
     const items = await pb.collection('purchase_contracts').getFullList({
-      filter: 'status = "executing"',
       sort: '-created_at',
     });
     return { items };

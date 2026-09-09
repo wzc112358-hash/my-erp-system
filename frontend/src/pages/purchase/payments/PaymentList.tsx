@@ -42,7 +42,6 @@ export const PaymentList: React.FC = () => {
     const fetchContracts = async () => {
       try {
         const contracts = await pb.collection('purchase_contracts').getFullList({
-          filter: 'status = "executing"',
           sort: '-created_at',
         });
         const options = contracts.map((item: Record<string, unknown>) => ({
@@ -128,7 +127,7 @@ export const PaymentList: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await PaymentAPI.delete(id);
-      message.success('删除成功');
+      message.success('记录已移入回收站');
       fetchData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -230,7 +229,8 @@ export const PaymentList: React.FC = () => {
             onClick={() => handleEdit(record)}
           />
           <Popconfirm
-            title="确定删除此付款记录？"
+            title="将此付款记录移入回收站？"
+            description="附件会保留，经理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"

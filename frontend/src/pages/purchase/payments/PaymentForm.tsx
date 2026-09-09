@@ -43,7 +43,6 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
     const fetchContracts = async () => {
       try {
         const contracts = await pb.collection('purchase_contracts').getFullList({
-          filter: 'status = "executing"',
           sort: '-created_at',
         });
         const options = contracts.map((item: Record<string, unknown>) => ({

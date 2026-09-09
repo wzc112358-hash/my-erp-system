@@ -58,7 +58,6 @@ const getPurchasesForSales = async (salesContract: ComparisonSalesContract) => {
     salesContract.purchase_contract
       ? pb.collection('purchase_contracts')
         .getOne<ComparisonPurchaseContract>(salesContract.purchase_contract, { expand: 'supplier' })
-        .catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
 
@@ -599,27 +598,27 @@ export const ComparisonAPI = {
       case 'shipment': {
         const salesShipments = await pb.collection('sales_shipments').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => []);
+        });
         
-        const purchaseArrivals = await getPurchaseRecords('purchase_arrivals', purchaseContractIds).catch(() => []);
+        const purchaseArrivals = await getPurchaseRecords('purchase_arrivals', purchaseContractIds);
         
         return { sales: salesShipments, purchase: purchaseArrivals };
       }
       case 'payment': {
         const saleReceipts = await pb.collection('sale_receipts').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => []);
+        });
         
-        const purchasePayments = await getPurchaseRecords('purchase_payments', purchaseContractIds).catch(() => []);
+        const purchasePayments = await getPurchaseRecords('purchase_payments', purchaseContractIds);
         
         return { sales: saleReceipts, purchase: purchasePayments };
       }
       case 'invoice': {
         const saleInvoices = await pb.collection('sale_invoices').getFullList({
           filter: `sales_contract="${salesContractId}"`,
-        }).catch(() => []);
+        });
         
-        const purchaseInvoices = await getPurchaseRecords('purchase_invoices', purchaseContractIds).catch(() => []);
+        const purchaseInvoices = await getPurchaseRecords('purchase_invoices', purchaseContractIds);
         
         return { sales: saleInvoices, purchase: purchaseInvoices };
       }
@@ -913,13 +912,13 @@ export const ComparisonAPI = {
     const [standaloneArrivalItems, standaloneInvoiceItems, standalonePaymentItems] = await Promise.all([
       fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
         return pb.collection('purchase_arrivals').getFullList({ filter });
-      }).catch(() => []),
+      }),
       fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
         return pb.collection('purchase_invoices').getFullList({ filter });
-      }).catch(() => []),
+      }),
       fetchAllByFieldBatches<Record<string, unknown>>(standaloneIds, 'purchase_contract', async (filter) => {
         return pb.collection('purchase_payments').getFullList({ filter });
-      }).catch(() => []),
+      }),
     ]);
 
     const standaloneArrivals = { items: standaloneArrivalItems };

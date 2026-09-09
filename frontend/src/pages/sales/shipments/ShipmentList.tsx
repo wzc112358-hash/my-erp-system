@@ -109,7 +109,7 @@ export const ShipmentList: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await SalesShipmentAPI.delete(id);
-      message.success('删除成功');
+      message.success('记录已移入回收站');
       fetchData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -191,7 +191,8 @@ export const ShipmentList: React.FC = () => {
             onClick={() => handleEdit(record)}
           />
           <Popconfirm
-            title="确定删除此到货记录？"
+            title="将此发货记录移入回收站？"
+            description="附件会保留，经理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"

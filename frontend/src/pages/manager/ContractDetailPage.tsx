@@ -1,23 +1,29 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm, Select } from 'antd';
-import { LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Card, Tabs, Table, Descriptions, Button, Tag, Spin, App, Alert, Upload, Empty, Popconfirm, Select, Space } from 'antd';
+import { CheckOutlined, CloseOutlined, LeftOutlined, UploadOutlined, DeleteOutlined, DownloadOutlined } from '@ant-design/icons';
 import { ComparisonAPI } from '@/api/comparison';
 import { getPbErrorMessage } from '@/api/helpers';
+import { ManagerConfirmationAPI } from '@/api/manager-confirmation';
+import type { ManagerConfirmableCollection, ManagerConfirmationDecision } from '@/api/manager-confirmation';
 import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
 import { assertAttachmentFileSize } from '@/utils/file';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
+import { RecycleBinAPI } from '@/api/recycle-bin';
+import type { RecycleCollection } from '@/api/recycle-bin';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
 import { calculateContractProfit } from '@/lib/contract-profit';
 import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
+import { useManagerPendingStore } from '@/stores/manager-pending';
 import dayjs from 'dayjs';
 
 const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(6)}`;
 const formatUSD = (value: number) => `$${(value ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 const percentFormat = (value: number) => `${value.toFixed(2)}%`;
+const responsiveDescriptionColumns = { xs: 1, sm: 2, lg: 4 } as const;
 
 interface ProfitCalc {
   operatingProfit: number;
@@ -248,8 +254,13 @@ const ContractDetailPage: React.FC = () => {
   const [detailData, setDetailData] = useState<ContractDetailData | null>(null);
   const [uploading, setUploading] = useState(false);
   const [verificationUpdating, setVerificationUpdating] = useState<string>();
+  const [confirmationUpdating, setConfirmationUpdating] = useState<{
+    key: string;
+    decision: ManagerConfirmationDecision;
+  }>();
   const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
+  const { fetchPendingCount } = useManagerPendingStore();
 
   useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
 
@@ -337,6 +348,83 @@ const ContractDetailPage: React.FC = () => {
     }
   }, [id, isStandalonePurchase, message]);
 
+  const handleManagerDecision = useCallback(async (
+    collection: ManagerConfirmableCollection,
+    recordId: string,
+    decision: ManagerConfirmationDecision,
+  ) => {
+    const key = `${collection}:${recordId}`;
+    setConfirmationUpdating({ key, decision });
+    try {
+      await ManagerConfirmationAPI.submit(collection, recordId, decision);
+      if (id) {
+        const data = isStandalonePurchase
+          ? await ComparisonAPI.getPurchaseContractDetail(id)
+          : await ComparisonAPI.getContractDetail(id);
+        setDetailData(data);
+      }
+      await fetchPendingCount();
+      message.success(decision === 'approved' ? '确认成功' : '已驳回');
+    } catch (error) {
+      message.error(getPbErrorMessage(error, decision === 'approved' ? '确认失败，请重试' : '驳回失败，请重试'));
+    } finally {
+      setConfirmationUpdating(undefined);
+    }
+  }, [fetchPendingCount, id, isStandalonePurchase, message]);
+
+  const managerConfirmationColumn = (collection: ManagerConfirmableCollection) => ({
+    title: '经理确认状态',
+    dataIndex: 'manager_confirmed',
+    key: 'manager_confirmed',
+    width: 220,
+    render: (status: string, record: { id: string }) => {
+      if (status !== 'pending') return <StatusTag status={status} />;
+
+      const key = `${collection}:${record.id}`;
+      const updatingThisRecord = confirmationUpdating?.key === key;
+      return (
+        <Space size={4} wrap={false}>
+          <StatusTag status={status} />
+          <Popconfirm
+            title="确认这条记录？"
+            description="提交后会写入经理确认日志。"
+            okText="确认"
+            cancelText="取消"
+            onConfirm={() => handleManagerDecision(collection, record.id, 'approved')}
+          >
+            <Button
+              type="primary"
+              size="small"
+              icon={<CheckOutlined />}
+              loading={updatingThisRecord && confirmationUpdating?.decision === 'approved'}
+              disabled={updatingThisRecord}
+            >
+              确认
+            </Button>
+          </Popconfirm>
+          <Popconfirm
+            title="驳回这条记录？"
+            description="员工可根据反馈修改后重新提交。"
+            okText="驳回"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleManagerDecision(collection, record.id, 'rejected')}
+          >
+            <Button
+              danger
+              size="small"
+              icon={<CloseOutlined />}
+              loading={updatingThisRecord && confirmationUpdating?.decision === 'rejected'}
+              disabled={updatingThisRecord}
+            >
+              驳回
+            </Button>
+          </Popconfirm>
+        </Space>
+      );
+    },
+  });
+
   const salesColumns = [
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '运单号', dataIndex: 'tracking_contract_no', key: 'tracking_contract_no' },
@@ -385,7 +473,7 @@ const ContractDetailPage: React.FC = () => {
       return formatCrossBorderAmount(v, sc.is_cross_border, exchangeRate);
     } },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
-    { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
+    managerConfirmationColumn('sale_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -406,7 +494,7 @@ const ContractDetailPage: React.FC = () => {
     { title: '收款日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     { title: '收款方式', dataIndex: 'method', key: 'method' },
     { title: '收款账号', dataIndex: 'account', key: 'account' },
-    { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
+    managerConfirmationColumn('sale_receipts'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -438,7 +526,7 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '关税', dataIndex: 'tariff', key: 'tariff', render: (v: number) => v ? formatCurrency(v) : '-' },
     { title: '增值税', dataIndex: 'value_added_tax', key: 'value_added_tax', render: (v: number) => v ? formatCurrency(v) : '-' },
-    { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
+    managerConfirmationColumn('purchase_arrivals'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -458,7 +546,7 @@ const ContractDetailPage: React.FC = () => {
       return formatCrossBorderAmount(v, pc.is_cross_border, exchangeRate);
     } },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
-    { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
+    managerConfirmationColumn('purchase_invoices'),
     {
       title: '验票状态',
       dataIndex: 'is_verified',
@@ -498,7 +586,7 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '付款日期', dataIndex: 'pay_date', key: 'pay_date', render: (v: string) => formatDate(v) },
     { title: '付款方式', dataIndex: 'method', key: 'method' },
-    { title: '经理确认状态', dataIndex: 'manager_confirmed', key: 'manager_confirmed', render: (s: string) => <StatusTag status={s} /> },
+    managerConfirmationColumn('purchase_payments'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -524,7 +612,7 @@ const ContractDetailPage: React.FC = () => {
       : formatCurrency(sc.unit_price);
     return (
       <Card title="销售合同基本信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
-        <Descriptions bordered size="small" column={4}>
+        <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
           <Descriptions.Item label="合同编号">{sc.no}</Descriptions.Item>
           <Descriptions.Item label="品名">{sc.product_name}</Descriptions.Item>
           <Descriptions.Item label="客户">{sc.expand?.customer?.name || sc.customer_name || '-'}</Descriptions.Item>
@@ -583,7 +671,7 @@ const ContractDetailPage: React.FC = () => {
               style={cardStyle}
               styles={{ body: cardBodyStyle }}
             >
-              <Descriptions bordered size="small" column={4}>
+              <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
                 <Descriptions.Item label="合同编号">{pc.no}</Descriptions.Item>
                 <Descriptions.Item label="品名">{pc.product_name}</Descriptions.Item>
                 <Descriptions.Item label="供应商">{pc.expand?.supplier?.name || pc.supplier_name || '-'}</Descriptions.Item>
@@ -622,7 +710,7 @@ const ContractDetailPage: React.FC = () => {
       <Descriptions.Item label="已执行税额">
         <span style={{ fontWeight: 'bold' }}>{fmt(calc.realizedTax)}</span>
       </Descriptions.Item>
-      <Descriptions.Item label="已执行净利润" span={2}>
+      <Descriptions.Item label="已执行净利润" span={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}>
         <span style={{ color: calc.realizedNetProfit < 0 ? '#ff4d4f' : '#faad14', fontWeight: 'bold', fontSize: 15 }}>{fmt(calc.realizedNetProfit)}</span>
         <span style={{ marginLeft: 8, fontSize: 12, color: '#999' }}>（未执行部分暂不核算）</span>
       </Descriptions.Item>
@@ -642,7 +730,7 @@ const ContractDetailPage: React.FC = () => {
       <Card title="利润分析" style={cardStyle} styles={{ body: { padding: 24 } }}>
         {!cnyCalc.quantityMatched && (
           <Alert
-            message="数量不匹配"
+            title="数量不匹配"
             description={`销售合同总数量 (${sc.total_quantity} 吨) 与采购合同总数量之和 (${detailData.profit.purchase_quantity} 吨) 不相等`}
             type="warning"
             showIcon
@@ -651,7 +739,7 @@ const ContractDetailPage: React.FC = () => {
         )}
         {hasCrossBorder && (
           <Alert
-            message="跨境交易"
+            title="跨境交易"
             description={`汇率: 1 USD = ${exchangeRate} CNY。USD 金额已按此汇率换算为 CNY 后进行利润计算。`}
             type="info"
             showIcon
@@ -666,7 +754,7 @@ const ContractDetailPage: React.FC = () => {
               label: '人民币分析（CNY）',
               children: (
                 <>
-                  <Descriptions bordered size="small" column={4}>
+                  <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
                     <Descriptions.Item label="销售总金额（含税）">{formatCurrency(cnyCalc.salesAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
@@ -701,7 +789,7 @@ const ContractDetailPage: React.FC = () => {
               label: '美元分析（USD）',
               children: (
                 <>
-                  <Descriptions bordered size="small" column={4}>
+                  <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
                     <Descriptions.Item label="销售总金额（含税）">{formatUSD(usdCalc!.salesAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="采购总金额（含税）">{formatUSD(usdCalc!.purchaseAmountIncTax)}</Descriptions.Item>
                     <Descriptions.Item label="销售总金额（不含税）">{formatUSD(usdCalc!.salesAmountExTax)}</Descriptions.Item>
@@ -733,7 +821,7 @@ const ContractDetailPage: React.FC = () => {
           ]} />
         ) : (
           <>
-            <Descriptions bordered size="small" column={4}>
+            <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
               <Descriptions.Item label="销售总金额（含税）">{formatCurrency(cnyCalc.salesAmountIncTax)}</Descriptions.Item>
               <Descriptions.Item label="采购总金额（含税）">{formatCurrency(cnyCalc.purchaseAmountIncTax)}</Descriptions.Item>
               <Descriptions.Item label="销售总金额（不含税）">{formatCurrency(cnyCalc.salesAmountExTax)}</Descriptions.Item>
@@ -844,10 +932,10 @@ const ContractDetailPage: React.FC = () => {
       renderRecordAttachments(collection, record.id, record.attachments),
   });
 
-  const handleDeleteSubRecord = useCallback(async (collection: string, recordId: string) => {
+  const handleDeleteSubRecord = useCallback(async (collection: RecycleCollection, recordId: string) => {
     try {
-      await pb.collection(collection).delete(recordId);
-      message.success('删除成功');
+      await RecycleBinAPI.remove(collection, recordId);
+      message.success('记录已移入回收站');
       if (id) {
         const data = isStandalonePurchase
           ? await ComparisonAPI.getPurchaseContractDetail(id)
@@ -860,13 +948,14 @@ const ContractDetailPage: React.FC = () => {
     }
   }, [id, message, isStandalonePurchase]);
 
-  const deleteColumn = useCallback((collection: string) => ({
+  const deleteColumn = useCallback((collection: RecycleCollection) => ({
     title: '操作',
     key: 'action',
     width: 80,
     render: (_: unknown, record: { id: string }) => (
       <Popconfirm
-        title="确定删除此记录？"
+        title="将此记录移入回收站？"
+        description="附件会保留，经理可在数据安全页面恢复。"
         onConfirm={() => handleDeleteSubRecord(collection, record.id)}
         okText="确定"
         cancelText="取消"
@@ -894,6 +983,7 @@ const ContractDetailPage: React.FC = () => {
                     rowKey="id"
                     pagination={false}
                     size="small"
+                    scroll={{ x: 'max-content' }}
                     locale={{ emptyText: '暂无发货记录' }}
                     expandable={makeExpandable('sales_shipments')}
                   />
@@ -905,6 +995,7 @@ const ContractDetailPage: React.FC = () => {
                     rowKey="id"
                     pagination={false}
                     size="small"
+                    scroll={{ x: 'max-content' }}
                     locale={{ emptyText: '暂无发票记录' }}
                     expandable={makeExpandable('sale_invoices')}
                   />
@@ -916,6 +1007,7 @@ const ContractDetailPage: React.FC = () => {
                     rowKey="id"
                     pagination={false}
                     size="small"
+                    scroll={{ x: 'max-content' }}
                     locale={{ emptyText: '暂无收款记录' }}
                     expandable={makeExpandable('sale_receipts')}
                   />
@@ -928,6 +1020,7 @@ const ContractDetailPage: React.FC = () => {
                       rowKey="id"
                       pagination={false}
                       size="small"
+                      scroll={{ x: 'max-content' }}
                     />
                   </Card>
                 )}
@@ -952,6 +1045,7 @@ const ContractDetailPage: React.FC = () => {
                   rowKey="id"
                   pagination={false}
                   size="small"
+                  scroll={{ x: 'max-content' }}
                   locale={{ emptyText: '暂无到货记录' }}
                   expandable={makeExpandable('purchase_arrivals')}
                 />
@@ -963,6 +1057,7 @@ const ContractDetailPage: React.FC = () => {
                   rowKey="id"
                   pagination={false}
                   size="small"
+                  scroll={{ x: 'max-content' }}
                   locale={{ emptyText: '暂无发票记录' }}
                   expandable={makeExpandable('purchase_invoices')}
                 />
@@ -974,6 +1069,7 @@ const ContractDetailPage: React.FC = () => {
                   rowKey="id"
                   pagination={false}
                   size="small"
+                  scroll={{ x: 'max-content' }}
                   locale={{ emptyText: '暂无付款记录' }}
                   expandable={makeExpandable('purchase_payments')}
                 />

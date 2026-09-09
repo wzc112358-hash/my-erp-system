@@ -3,11 +3,13 @@ import { ReactFlow, Background, Controls, Handle, Position, type Node, type Edge
 import dagre from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
 import dayjs from 'dayjs';
-import { App, Button, Card, Select, Spin, Empty, Modal, Descriptions, Tag, Upload, Badge } from 'antd';
-import { LeftOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Select, Spin, Empty, Modal, Descriptions, Tag, Upload, Badge } from 'antd';
+import { LeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
-import { getPbErrorMessage } from '@/api/helpers';
+import { getPbErrorMessage, isAbortedError } from '@/api/helpers';
+import { ManagerConfirmationAPI } from '@/api/manager-confirmation';
+import type { ManagerConfirmableCollection } from '@/api/manager-confirmation';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
@@ -396,7 +398,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="开票日期">{formatDate(r.issue_date as string)}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
+          <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
         </Descriptions>
       );
@@ -411,7 +413,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="收款账号">{(r.account as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
+          <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
         </Descriptions>
       );
@@ -434,7 +436,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="增值税">{formatCurrency((r.value_added_tax as number) || 0)}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
+          <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
         </Descriptions>
       );
@@ -465,7 +467,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="付款方式">{(r.method as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
+          <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
         </Descriptions>
       );
@@ -488,6 +490,10 @@ export const ProgressFlowPage: React.FC = () => {
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [loading, setLoading] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState<string>();
+  const [optionsReloadKey, setOptionsReloadKey] = useState(0);
+  const [flowError, setFlowError] = useState<string>();
+  const [flowReloadKey, setFlowReloadKey] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalData, setModalData] = useState<FlowNodeData | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -505,36 +511,46 @@ export const ProgressFlowPage: React.FC = () => {
       const options = await ComparisonAPI.getUncompletedContracts();
       setContractOptions(options);
       syncPendingCount(options);
-    } catch {
-      // silent
+      setOptionsError(undefined);
+    } catch (error) {
+      if (isAbortedError(error)) return;
+      const errorMessage = getPbErrorMessage(error, '刷新合同列表失败，请重试');
+      console.error('[ProgressFlow] Failed to refresh contract options:', error);
+      setOptionsError(errorMessage);
+      message.error(errorMessage);
     }
-  }, [syncPendingCount]);
+  }, [message, syncPendingCount]);
 
   useEffect(() => {
     const fetchOptions = async () => {
       setOptionsLoading(true);
+      setOptionsError(undefined);
       try {
         const options = await ComparisonAPI.getUncompletedContracts();
         setContractOptions(options);
         syncPendingCount(options);
       } catch (err) {
-        const e = err as { name?: string; message?: string };
-        const isAborted = e.name === 'AbortError' || e.name === 'CanceledError' || (e.message?.includes('aborted') ?? false);
-        if (!isAborted) {
-          message.error('加载合同列表失败');
+        if (!isAbortedError(err)) {
+          const errorMessage = getPbErrorMessage(err, '加载合同列表失败，请重试');
+          console.error('[ProgressFlow] Failed to load contract options:', err);
+          setOptionsError(errorMessage);
+          message.error(errorMessage);
         }
       } finally {
         setOptionsLoading(false);
       }
     };
     fetchOptions();
-  }, [message, syncPendingCount]);
+  }, [message, optionsReloadKey, syncPendingCount]);
 
   useEffect(() => {
     if (!selectedContract || !selectedType) return;
     let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
+      setFlowError(undefined);
+      setFlowNodes([]);
+      setFlowEdges([]);
       try {
         const detail = selectedType === 'purchase'
           ? await ComparisonAPI.getPurchaseContractDetail(selectedContract)
@@ -545,11 +561,11 @@ export const ProgressFlowPage: React.FC = () => {
           setFlowEdges(graph.edges);
         }
       } catch (err) {
-        const e = err as { name?: string; message?: string };
-        const isAborted = e.name === 'AbortError' || e.name === 'CanceledError' || (e.message?.includes('aborted') ?? false);
-        if (!cancelled && !isAborted) {
-          console.error('Failed to load flow data:', err);
-          message.error('加载流程数据失败');
+        if (!cancelled && !isAbortedError(err)) {
+          const errorMessage = getPbErrorMessage(err, '加载流程数据失败，请重试');
+          console.error('[ProgressFlow] Failed to load flow data:', err);
+          setFlowError(errorMessage);
+          message.error(errorMessage);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -557,21 +573,17 @@ export const ProgressFlowPage: React.FC = () => {
     };
     fetchData();
     return () => { cancelled = true; };
-  }, [selectedContract, selectedType, message]);
+  }, [flowReloadKey, selectedContract, selectedType, message]);
 
   const handleConfirm = useCallback(async () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming(true);
     try {
-      // Fetch current record to preserve attachments
-      const record = await pb.collection(modalData.collectionName).getOne(modalData.recordId);
-      const currentAttachments = Array.isArray(record.attachments) ? record.attachments as string[] : [];
-
-      const formData = new FormData();
-      formData.append('manager_confirmed', 'approved');
-      currentAttachments.forEach((name: string) => formData.append('attachments', name));
-
-      await pb.collection(modalData.collectionName).update(modalData.recordId, formData);
+      await ManagerConfirmationAPI.submit(
+        modalData.collectionName as ManagerConfirmableCollection,
+        modalData.recordId,
+        'approved',
+      );
       message.success('确认成功');
       setModalVisible(false);
       setModalData(null);
@@ -595,15 +607,11 @@ export const ProgressFlowPage: React.FC = () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming(true);
     try {
-      // Fetch current record to preserve attachments
-      const record = await pb.collection(modalData.collectionName).getOne(modalData.recordId);
-      const currentAttachments = Array.isArray(record.attachments) ? record.attachments as string[] : [];
-
-      const formData = new FormData();
-      formData.append('manager_confirmed', 'rejected');
-      currentAttachments.forEach((name: string) => formData.append('attachments', name));
-
-      await pb.collection(modalData.collectionName).update(modalData.recordId, formData);
+      await ManagerConfirmationAPI.submit(
+        modalData.collectionName as ManagerConfirmableCollection,
+        modalData.recordId,
+        'rejected',
+      );
       message.success('已驳回');
       setModalVisible(false);
       setModalData(null);
@@ -693,10 +701,45 @@ export const ProgressFlowPage: React.FC = () => {
           />
           {loading && <Spin />}
         </div>
+        {optionsError && (
+          <Alert
+            type="error"
+            showIcon
+            message={optionsError}
+            style={{ marginTop: 12 }}
+            action={(
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => setOptionsReloadKey((value) => value + 1)}
+              >
+                重试
+              </Button>
+            )}
+          />
+        )}
       </Card>
 
       <Card style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-        {selectedContract && !loading && flowNodes.length > 0 ? (
+        {selectedContract && !loading && flowError ? (
+          <div style={{ minHeight: 300, display: 'flex', alignItems: 'center' }}>
+            <Alert
+              type="error"
+              showIcon
+              message={flowError}
+              style={{ width: '100%' }}
+              action={(
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={() => setFlowReloadKey((value) => value + 1)}
+                >
+                  重试
+                </Button>
+              )}
+            />
+          </div>
+        ) : selectedContract && !loading && flowNodes.length > 0 ? (
           <div style={{ height: window.innerWidth <= 767 ? 400 : 700 }}>
             <ReactFlow
               nodes={flowNodes}

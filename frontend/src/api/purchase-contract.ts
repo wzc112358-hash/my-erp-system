@@ -2,6 +2,7 @@ import { pb } from '@/lib/pocketbase';
 import { createWithAttachments } from './helpers';
 import { assertAttachmentFileSize } from '@/utils/file';
 import { loadAllContractRecords } from '@/lib/contract-options';
+import { RecycleBinAPI } from './recycle-bin';
 
 import type {
   PurchaseContract,
@@ -103,7 +104,7 @@ export const PurchaseContractAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('purchase_contracts').delete(id);
+    return RecycleBinAPI.remove('purchase_contracts', id);
   },
 
   getArrivals: async (contractId: string) => {
@@ -144,7 +145,7 @@ export const PaymentAPI = {
       filters.push(`purchase_contract = "${params.purchase_contract}"`);
     }
     if (params.search) {
-      filters.push(`product_name ~ "${params.search}"`);
+      filters.push(`(product_name ~ "${params.search}" || purchase_contract.no ~ "${params.search}")`);
     }
 
     const result = await pb.collection('purchase_payments').getList<PurchasePayment>(
@@ -201,6 +202,6 @@ export const PaymentAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('purchase_payments').delete(id);
+    return RecycleBinAPI.remove('purchase_payments', id);
   },
 };

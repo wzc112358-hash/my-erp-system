@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { RecycleBinAPI } from './recycle-bin';
 import { createWithAttachments } from './helpers';
 
 import type { SaleReceipt, SaleReceiptFormData, SaleReceiptListParams } from '@/types';
@@ -10,7 +11,7 @@ export const ReceiptAPI = {
       filters.push(`sales_contract = "${params.sales_contract}"`);
     }
     if (params.search) {
-      filters.push(`product_name ~ "${params.search}"`);
+      filters.push(`(product_name ~ "${params.search}" || sales_contract.no ~ "${params.search}")`);
     }
 
     const result = await pb.collection('sale_receipts').getList<SaleReceipt>(
@@ -67,14 +68,13 @@ export const ReceiptAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('sale_receipts').delete(id);
+    return RecycleBinAPI.remove('sale_receipts', id);
   },
 };
 
 export const SalesContractAPI = {
   getOptions: async () => {
     const items = await pb.collection('sales_contracts').getFullList({
-      filter: 'status = "executing"',
       sort: '-created_at',
     });
     return { items };

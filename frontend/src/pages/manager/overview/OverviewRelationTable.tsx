@@ -75,6 +75,7 @@ export const OverviewRelationTable: React.FC<OverviewRelationTableProps> = ({
                     selected={selectedPurchases.has(purchase.id)}
                     onSelect={(_, checked) => onSelect(purchase, checked)}
                     onView={() => onView(purchase)}
+                    onViewFlow={() => onViewFlow(purchase)}
                     onLink={() => onLink(purchase)}
                     onUnlink={row.sales ? () => onUnlink(row.sales!, purchase) : undefined}
                     onDelete={() => onDelete(purchase)}

@@ -341,12 +341,17 @@ func validateMergedCapacity(app core.App, contractType, sourceID, targetID strin
 }
 
 func sumRelatedFieldForContracts(app core.App, collectionName, relationField, valueField, sourceID, targetID string) (float64, error) {
-	if _, err := app.FindCollectionByNameOrId(collectionName); err != nil {
+	collection, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
 		return 0, nil
+	}
+	filter := relationField + " = {:source} || " + relationField + " = {:target}"
+	if collection.Fields.GetByName("deleted_at") != nil {
+		filter = "(" + filter + ") && deleted_at = ''"
 	}
 	records, err := app.FindRecordsByFilter(
 		collectionName,
-		relationField+" = {:source} || "+relationField+" = {:target}",
+		filter,
 		"",
 		0,
 		0,
@@ -573,75 +578,16 @@ func unlinkAndDeleteContract(app core.App, contractType, contractID string, oper
 	if err != nil {
 		return err
 	}
-	return app.RunInTransaction(func(txApp core.App) error {
-		deleteContext := context.WithValue(context.Background(), contractCascadeDeleteContextKey{}, true)
-		contract, err := txApp.FindRecordById(collectionName, contractID)
-		if err != nil {
-			return err
+	operator, operatorName, operatorRole := "", "系统", "system"
+	if len(operatorID) > 0 {
+		operator = operatorID[0]
+		operatorName = operator
+		if user, findErr := app.FindRecordById("users", operator); findErr == nil {
+			_, operatorName, operatorRole = auditOperator(user)
 		}
-		references, err := txApp.FindCollectionReferences(contract.Collection())
-		if err != nil {
-			return err
-		}
-		deletedCounts := map[string]int{}
-		operator := ""
-		if len(operatorID) > 0 {
-			operator = operatorID[0]
-		}
-		for collection, fields := range references {
-			for _, field := range fields {
-				relation, ok := field.(*core.RelationField)
-				if !ok {
-					continue
-				}
-				if relation.IsMultiple() {
-					return fmt.Errorf("multi-value relation %s.%s is not supported", collection.Name, relation.Name)
-				}
-				records, err := txApp.FindRecordsByFilter(collection, relation.Name+" = {:contract}", "", 0, 0, dbx.Params{"contract": contractID})
-				if err != nil {
-					return err
-				}
-				if len(records) == 0 {
-					continue
-				}
-				config, owned := ownedBusinessRecordConfig(contractType, collection.Name, relation.Name)
-				if owned {
-					for _, record := range records {
-						snapshot, err := recordSnapshotJSON(record)
-						if err != nil {
-							return err
-						}
-						if err := saveBusinessRecordDeleteLog(
-							txApp,
-							config,
-							record.Id,
-							contract.Id,
-							contract.GetString("no"),
-							operator,
-							string(snapshot),
-						); err != nil {
-							return err
-						}
-						if err := txApp.DeleteWithContext(deleteContext, record); err != nil {
-							return err
-						}
-						deletedCounts[collection.Name]++
-					}
-				} else {
-					if err := updateRelationReferences(txApp, collection, relation.Name, contractID, ""); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		contractSnapshot := core.NewRecord(contract.Collection())
-		contractSnapshot.Load(contract.FieldsData())
-		contractSnapshot.Id = contract.Id
-		if err := txApp.Delete(contract); err != nil {
-			return err
-		}
-		return saveContractOperationLog(txApp, "unlink_delete", contractType, contractSnapshot, nil, operator, deletedCounts)
-	})
+	}
+	_, err = softDeleteBusinessRecord(app, collectionName, contractID, operator, operatorName, operatorRole)
+	return err
 }
 
 func saveContractOperationLog(app core.App, operation, contractType string, source, target *core.Record, operatorID string, details map[string]int) error {
@@ -649,10 +595,21 @@ func saveContractOperationLog(app core.App, operation, contractType string, sour
 	if err != nil {
 		return nil
 	}
+	operatorName, operatorRole := "系统", "system"
+	if operatorID != "" {
+		operatorName = "未知用户"
+		operatorRole = ""
+		if operator, findErr := app.FindRecordById("users", operatorID); findErr == nil {
+			_, operatorName, operatorRole = auditOperator(operator)
+		}
+	}
 	record := core.NewRecord(collection)
 	record.Set("operation", operation)
 	record.Set("contract_type", contractType)
 	record.Set("operator_id", operatorID)
+	record.Set("operator_name", operatorName)
+	record.Set("operator_role", operatorRole)
+	record.Set("result", "success")
 	if source != nil {
 		record.Set("source_contract_id", source.Id)
 		record.Set("source_contract_no", source.GetString("no"))

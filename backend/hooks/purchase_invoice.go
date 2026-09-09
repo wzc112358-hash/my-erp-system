@@ -106,7 +106,9 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 			log.Printf("[PurchaseInvoice] Updated contract %s: invoiced_amount=%.2f, invoiced_percent=%.2f\n",
 				contractId, totalAmount, receivedPercent)
 
-			return updatePurchaseContractStatus(app, contract)
+			return finishPostCommit(e, "PurchaseInvoice.AfterCreate", func() error {
+				return updatePurchaseContractStatus(app, contract)
+			})
 		},
 		Priority: 0,
 	})

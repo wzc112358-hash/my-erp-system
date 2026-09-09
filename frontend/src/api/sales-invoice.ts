@@ -1,4 +1,5 @@
 import { pb } from '@/lib/pocketbase';
+import { RecycleBinAPI } from './recycle-bin';
 import { createWithAttachments } from './helpers';
 
 import type { SaleInvoice, SaleInvoiceFormData, SaleInvoiceListParams } from '@/types/sales-contract';
@@ -10,7 +11,7 @@ export const SaleInvoiceAPI = {
       filters.push(`sales_contract = "${params.sales_contract}"`);
     }
     if (params.search) {
-      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
+      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}" || sales_contract.no ~ "${params.search}")`);
     }
 
     const result = await pb.collection('sale_invoices').getList<SaleInvoice>(
@@ -66,14 +67,13 @@ export const SaleInvoiceAPI = {
   },
 
   delete: async (id: string) => {
-    return pb.collection('sale_invoices').delete(id);
+    return RecycleBinAPI.remove('sale_invoices', id);
   },
 };
 
 export const SalesContractAPI = {
   getOptions: async () => {
     const items = await pb.collection('sales_contracts').getFullList({
-      filter: 'status = "executing"',
       sort: '-created_at',
     });
     return { items };

@@ -103,7 +103,9 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 			log.Printf("[SaleReceipt] AfterCreate: Updating contract %s: receipted_amount=%.2f, receipt_percent=%.2f\n",
 				contractId, totalAmount, receiptPercent)
 
-			return updateSalesContractStatus(app, contract)
+			return finishPostCommit(e, "SaleReceipt.AfterCreate", func() error {
+				return updateSalesContractStatus(app, contract)
+			})
 		},
 		Priority: 0,
 	})

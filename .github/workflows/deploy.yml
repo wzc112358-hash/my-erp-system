@@ -1,76 +1,124 @@
-name: Build and Deploy
+name: Verify and Deploy
 
 on:
   pull_request:
     branches: [master]
-    types: [opened, synchronize, reopened, closed]
   push:
     branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
-    runs-on: self-hosted
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Build frontend Docker image
-        run: |
-          docker build -t erp-frontend:${{ github.sha }} ./frontend
-          docker build -t erp-frontend:latest ./frontend
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Export frontend image to tar.gz
+      - name: Verify frontend
+        working-directory: frontend
         run: |
-          docker save erp-frontend:latest | gzip > erp-frontend.tar.gz
+          npm ci
+          npm test
+          npm run build
 
-      - name: Copy image to Aliyun server
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify backend
+        working-directory: backend
+        run: go test ./...
+
+      - name: Verify opportunity agent
+        working-directory: agent-service
+        run: npm test
+
+      - name: Build immutable release images
+        if: github.event_name != 'pull_request'
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          docker build --label "org.opencontainers.image.revision=$REVISION" -t "my-erp-system-frontend:$REVISION" -t my-erp-system-frontend:latest ./frontend
+          docker build --label "org.opencontainers.image.revision=$REVISION" -t "my-erp-system-pocketbase-beijing:$REVISION" -t my-erp-system-pocketbase-beijing:latest ./backend
+          docker tag "my-erp-system-pocketbase-beijing:$REVISION" "my-erp-system-pocketbase-lanzhou:$REVISION"
+          docker tag my-erp-system-pocketbase-beijing:latest my-erp-system-pocketbase-lanzhou:latest
+          docker build --label "org.opencontainers.image.revision=$REVISION" -t "my-erp-system-opportunity-agent:$REVISION" -t my-erp-system-opportunity-agent:latest ./agent-service
+          docker pull traefik:v3.7.13
+
+      - name: Package release
+        if: github.event_name != 'pull_request'
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          docker save \
+            "my-erp-system-frontend:$REVISION" my-erp-system-frontend:latest \
+            "my-erp-system-pocketbase-beijing:$REVISION" my-erp-system-pocketbase-beijing:latest \
+            "my-erp-system-pocketbase-lanzhou:$REVISION" my-erp-system-pocketbase-lanzhou:latest \
+            "my-erp-system-opportunity-agent:$REVISION" my-erp-system-opportunity-agent:latest \
+            traefik:v3.7.13 | gzip -1 > images.tar.gz
+          tar czf deploy-config.tar.gz \
+            docker-compose.yml \
+            traefik/traefik.yml \
+            traefik/dynamic.toml \
+            scripts/erp-backup.sh \
+            scripts/deploy-release.sh
+          sha256sum images.tar.gz > images.tar.gz.sha256
+          sha256sum deploy-config.tar.gz > deploy-config.tar.gz.sha256
+
+      - name: Configure verified SSH host
+        if: github.event_name != 'pull_request'
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/deploy_key"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts" "$RUNNER_TEMP/ssh/deploy_key"
+
+      - name: Upload release
+        if: github.event_name != 'pull_request'
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
-          echo "$SSH_KEY" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          
-          scp -o StrictHostKeyChecking=no -i /tmp/deploy_key erp-frontend.tar.gz ${SERVER_USER}@${SERVER_HOST}:/root/images/
-          
-          rm -f /tmp/deploy_key
+          release_dir="/root/my-erp-system/releases/${GITHUB_SHA}"
+          ssh -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -i "$RUNNER_TEMP/ssh/deploy_key" "$SERVER_USER@$SERVER_HOST" "install -d -m 700 '$release_dir'"
+          scp -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -i "$RUNNER_TEMP/ssh/deploy_key" \
+            images.tar.gz images.tar.gz.sha256 \
+            deploy-config.tar.gz deploy-config.tar.gz.sha256 \
+            scripts/deploy-release.sh \
+            "$SERVER_USER@$SERVER_HOST:$release_dir/"
 
-      - name: Deploy to Aliyun server
+      - name: Deploy release
+        if: github.event_name != 'pull_request'
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
-          echo "$SSH_KEY" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          
-          ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${SERVER_USER}@${SERVER_HOST} << 'DEPLOY_SCRIPT'
-            set -e
-            
-            cd /root
-            
-            timestamp=$(date +%Y%m%d_%H%M%S)
-            mkdir -p backup/$timestamp
-            cp -r backend/pb_data backup/$timestamp/ 2>/dev/null || true
-            
-            docker load -i images/erp-frontend.tar.gz
-            
-            docker-compose build --no-cache frontend
-            docker-compose up -d
-            
-            docker image prune -f
-            rm -f images/erp-frontend.tar.gz
-            
-            echo "Deployment completed!"
-            docker-compose ps
-          DEPLOY_SCRIPT
-          
-          rm -f /tmp/deploy_key
+          release_dir="/root/my-erp-system/releases/${GITHUB_SHA}"
+          ssh -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" -i "$RUNNER_TEMP/ssh/deploy_key" \
+            "$SERVER_USER@$SERVER_HOST" \
+            "bash '$release_dir/deploy-release.sh' '$release_dir' '$GITHUB_SHA'"
 
-      - name: Cleanup local artifacts
-        if: always()
-        run: |
-          rm -f erp-frontend.tar.gz
+      - name: Remove runner SSH key
+        if: always() && github.event_name != 'pull_request'
+        run: rm -f "$RUNNER_TEMP/ssh/deploy_key"

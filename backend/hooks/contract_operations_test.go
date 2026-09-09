@@ -15,6 +15,13 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 	if err != nil {
 		t.Fatal(err)
 	}
+	recycleFields := func() []core.Field {
+		return []core.Field{
+			&core.DateField{Name: "deleted_at"},
+			&core.TextField{Name: "deleted_by"},
+			&core.TextField{Name: "delete_batch_id"},
+		}
+	}
 
 	sales := core.NewBaseCollection("sales_contracts")
 	sales.Fields.Add(
@@ -39,6 +46,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.TextField{Name: "status"},
 		&core.FileField{Name: "attachments", MaxSelect: 99, MaxSize: 100 * 1024 * 1024},
 	)
+	sales.Fields.Add(recycleFields()...)
 	if err := app.Save(sales); err != nil {
 		app.Cleanup()
 		t.Fatal(err)
@@ -54,6 +62,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.NumberField{Name: "total_amount"},
 		&core.RelationField{Name: "sales_contract", CollectionId: sales.Id, MaxSelect: 1},
 	)
+	purchases.Fields.Add(recycleFields()...)
 	if err := app.Save(purchases); err != nil {
 		app.Cleanup()
 		t.Fatal(err)
@@ -68,7 +77,9 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 	addSalesChild := func(name string, fields ...core.Field) {
 		collection := core.NewBaseCollection(name)
 		collection.Fields.Add(&core.RelationField{Name: "sales_contract", CollectionId: sales.Id, MaxSelect: 1})
+		collection.Fields.Add(&core.TextField{Name: "manager_confirmed"})
 		collection.Fields.Add(fields...)
+		collection.Fields.Add(recycleFields()...)
 		if err := app.Save(collection); err != nil {
 			app.Cleanup()
 			t.Fatal(err)
@@ -89,7 +100,9 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		collection := core.NewBaseCollection(name)
 		collection.Fields.Add(&core.RelationField{Name: "purchase_contract", CollectionId: purchases.Id, MaxSelect: 1})
 		collection.Fields.Add(&core.RelationField{Name: "sales_contract", CollectionId: sales.Id, MaxSelect: 1})
+		collection.Fields.Add(&core.TextField{Name: "manager_confirmed"})
 		collection.Fields.Add(fields...)
+		collection.Fields.Add(recycleFields()...)
 		if err := app.Save(collection); err != nil {
 			app.Cleanup()
 			t.Fatal(err)
@@ -112,6 +125,11 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.TextField{Name: "collection_name"},
 		&core.TextField{Name: "record_id"},
 		&core.TextField{Name: "record_snapshot", Max: 200000},
+		&core.TextField{Name: "result"},
+		&core.TextField{Name: "operator_name"},
+		&core.TextField{Name: "operator_role"},
+		&core.TextField{Name: "error_message", Max: 200000},
+		&core.TextField{Name: "delete_batch_id"},
 	)
 	if err := app.Save(auditLogs); err != nil {
 		app.Cleanup()
@@ -293,8 +311,12 @@ func TestUnlinkAndDeleteClearsContractRelation(t *testing.T) {
 	if err := unlinkAndDeleteContract(app, "sales", sales.Id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.FindRecordById("sales_contracts", sales.Id); err == nil {
-		t.Fatal("sales contract still exists")
+	recycled, err := app.FindRecordById("sales_contracts", sales.Id)
+	if err != nil || recycled.GetString("deleted_at") == "" {
+		t.Fatal("sales contract was not retained in the recycle bin")
+	}
+	if recycled.GetString("purchase_contract") != "" {
+		t.Fatal("recycled contract still has an outgoing relation")
 	}
 	preserved, err := app.FindRecordById("purchase_contracts", purchase.Id)
 	if err != nil {
@@ -331,11 +353,16 @@ func TestUnlinkAndDeleteCascadesOwnedChildrenAndAuditsSnapshots(t *testing.T) {
 	if err := unlinkAndDeleteContract(app, "sales", sales.Id, "manager-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.FindRecordById("sales_contracts", sales.Id); err == nil {
-		t.Fatal("sales contract still exists")
+	recycledContract, err := app.FindRecordById("sales_contracts", sales.Id)
+	if err != nil || recycledContract.GetString("deleted_at") == "" {
+		t.Fatal("sales contract was not retained in the recycle bin")
 	}
-	if _, err := app.FindRecordById("sales_shipments", shipment.Id); err == nil {
-		t.Fatal("owned shipment still exists")
+	recycledShipment, err := app.FindRecordById("sales_shipments", shipment.Id)
+	if err != nil || recycledShipment.GetString("deleted_at") == "" {
+		t.Fatal("owned shipment was not retained in the recycle bin")
+	}
+	if recycledShipment.GetString("delete_batch_id") != recycledContract.GetString("delete_batch_id") {
+		t.Fatal("contract and child must share a recycle batch")
 	}
 
 	preserved, err := app.FindRecordById("purchase_contracts", purchase.Id)
@@ -355,17 +382,18 @@ func TestUnlinkAndDeleteCascadesOwnedChildrenAndAuditsSnapshots(t *testing.T) {
 	}
 	var childLogged, contractLogged bool
 	for _, record := range logs {
-		switch record.GetString("operation") {
-		case "delete_record":
-			childLogged = record.GetString("collection_name") == "sales_shipments" &&
-				record.GetString("record_id") == shipment.Id &&
-				record.GetString("operator_id") == "manager-a" &&
-				strings.Contains(record.GetString("record_snapshot"), shipment.Id)
-		case "unlink_delete":
-			contractLogged = record.GetString("source_contract_id") == sales.Id &&
-				record.GetString("operator_id") == "manager-a" &&
-				strings.Contains(record.GetString("record_snapshot"), sales.Id) &&
-				strings.Contains(record.GetString("details"), "sales_shipments")
+		if record.GetString("operation") == "soft_delete" {
+			if record.GetString("collection_name") == "sales_shipments" {
+				childLogged =
+					record.GetString("record_id") == shipment.Id &&
+						record.GetString("operator_id") == "manager-a" &&
+						strings.Contains(record.GetString("record_snapshot"), shipment.Id)
+			}
+			if record.GetString("collection_name") == "sales_contracts" {
+				contractLogged = record.GetString("source_contract_id") == sales.Id &&
+					record.GetString("operator_id") == "manager-a" &&
+					strings.Contains(record.GetString("record_snapshot"), sales.Id)
+			}
 		}
 	}
 	if !childLogged || !contractLogged {
@@ -409,8 +437,9 @@ func TestUnlinkAndDeletePurchaseCascadesOnlyPurchaseChildren(t *testing.T) {
 		"purchase_invoices": purchaseInvoice.Id,
 		"purchase_payments": payment.Id,
 	} {
-		if _, err := app.FindRecordById(collection, id); err == nil {
-			t.Fatalf("owned child %s still exists", collection)
+		recycled, err := app.FindRecordById(collection, id)
+		if err != nil || recycled.GetString("deleted_at") == "" {
+			t.Fatalf("owned child %s was not retained in the recycle bin", collection)
 		}
 	}
 	preservedSales, err := app.FindRecordById("sales_contracts", sales.Id)

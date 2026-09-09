@@ -78,14 +78,18 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+			return finishPostCommit(e, "SalesShipment.AfterCreate", func() error {
+				return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+			})
 		},
 		Priority: 0,
 	})
 
 	app.OnRecordAfterUpdateSuccess("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+			return finishPostCommit(e, "SalesShipment.AfterUpdate", func() error {
+				return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+			})
 		},
 		Priority: 0,
 	})

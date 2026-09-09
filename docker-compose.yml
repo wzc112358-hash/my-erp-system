@@ -102,17 +102,17 @@ services:
       - "traefik.http.services.local-helper-agent.loadbalancer.server.port=8097"
 
   traefik:
-    image: traefik:v2.9
+    image: traefik:v3.7.13
     container_name: erp-traefik
     command:
       - "--configFile=/etc/traefik/traefik.yml"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./traefik:/etc/traefik
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.toml:/etc/traefik/dynamic.toml:ro
+      - ./traefik/acme.json:/etc/traefik/acme.json
     networks:
       - web
     restart: unless-stopped

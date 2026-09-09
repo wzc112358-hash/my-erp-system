@@ -46,7 +46,9 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 			purchaseContractId := e.Record.GetString("purchase_contract")
 			if purchaseContractId != "" {
 				log.Println("[SalesContract] Sales contract has linked purchase contract, skip creating notification")
-				return updatePurchaseContractSalesContract(app, purchaseContractId, e.Record.Id)
+				return finishPostCommit(e, "SalesContract.AfterCreate", func() error {
+					return updatePurchaseContractSalesContract(app, purchaseContractId, e.Record.Id)
+				})
 			}
 
 			customerId := e.Record.GetString("customer")

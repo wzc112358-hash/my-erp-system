@@ -24,6 +24,8 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	RegisterInventoryHooks(app)
 	RegisterContractRelationHooks(app)
 	RegisterContractOperationRoutes(app)
+	RegisterRecycleBinRoutes(app)
+	RegisterManagerConfirmationRoutes(app)
 	RegisterBusinessRecordAuditHooks(app)
 
 	log.Println("Hooks registered successfully")
@@ -113,6 +115,9 @@ func GetContractsByDatePrefix(app *pocketbase.PocketBase, collectionName, prefix
 
 func GetRecordsByField(app *pocketbase.PocketBase, collectionName, fieldName, fieldValue string) ([]*core.Record, error) {
 	filter := fieldName + " = '" + fieldValue + "'"
+	if collection, err := app.FindCollectionByNameOrId(collectionName); err == nil && collection.Fields.GetByName("deleted_at") != nil {
+		filter += " && deleted_at = ''"
+	}
 	return GetRecordsByFilter(app, collectionName, filter)
 }
 
@@ -158,4 +163,17 @@ func SetFields(record *core.Record, fields map[string]any) {
 	for k, v := range fields {
 		record.Set(k, v)
 	}
+}
+
+// finishPostCommit keeps a successfully persisted record from being reported as
+// failed just because a derived contract-progress refresh encountered an error.
+// The refresh remains visible in server logs and can be recalculated later.
+func finishPostCommit(e *core.RecordEvent, label string, refresh func() error) error {
+	if isRecycleMutation(e.Context) {
+		return e.Next()
+	}
+	if err := refresh(); err != nil {
+		log.Printf("[%s] record was saved but progress refresh failed: %v", label, err)
+	}
+	return e.Next()
 }

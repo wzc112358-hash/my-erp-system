@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Drawer } from 'antd';
+import { Badge, Layout, Menu, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -17,6 +17,8 @@ import {
   LineChartOutlined,
   HomeOutlined,
   InboxOutlined as InventoryIcon,
+  SafetyCertificateOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
 import type { UserRole } from '@/types/layout';
@@ -61,12 +63,14 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
   manager: [
     { key: 'dashboard', label: '首页总览', icon: <HomeOutlined />, path: '/manager/dashboard' },
     { key: 'overview', label: '关联合同总览', icon: <LinkOutlined />, path: '/manager/overview' },
+    { key: 'pending-confirmations', label: '待确认事项', icon: <CheckSquareOutlined />, path: '/manager/progress-flow' },
     { key: 'monthly-profit', label: '月度利润', icon: <LineChartOutlined />, path: '/manager/monthly-profit' },
     { key: 'reports', label: '数据报表', icon: <BarChartOutlined />, path: '/manager/reports' },
     { key: 'performance', label: '业绩统计', icon: <TeamOutlined />, path: '/manager/performance' },
     { key: 'other-business', label: '其他业务', icon: <FileTextOutlined />, path: '/manager/other-business' },
     { key: 'opportunities', label: '招投标信息', icon: <RadarChartOutlined />, path: '/manager/opportunities' },
     { key: 'inventory', label: '库存管理', icon: <InventoryIcon />, path: '/manager/inventory' },
+    { key: 'data-safety', label: '数据安全', icon: <SafetyCertificateOutlined />, path: '/manager/data-safety' },
     { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/manager/exchange-rate' },
   ],
 };
@@ -82,7 +86,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const { fetchUnreadCount } = useNotificationStore();
-  const { fetchPendingCount } = useManagerPendingStore();
+  const { fetchPendingCount, pendingCount } = useManagerPendingStore();
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
 
   useEffect(() => {
@@ -144,7 +148,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
       }}
       items={menuItems.map((item) => ({
         key: item.key,
-        label: item.label,
+        label: item.key === 'pending-confirmations' ? (
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span>{item.label}</span>
+            <Badge count={pendingCount} overflowCount={999} size="small" />
+          </span>
+        ) : item.label,
         icon: item.icon,
       }))}
       onClick={handleMenuClick}
@@ -174,7 +183,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ user, children }) => {
           placement="left"
           onClose={() => setSidebarVisible(false)}
           open={sidebarVisible}
-          width="80%"
+          size="80%"
           styles={{ body: { padding: 0, background: 'linear-gradient(180deg, #d8d9da 0%, #eaecec 40%, #ffffff 100%)' } }}
         >
           <div

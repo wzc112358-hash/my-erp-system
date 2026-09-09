@@ -1,22 +1,28 @@
 #!/bin/bash
 # ============================================================================
 # ERP 自动备份脚本（PocketBase 数据库 + 附件 → 阿里云 OSS）
-# 用法：手动跑 /erp-backup/scripts/erp-backup.sh，或由 cron 每天 02:00 触发
-# 备份内容：北京+兰州两个 PocketBase 的 data.db（在线安全备份）+ storage 附件
+# 用法：手动跑 /root/my-erp-system/scripts/erp-backup.sh，或由 cron 每天 02:00 触发
+# 备份内容：北京+兰州两个 PocketBase 的 data.db、auxiliary.db（在线安全备份）+ storage 附件
 # 保留策略：OSS 端日备 7 天 + 周备 4 周（由 lifecycle 自动清理）
 # ============================================================================
 set -euo pipefail
 
+MODE="${1:-}"
+if [ "$MODE" != "" ] && [ "$MODE" != "--local-only" ]; then
+  echo "用法: $0 [--local-only]" >&2
+  exit 2
+fi
+
 # ---- 配置（敏感信息从单独的配置文件读，不硬编码在脚本里）----
-CONFIG_FILE="/root/.ossutilconfig"
+CONFIG_FILE="${ERP_BACKUP_OSS_CONFIG:-/root/.ossutilconfig}"
 BUCKET="erp-backup-henghuacheng"
 ENDPOINT="oss-cn-hangzhou.aliyuncs.com"   # ECS 在北京、OSS 在杭州，跨地域走外网
-ERP_DIR="/root/my-erp-system"
-BACKUP_ROOT="/tmp/erp-backup-staging"
-LOCAL_FALLBACK_DIR="$ERP_DIR/backups/daily-local"
+ERP_DIR="${ERP_BACKUP_SOURCE_DIR:-/root/my-erp-system}"
+BACKUP_ROOT="${ERP_BACKUP_STAGING_DIR:-/tmp/erp-backup-staging}"
+LOCAL_FALLBACK_DIR="${ERP_BACKUP_LOCAL_DIR:-$ERP_DIR/backups/daily-local}"
 LOCAL_FALLBACK_KEEP=7
-LOG_FILE="/var/log/erp-backup.log"
-OSSUTIL_BIN="/usr/local/bin/ossutil64"
+LOG_FILE="${ERP_BACKUP_LOG_FILE:-/var/log/erp-backup.log}"
+OSSUTIL_BIN="${ERP_BACKUP_OSSUTIL_BIN:-/usr/local/bin/ossutil64}"
 
 TS=$(date +%Y%m%d_%H%M%S)
 DATE_TAG=$(date +%Y%m%d)       # 用于 OSS 路径分组
@@ -28,7 +34,9 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG_FILE"; }
 preserve_local_fallback() {
   mkdir -p "$LOCAL_FALLBACK_DIR"
   local fallback_archive="$LOCAL_FALLBACK_DIR/$(basename "$ARCHIVE")"
+  local fallback_checksum="$LOCAL_FALLBACK_DIR/$(basename "$SHA256_FILE")"
   mv "$ARCHIVE" "$fallback_archive"
+  mv "$SHA256_FILE" "$fallback_checksum"
   rm -rf "$BACKUP_DIR"
 
   mapfile -t local_archives < <(
@@ -37,6 +45,7 @@ preserve_local_fallback() {
   )
   for ((i = LOCAL_FALLBACK_KEEP; i < ${#local_archives[@]}; i++)); do
     rm -f -- "${local_archives[$i]}"
+    rm -f -- "${local_archives[$i]}.sha256"
   done
 
   log "  本地兜底备份已保留: $fallback_archive"
@@ -64,20 +73,26 @@ log "========== ERP 备份开始 (TS=$TS) =========="
 log "[1/4] 在线备份 SQLite 数据库..."
 mkdir -p "$BACKUP_DIR/db"
 
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  log "  ❌ sqlite3 不存在，拒绝使用 cp 复制在线数据库"
+  exit 1
+fi
+
 for region in beijing lanzhou; do
-  SRC="$ERP_DIR/backend/pb_data_${region}/data.db"
-  DST="$BACKUP_DIR/db/${region}_data.db"
-  if [ ! -f "$SRC" ]; then
-    log "  ⚠️ $region 数据库不存在，跳过"
-    continue
-  fi
-  # 用 sqlite3 .backup 命令（如果服务器没装 sqlite3，回退到 PocketBase 的内置备份）
-  if command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 "$SRC" ".backup '$DST'" 2>>"$LOG_FILE" && log "  ✅ $region DB 已备份 ($(du -h "$DST" | cut -f1))"
-  else
-    # 兜底：cp（短暂读取，WAL 模式下相对安全，但不如 .backup 严谨）
-    cp "$SRC" "$DST" && log "  ⚠️ $region DB 用 cp 备份（建议装 sqlite3 用 .backup）"
-  fi
+  for database in data auxiliary; do
+    SRC="$ERP_DIR/backend/pb_data_${region}/${database}.db"
+    DST="$BACKUP_DIR/db/${region}_${database}.db"
+    if [ ! -f "$SRC" ]; then
+      log "  ⚠️ $region ${database}.db 不存在，跳过"
+      continue
+    fi
+    sqlite3 "$SRC" ".backup '$DST'" 2>>"$LOG_FILE"
+    if [ "$(sqlite3 "$DST" 'PRAGMA quick_check;' 2>>"$LOG_FILE")" != "ok" ]; then
+      log "  ❌ $region ${database}.db 完整性校验失败"
+      exit 1
+    fi
+    log "  ✅ $region ${database}.db 已备份并校验 ($(du -h "$DST" | cut -f1))"
+  done
 done
 
 # ---- 2. 备份附件（storage 目录，直接打包 tar.gz）----
@@ -105,39 +120,61 @@ tar czf "$BACKUP_DIR/config.tar.gz" \
 log "[4/4] 打总包并上传 OSS..."
 ARCHIVE="$BACKUP_DIR/erp-backup-${TS}.tar.gz"
 tar czf "$ARCHIVE" -C "$BACKUP_DIR" db storage config.tar.gz 2>>"$LOG_FILE"
+gzip -t "$ARCHIVE"
+tar tzf "$ARCHIVE" >/dev/null
+SHA256_FILE="${ARCHIVE}.sha256"
+(
+  cd "$BACKUP_DIR"
+  sha256sum "$(basename "$ARCHIVE")" >"$(basename "$SHA256_FILE")"
+)
 ARCHIVE_SIZE=$(du -h "$ARCHIVE" | cut -f1)
-log "  总包大小: $ARCHIVE_SIZE"
+log "  总包大小: $ARCHIVE_SIZE（压缩包与 SHA-256 已校验）"
+
+if [ "$MODE" = "--local-only" ]; then
+  preserve_local_fallback
+  log "========== 本地备份完成 (耗时约 $SECONDS 秒) =========="
+  exit 0
+fi
+
+upload_and_verify() {
+  local source_file="$1"
+  local oss_path="$2"
+  "$OSSUTIL_BIN" cp "$source_file" "$oss_path" \
+    -c "$CONFIG_FILE" \
+    -e "$ENDPOINT" \
+    --force 2>>"$LOG_FILE"
+  "$OSSUTIL_BIN" stat "$oss_path" \
+    -c "$CONFIG_FILE" \
+    -e "$ENDPOINT" >/dev/null 2>>"$LOG_FILE"
+}
 
 # 上传到 OSS（日备路径）
 OSS_PATH="oss://${BUCKET}/daily/${DATE_TAG}/erp-backup-${TS}.tar.gz"
 if [ "$OSS_AVAILABLE" -ne 1 ]; then
   preserve_local_fallback
   log "========== 本地备份完成，OSS 未尝试 (耗时约 $SECONDS 秒) =========="
-  exit 0
+  exit 1
 fi
-if ! "$OSSUTIL_BIN" cp "$ARCHIVE" "$OSS_PATH" \
-  -c "$CONFIG_FILE" \
-  -e "$ENDPOINT" \
-  --force 2>>"$LOG_FILE"; then
+if ! upload_and_verify "$ARCHIVE" "$OSS_PATH" \
+  || ! upload_and_verify "$SHA256_FILE" "${OSS_PATH}.sha256"; then
   log "  OSS 日备上传失败，启用本地兜底"
   preserve_local_fallback
   log "========== 本地备份完成，OSS 上传失败 (耗时约 $SECONDS 秒) =========="
-  exit 0
+  exit 1
 fi
-log "  ✅ 已上传日备: $OSS_PATH"
+log "  ✅ 已上传并确认日备及 SHA-256: $OSS_PATH"
 
 # 如果是周日，额外存一份到 weekly 路径（周备，保留更久）
 DOW=$(date +%u)  # 1=周一 ... 7=周日
 if [ "$DOW" = "7" ]; then
   WEEK_PATH="oss://${BUCKET}/weekly/${WEEK_TAG}/erp-backup-${TS}.tar.gz"
-  if ! "$OSSUTIL_BIN" cp "$ARCHIVE" "$WEEK_PATH" \
-    -c "$CONFIG_FILE" \
-    -e "$ENDPOINT" \
-    --force 2>>"$LOG_FILE"; then
-    log "  OSS 周备上传失败；日备已上传成功，继续完成清理"
-  else
-    log "  ✅ 已上传周备（周日）: $WEEK_PATH"
+  if ! upload_and_verify "$ARCHIVE" "$WEEK_PATH" \
+    || ! upload_and_verify "$SHA256_FILE" "${WEEK_PATH}.sha256"; then
+    log "  ❌ OSS 周备上传或校验失败；日备已成功"
+    rm -rf "$BACKUP_DIR"
+    exit 1
   fi
+  log "  ✅ 已上传并确认周备及 SHA-256（周日）: $WEEK_PATH"
 fi
 
 # ---- 5. 清理本地临时文件 ----

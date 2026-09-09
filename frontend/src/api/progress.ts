@@ -54,7 +54,7 @@ export const ProgressAPI = {
       }),
       pb.collection('sale_receipts').getList<SaleReceipt>(1, 100, {
         filter: `sales_contract="${id}"`,
-      }).catch(() => ({ items: [], totalItems: 0 })),
+      }),
     ]);
 
     return {
@@ -78,7 +78,7 @@ export const ProgressAPI = {
       }),
       pb.collection('purchase_payments').getList<PurchasePayment>(1, 100, {
         filter: `purchase_contract="${id}"`,
-      }).catch(() => ({ items: [], totalItems: 0 })),
+      }),
     ]);
 
     return {

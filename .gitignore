@@ -36,6 +36,8 @@ backend/pb_migrations/*
 !backend/pb_migrations/202608260001_increase_attachment_upload_limit_100mb.js
 !backend/pb_migrations/202608260002_create_contract_operation_logs.js
 !backend/pb_migrations/202608270001_repair_contract_operation_logs.js
+!backend/pb_migrations/202609050001_add_recycle_bin_and_audit.js
+!backend/pb_migrations/202609050002_expand_audit_logs.js
 
 # Backend binary
 backend/pocketbase

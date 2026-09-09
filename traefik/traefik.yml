@@ -2,14 +2,15 @@ global:
   checkNewVersion: false
   sendAnonymousUsage: false
 
-api:
-  insecure: true
-
 entryPoints:
   web:
     address: ":80"
+    http:
+      aliasHeadersStrategy: delete
   websecure:
     address: ":443"
+    http:
+      aliasHeadersStrategy: delete
 
 providers:
   file:

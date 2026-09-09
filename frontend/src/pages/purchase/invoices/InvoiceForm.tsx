@@ -44,7 +44,6 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       setLoadingContracts(true);
       try {
         const contracts = await pb.collection('purchase_contracts').getFullList({
-          filter: 'status = "executing"',
           sort: '-created_at',
         });
         const options = contracts.map((item: Record<string, unknown>) => ({

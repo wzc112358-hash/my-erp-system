@@ -42,7 +42,6 @@ export const InvoiceList: React.FC = () => {
     const fetchContracts = async () => {
       try {
         const contracts = await pb.collection('sales_contracts').getFullList({
-          filter: 'status = "executing"',
           sort: '-created_at',
         });
         const options = contracts.map((item: Record<string, unknown>) => ({
@@ -117,7 +116,7 @@ export const InvoiceList: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await SaleInvoiceAPI.delete(id);
-      message.success('删除成功');
+      message.success('记录已移入回收站');
       fetchData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -221,7 +220,8 @@ export const InvoiceList: React.FC = () => {
             onClick={() => handleEdit(record)}
           />
           <Popconfirm
-            title="确定删除此发票记录？"
+            title="将此发票记录移入回收站？"
+            description="附件会保留，经理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"
