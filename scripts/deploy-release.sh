@@ -63,7 +63,15 @@ for target in "${image_targets[@]}"; do
   container_name="${target%%:*}"
   repository="${target#*:}"
   image_id=$(docker inspect --format '{{.Image}}' "$container_name")
-  docker tag "$image_id" "$repository:rollback-$timestamp"
+  if docker image inspect "$image_id" >/dev/null 2>&1; then
+    docker tag "$image_id" "$repository:rollback-$timestamp"
+  else
+    # Docker's containerd image store may drop the old manifest metadata after
+    # retagging :latest even while a container still runs from that snapshot.
+    # Committing the running container preserves the exact application layer;
+    # business data is mounted separately and is therefore not captured here.
+    docker commit "$container_name" "$repository:rollback-$timestamp" >/dev/null
+  fi
 done
 
 rollback_needed=0
