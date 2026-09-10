@@ -15,7 +15,7 @@ fi
 
 # ---- 配置（敏感信息从单独的配置文件读，不硬编码在脚本里）----
 CONFIG_FILE="${ERP_BACKUP_OSS_CONFIG:-/root/.ossutilconfig}"
-BUCKET="erp-backup-henghuacheng"
+BUCKET="erp-backup-henghuacheng-1334472102397066"
 ENDPOINT="oss-cn-hangzhou.aliyuncs.com"   # ECS 在北京、OSS 在杭州，跨地域走外网
 ERP_DIR="${ERP_BACKUP_SOURCE_DIR:-/root/my-erp-system}"
 BACKUP_ROOT="${ERP_BACKUP_STAGING_DIR:-/tmp/erp-backup-staging}"
