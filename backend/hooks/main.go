@@ -44,15 +44,15 @@ func GetUsersByType(app *pocketbase.PocketBase, userType string) ([]*core.Record
 	return records, nil
 }
 
-func GetNotificationCollection(app *pocketbase.PocketBase) (*core.Collection, error) {
+func GetNotificationCollection(app core.App) (*core.Collection, error) {
 	return app.FindCollectionByNameOrId("notifications")
 }
 
-func GetNotification02Collection(app *pocketbase.PocketBase) (*core.Collection, error) {
+func GetNotification02Collection(app core.App) (*core.Collection, error) {
 	return app.FindCollectionByNameOrId("notifications_02")
 }
 
-func CreateNotification02(app *pocketbase.PocketBase, notificationType, title, message, recipientId, purchaseContractId string) error {
+func CreateNotification02(app core.App, notificationType, title, message, recipientId, purchaseContractId string) error {
 	collection, err := GetNotification02Collection(app)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func CreateNotification02(app *pocketbase.PocketBase, notificationType, title, m
 	return app.Save(notification)
 }
 
-func CreateNotification(app *pocketbase.PocketBase, notificationType, title, message, recipientId, salesContractId string) error {
+func CreateNotification(app core.App, notificationType, title, message, recipientId, salesContractId string) error {
 	collection, err := GetNotificationCollection(app)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func CreateNotification(app *pocketbase.PocketBase, notificationType, title, mes
 	return app.Save(notification)
 }
 
-func GetRecordsByFilter(app *pocketbase.PocketBase, collectionName, filter string) ([]*core.Record, error) {
+func GetRecordsByFilter(app core.App, collectionName, filter string) ([]*core.Record, error) {
 	return app.FindRecordsByFilter(
 		collectionName,
 		filter,
@@ -100,7 +100,7 @@ func GetRecordsByFilter(app *pocketbase.PocketBase, collectionName, filter strin
 	)
 }
 
-func CountRecords(app *pocketbase.PocketBase, collectionName, filter string) (int, error) {
+func CountRecords(app core.App, collectionName, filter string) (int, error) {
 	records, err := GetRecordsByFilter(app, collectionName, filter)
 	if err != nil {
 		return 0, err
@@ -108,12 +108,12 @@ func CountRecords(app *pocketbase.PocketBase, collectionName, filter string) (in
 	return len(records), nil
 }
 
-func GetContractsByDatePrefix(app *pocketbase.PocketBase, collectionName, prefix string) ([]*core.Record, error) {
+func GetContractsByDatePrefix(app core.App, collectionName, prefix string) ([]*core.Record, error) {
 	filter := "no ~ '" + prefix + "%'"
 	return GetRecordsByFilter(app, collectionName, filter)
 }
 
-func GetRecordsByField(app *pocketbase.PocketBase, collectionName, fieldName, fieldValue string) ([]*core.Record, error) {
+func GetRecordsByField(app core.App, collectionName, fieldName, fieldValue string) ([]*core.Record, error) {
 	filter := fieldName + " = '" + fieldValue + "'"
 	if collection, err := app.FindCollectionByNameOrId(collectionName); err == nil && collection.Fields.GetByName("deleted_at") != nil {
 		filter += " && deleted_at = ''"
@@ -121,15 +121,15 @@ func GetRecordsByField(app *pocketbase.PocketBase, collectionName, fieldName, fi
 	return GetRecordsByFilter(app, collectionName, filter)
 }
 
-func GetRecordById(app *pocketbase.PocketBase, collectionName, id string) (*core.Record, error) {
+func GetRecordById(app core.App, collectionName, id string) (*core.Record, error) {
 	return app.FindRecordById(collectionName, id)
 }
 
-func SaveRecord(app *pocketbase.PocketBase, record *core.Record) error {
+func SaveRecord(app core.App, record *core.Record) error {
 	return app.Save(record)
 }
 
-func GetCollection(app *pocketbase.PocketBase, collectionName string) (*core.Collection, error) {
+func GetCollection(app core.App, collectionName string) (*core.Collection, error) {
 	return app.FindCollectionByNameOrId(collectionName)
 }
 

@@ -147,7 +147,7 @@ func updateSalesContractExecution(app *pocketbase.PocketBase, contractId string)
 	return updateSalesContractStatus(app, contract)
 }
 
-func updateSalesContractStatus(app *pocketbase.PocketBase, contract *core.Record) error {
+func updateSalesContractStatus(app core.App, contract *core.Record) error {
 	executionPercent := contract.GetFloat("execution_percent")
 	receiptPercent := contract.GetFloat("receipt_percent")
 	invoicePercent := contract.GetFloat("invoice_percent")

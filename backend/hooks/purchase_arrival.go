@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
+func RegisterPurchaseArrivalHooks(app core.App) {
 	app.OnRecordCreate("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			e.Record.Set("manager_confirmed", "pending")
 
 			wetherTransit := e.Record.GetString("wether_transit")
@@ -56,6 +56,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdate("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
 				log.Println("[PurchaseArrival] purchase_contract is empty")
@@ -119,6 +120,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			return finishPostCommit(e, "PurchaseArrival.AfterCreate", func() error {
 				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
 			})
@@ -128,6 +130,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterUpdateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			return finishPostCommit(e, "PurchaseArrival.AfterUpdate", func() error {
 				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
 			})
@@ -137,6 +140,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
@@ -146,7 +150,7 @@ func RegisterPurchaseArrivalHooks(app *pocketbase.PocketBase) {
 	})
 }
 
-func updatePurchaseContractExecution(app *pocketbase.PocketBase, contractId string) error {
+func updatePurchaseContractExecution(app core.App, contractId string) error {
 	contract, err := GetRecordById(app, "purchase_contracts", contractId)
 	if err != nil {
 		return err
@@ -170,7 +174,7 @@ func updatePurchaseContractExecution(app *pocketbase.PocketBase, contractId stri
 	return updatePurchaseContractStatus(app, contract)
 }
 
-func updatePurchaseContractStatus(app *pocketbase.PocketBase, contract *core.Record) error {
+func updatePurchaseContractStatus(app core.App, contract *core.Record) error {
 	executionPercent := contract.GetFloat("execution_percent")
 	invoicedPercent := contract.GetFloat("invoiced_percent")
 	paidPercent := contract.GetFloat("paid_percent")

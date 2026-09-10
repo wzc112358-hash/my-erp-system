@@ -3,9 +3,100 @@ package hooks
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 )
+
+func TestConfirmBusinessRecordCompletesWithRegisteredUpdateHooks(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	contract := newDuplicateSalesContract(t, app, "")
+	invoice := newSalesChild(t, app, "sale_invoices", contract.Id, map[string]any{
+		"manager_confirmed": "pending",
+		"amount":            3200,
+	})
+	RegisterSaleInvoiceHooks(app)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := confirmBusinessRecord(app, "sale_invoices", invoice.Id, "approved", "manager-a", "经理甲", "manager")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		app.Cleanup()
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("manager confirmation deadlocked while the sale invoice update hook saved its parent contract")
+	}
+}
+
+func TestConfirmBusinessRecordCompletesForEveryRegisteredChildHook(t *testing.T) {
+	tests := []struct {
+		name       string
+		collection string
+		register   func(core.App)
+		purchase   bool
+		values     map[string]any
+	}{
+		{name: "sales invoice", collection: "sale_invoices", register: RegisterSaleInvoiceHooks, values: map[string]any{"product_amount": 1, "amount": 8500}},
+		{name: "sales receipt", collection: "sale_receipts", register: RegisterSaleReceiptHooks, values: map[string]any{"product_amount": 1, "amount": 8500}},
+		{name: "purchase arrival", collection: "purchase_arrivals", register: RegisterPurchaseArrivalHooks, purchase: true, values: map[string]any{"quantity": 1}},
+		{name: "purchase invoice", collection: "purchase_invoices", register: RegisterPurchaseInvoiceHooks, purchase: true, values: map[string]any{"product_amount": 1, "amount": 8000}},
+		{name: "purchase payment", collection: "purchase_payments", register: RegisterPurchasePaymentHooks, purchase: true, values: map[string]any{"product_amount": 1, "amount": 8000}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := newContractOperationsTestApp(t)
+			var child *core.Record
+			if test.purchase {
+				contracts, err := app.FindCollectionByNameOrId("purchase_contracts")
+				if err != nil {
+					t.Fatal(err)
+				}
+				contract := core.NewRecord(contracts)
+				contract.Set("no", "CG-2026-09-02")
+				contract.Set("product_name", "抗静电剂163")
+				contract.Set("supplier", "supplier-a")
+				contract.Set("total_quantity", 10)
+				contract.Set("total_amount", 80000)
+				contract.Set("status", "executing")
+				if err := app.Save(contract); err != nil {
+					t.Fatal(err)
+				}
+				child = newPurchaseChild(t, app, test.collection, contract.Id, test.values)
+			} else {
+				contract := newDuplicateSalesContract(t, app, "")
+				child = newSalesChild(t, app, test.collection, contract.Id, test.values)
+			}
+			child.Set("manager_confirmed", "pending")
+			if err := app.Save(child); err != nil {
+				t.Fatal(err)
+			}
+			test.register(app)
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := confirmBusinessRecord(app, test.collection, child.Id, "rejected", "manager-a", "经理甲", "manager")
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				app.Cleanup()
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("manager confirmation deadlocked in %s update hooks", test.collection)
+			}
+		})
+	}
+}
 
 func TestConfirmBusinessRecordUpdatesStatusAndWritesAuditLog(t *testing.T) {
 	app := newContractOperationsTestApp(t)

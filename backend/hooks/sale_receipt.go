@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
+func RegisterSaleReceiptHooks(app core.App) {
 	app.OnRecordCreate("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			e.Record.Set("manager_confirmed", "pending")
 
 			contractId := e.Record.GetString("sales_contract")
@@ -65,6 +65,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("sales_contract")
 			if contractId == "" {
 				return e.Next()
@@ -112,6 +113,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdate("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("sales_contract")
 			if contractId == "" {
 				log.Println("[SaleReceipt] sales_contract is empty")
@@ -195,6 +197,7 @@ func RegisterSaleReceiptHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}

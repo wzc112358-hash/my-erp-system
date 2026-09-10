@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
+func RegisterPurchasePaymentHooks(app core.App) {
 	app.OnRecordCreate("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			e.Record.Set("manager_confirmed", "pending")
 
 			contractId := e.Record.GetString("purchase_contract")
@@ -47,6 +47,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdate("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
 				log.Println("[PurchasePayment] purchase_contract is empty")
@@ -104,6 +105,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			return finishPostCommit(e, "PurchasePayment.AfterCreate", func() error {
 				return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
 			})
@@ -113,6 +115,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterUpdateSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			return finishPostCommit(e, "PurchasePayment.AfterUpdate", func() error {
 				return updatePurchaseContractPaymentProgress(app, e.Record.GetString("purchase_contract"), e.Record)
 			})
@@ -122,6 +125,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_payments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
@@ -131,7 +135,7 @@ func RegisterPurchasePaymentHooks(app *pocketbase.PocketBase) {
 	})
 }
 
-func updatePurchaseContractPaymentProgress(app *pocketbase.PocketBase, contractId string, currentRecord *core.Record) error {
+func updatePurchaseContractPaymentProgress(app core.App, contractId string, currentRecord *core.Record) error {
 	contract, err := GetRecordById(app, "purchase_contracts", contractId)
 	if err != nil {
 		return err

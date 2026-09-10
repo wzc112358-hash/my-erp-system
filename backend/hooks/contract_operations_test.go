@@ -60,6 +60,17 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.NumberField{Name: "unit_price"},
 		&core.NumberField{Name: "total_quantity"},
 		&core.NumberField{Name: "total_amount"},
+		&core.NumberField{Name: "executed_quantity"},
+		&core.NumberField{Name: "execution_percent"},
+		&core.NumberField{Name: "invoiced_amount"},
+		&core.NumberField{Name: "invoiced_percent"},
+		&core.NumberField{Name: "uninvoiced_amount"},
+		&core.NumberField{Name: "uninvoiced_percent"},
+		&core.NumberField{Name: "paid_amount"},
+		&core.NumberField{Name: "paid_percent"},
+		&core.NumberField{Name: "unpaid_amount"},
+		&core.NumberField{Name: "unpaid_percent"},
+		&core.TextField{Name: "status"},
 		&core.RelationField{Name: "sales_contract", CollectionId: sales.Id, MaxSelect: 1},
 	)
 	purchases.Fields.Add(recycleFields()...)

@@ -4,19 +4,18 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
+func RegisterPurchaseInvoiceHooks(app core.App) {
 	app.OnRecordUpdateRequest("purchase_invoices").Bind(&hook.Handler[*core.RecordRequestEvent]{
 		Func: func(e *core.RecordRequestEvent) error {
 			requestInfo, err := e.RequestInfo()
 			if err != nil {
 				return e.Next()
 			}
-			current, err := app.FindRecordById("purchase_invoices", e.Record.Id)
+			current, err := e.App.FindRecordById("purchase_invoices", e.Record.Id)
 			if err == nil && shouldPreservePurchaseInvoiceAttachments(
 				current.GetStringSlice("attachments"),
 				e.Record.GetStringSlice("attachments"),
@@ -30,6 +29,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordCreate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			e.Record.Set("manager_confirmed", "pending")
 			// 仅当未提交时默认"未验票"，不覆盖用户提交的值
 			if e.Record.GetString("is_verified") == "" {
@@ -69,6 +69,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
 				log.Println("[PurchaseInvoice] purchase_contract is empty")
@@ -115,6 +116,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
 				log.Println("[PurchaseInvoice] purchase_contract is empty")
@@ -198,6 +200,7 @@ func RegisterPurchaseInvoiceHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
@@ -216,7 +219,7 @@ func shouldPreservePurchaseInvoiceAttachments(oldAttachments, newAttachments []s
 	return verificationChanged || confirmationChanged
 }
 
-func updatePurchaseContractInvoiceProgress(app *pocketbase.PocketBase, contractId string) error {
+func updatePurchaseContractInvoiceProgress(app core.App, contractId string) error {
 	contract, err := GetRecordById(app, "purchase_contracts", contractId)
 	if err != nil {
 		return err
