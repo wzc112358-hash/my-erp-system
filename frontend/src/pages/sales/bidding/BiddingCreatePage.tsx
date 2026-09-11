@@ -147,7 +147,7 @@ export const BiddingCreatePage: React.FC = () => {
           <Descriptions.Item label="原公告"><a href={preparation.notice.url} target="_blank" rel="noreferrer">打开公告</a></Descriptions.Item>
         </Descriptions>
         {preparation.warnings.length > 0 && (
-          <Alert className="bid-create-warning" type="warning" showIcon message={preparation.warnings.join('；')} />
+          <Alert className="bid-create-warning" type="warning" showIcon title={preparation.warnings.join('；')} />
         )}
       </Card>
 

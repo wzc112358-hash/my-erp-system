@@ -72,7 +72,7 @@ export const OverviewControls: React.FC<OverviewControlsProps> = ({
     <header className="overview-page-header">
       <div>
         <h1>关联合同总览</h1>
-        <p>按销售—采购对应关系查看合同属性、执行、收付款和开票进度，并处理合同关联。</p>
+        <p>每行代表一笔总体交易；销售与采购合同平级展示，并统一查看执行、收付款和开票进度。</p>
       </div>
       <Button icon={<ReloadOutlined />} onClick={onRefresh}>刷新数据</Button>
     </header>
@@ -80,7 +80,7 @@ export const OverviewControls: React.FC<OverviewControlsProps> = ({
     <section className="overview-summary" aria-label="合同汇总">
       <div className="overview-summary-item"><span>销售合同</span><strong>{salesCount}</strong></div>
       <div className="overview-summary-item"><span>采购合同</span><strong>{purchaseCount}</strong></div>
-      <div className="overview-summary-item"><span>销售—采购关系</span><strong>{linkedEdgeCount}</strong></div>
+      <div className="overview-summary-item"><span>总体交易</span><strong>{linkedEdgeCount}</strong></div>
       <div className="overview-summary-item"><span>未关联合同</span><strong>{unlinkedCount}</strong></div>
     </section>
 

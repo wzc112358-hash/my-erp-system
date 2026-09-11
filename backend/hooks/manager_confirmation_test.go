@@ -34,6 +34,22 @@ func TestConfirmBusinessRecordCompletesWithRegisteredUpdateHooks(t *testing.T) {
 	}
 }
 
+func TestSaleInvoiceDefaultsToUnverified(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+
+	contract := newDuplicateSalesContract(t, app, "")
+	RegisterSaleInvoiceHooks(app)
+	invoice := newSalesChild(t, app, "sale_invoices", contract.Id, map[string]any{
+		"amount":         3200,
+		"product_amount": 1,
+	})
+
+	if got := invoice.GetString("is_verified"); got != "no" {
+		t.Fatalf("default verification status: want no, got %q", got)
+	}
+}
+
 func TestConfirmBusinessRecordCompletesForEveryRegisteredChildHook(t *testing.T) {
 	tests := []struct {
 		name       string

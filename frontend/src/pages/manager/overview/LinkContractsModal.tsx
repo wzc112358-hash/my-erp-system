@@ -29,9 +29,19 @@ export const LinkContractsModal: React.FC<LinkContractsModalProps> = ({
 }) => {
   const [selectedId, setSelectedId] = useState<string>();
 
-  const candidates = source?.type === 'sales'
+  const rawCandidates = source?.type === 'sales'
     ? purchaseContracts
     : salesContracts;
+
+  const candidates = rawCandidates.filter((contract) => {
+    if (!source) return false;
+    if (!contract.businessDealId) return true;
+    return Boolean(source.contract.businessDealId && contract.businessDealId === source.contract.businessDealId);
+  }).filter((contract) => (
+    source?.type === 'sales'
+      ? !source.contract.associatedPurchaseIds?.includes(contract.id)
+      : !source?.contract.associatedSalesIds?.includes(contract.id)
+  ));
 
   const options = useMemo(() => candidates.map((contract) => ({
     value: contract.id,
@@ -91,7 +101,7 @@ export const LinkContractsModal: React.FC<LinkContractsModalProps> = ({
           <Alert
             type="info"
             showIcon
-            title="支持一份销售关联多份采购，也支持一份采购关联多份销售；重复关系会自动去重。"
+            title="关联会把合同加入同一笔总体交易，支持一对一、一对多和多对多；已属于其他交易的合同需先由管理移出。"
           />
         </Space>
       )}

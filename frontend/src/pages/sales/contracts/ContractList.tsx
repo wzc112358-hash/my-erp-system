@@ -9,15 +9,16 @@ import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { ComparisonAPI } from '@/api/comparison';
 import type { SalesContract, SalesContractFormData } from '@/types/sales-contract';
 import type { PurchaseContract } from '@/types/purchase-contract';
+import type { BusinessDeal } from '@/types/comparison';
 import { ContractLinkModal } from '@/components/common/ContractLinkModal';
 import {
-  hasSalesContractRelation,
   matchesContractRelationFilter,
   type ContractRelationFilter,
 } from '@/lib/contract-relations';
 import { ContractForm } from './ContractForm';
 import { extractAttachments } from '@/utils/file';
 import { findDuplicateContractNumber } from '@/lib/contract-number';
+import { pb } from '@/lib/pocketbase';
 
 const statusMap: Record<string, { text: string; color: string }> = {
   executing: { text: '执行中', color: '#1890ff' },
@@ -39,6 +40,7 @@ export const ContractList: React.FC = () => {
   const [formVisible, setFormVisible] = useState(false);
   const [editingContract, setEditingContract] = useState<SalesContract | null>(null);
   const [purchaseContracts, setPurchaseContracts] = useState<PurchaseContract[]>([]);
+  const [businessDeals, setBusinessDeals] = useState<BusinessDeal[]>([]);
   const [linkingContract, setLinkingContract] = useState<SalesContract | null>(null);
   const [linking, setLinking] = useState(false);
   const [form] = Form.useForm();
@@ -75,6 +77,14 @@ export const ContractList: React.FC = () => {
     }
   };
 
+  const fetchBusinessDeals = async () => {
+    try {
+      setBusinessDeals(await pb.collection('business_deals').getFullList<BusinessDeal>());
+    } catch (error) {
+      message.error(getPbErrorMessage(error, '加载合同关联状态失败'));
+    }
+  };
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,6 +92,7 @@ export const ContractList: React.FC = () => {
 
   useEffect(() => {
     fetchLinkTargets();
+    fetchBusinessDeals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -130,7 +141,7 @@ export const ContractList: React.FC = () => {
     try {
       await SalesContractAPI.delete(id);
       message.success('合同及关联子记录已移入回收站');
-      fetchData();
+      await Promise.all([fetchData(), fetchBusinessDeals()]);
     } catch (error) {
       console.error('Delete contract error:', error);
       const err = error as { response?: { data?: unknown } };
@@ -155,7 +166,7 @@ export const ContractList: React.FC = () => {
       await ComparisonAPI.linkPurchaseToSales(purchaseId, linkingContract.id);
       message.success('合同关联成功');
       setLinkingContract(null);
-      await Promise.all([fetchData(), fetchLinkTargets()]);
+      await Promise.all([fetchData(), fetchLinkTargets(), fetchBusinessDeals()]);
     } catch (error) {
       message.error(getPbErrorMessage(error, '合同关联失败'));
     } finally {
@@ -205,7 +216,7 @@ export const ContractList: React.FC = () => {
         message.success(`销售合同 ${created.no || payload.no} 已写入数据库，记录 ID：${created.id}`);
       }
       setFormVisible(false);
-      void fetchData();
+      void Promise.all([fetchData(), fetchBusinessDeals()]);
     } catch (error) {
       const errorMessage = getPbErrorMessage(error, editingContract ? '更新失败' : '创建失败');
       if (!editingContract && errorMessage.includes('已存在')) {
@@ -218,8 +229,9 @@ export const ContractList: React.FC = () => {
 
   const filteredData = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
+    const linkedSalesIds = new Set(businessDeals.flatMap((deal) => deal.sales_contracts || []));
     return data.filter((contract) => {
-      const hasRelation = hasSalesContractRelation(contract, purchaseContracts);
+      const hasRelation = linkedSalesIds.has(contract.id);
       const matchesSearch = !normalizedSearch
         || contract.no.toLowerCase().includes(normalizedSearch)
         || contract.product_name.toLowerCase().includes(normalizedSearch);
@@ -228,7 +240,7 @@ export const ContractList: React.FC = () => {
         && matchesStatus
         && matchesContractRelationFilter(hasRelation, relationFilter);
     });
-  }, [data, purchaseContracts, relationFilter, search, status]);
+  }, [businessDeals, data, relationFilter, search, status]);
 
   const columns = [
     {
@@ -248,7 +260,7 @@ export const ContractList: React.FC = () => {
       key: 'relation_status',
       width: 110,
       render: (_: unknown, record: SalesContract) => {
-        const hasRelation = hasSalesContractRelation(record, purchaseContracts);
+        const hasRelation = businessDeals.some((deal) => deal.sales_contracts?.includes(record.id));
         return <Tag color={hasRelation ? 'green' : 'gold'}>{hasRelation ? '已关联合同' : '独立合同'}</Tag>;
       },
     },
@@ -341,7 +353,7 @@ export const ContractList: React.FC = () => {
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           />
-          {!hasSalesContractRelation(record, purchaseContracts) && (
+          {!businessDeals.some((deal) => deal.sales_contracts?.includes(record.id)) && (
             <Tooltip title="关联合同">
               <Button
                 type="text"
@@ -352,7 +364,7 @@ export const ContractList: React.FC = () => {
           )}
           <Popconfirm
             title="将此合同移入回收站？"
-            description="发货、开票和收款记录会一并移入；附件保留，经理可恢复。"
+            description="发货、开票和收款记录会一并移入；附件保留，管理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"

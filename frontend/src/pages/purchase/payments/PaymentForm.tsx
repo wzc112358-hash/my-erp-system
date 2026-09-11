@@ -140,7 +140,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
         <Row gutter={16}>
           <Col span={24}>
             <Alert
-              message={`合同剩余未付款金额: ${formatRemainingAmount(selectedContract.unpaid_amount, selectedContract.is_cross_border, exchangeRate)}`}
+              title={`合同剩余未付款金额: ${formatRemainingAmount(selectedContract.unpaid_amount, selectedContract.is_cross_border, exchangeRate)}`}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}

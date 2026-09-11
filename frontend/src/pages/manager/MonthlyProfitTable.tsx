@@ -24,7 +24,7 @@ const ProfitValue: React.FC<{ value: number; max: number }> = ({ value, max }) =
 };
 
 const detailColumns: ColumnsType<MonthlyProfitContract> = [
-  { title: '销售合同', dataIndex: 'no', key: 'no', width: 160 },
+  { title: '总体交易（销售合同号）', dataIndex: 'no', key: 'no', width: 220 },
   {
     title: '签约日期',
     dataIndex: 'signDate',
@@ -44,11 +44,10 @@ const detailColumns: ColumnsType<MonthlyProfitContract> = [
     ),
   },
   {
-    title: '关联采购',
-    dataIndex: 'purchaseContractCount',
-    key: 'purchaseContractCount',
-    width: 100,
-    render: (value: number) => `${value} 份`,
+    title: '合同构成',
+    key: 'contractComposition',
+    width: 130,
+    render: (_, record) => `销售 ${record.salesContractCount} / 采购 ${record.purchaseContractCount}`,
   },
   { title: '销售含税金额', dataIndex: 'salesAmountIncTax', key: 'salesAmountIncTax', width: 160, align: 'right', render: formatCny },
   { title: '采购含税金额', dataIndex: 'purchaseAmountIncTax', key: 'purchaseAmountIncTax', width: 160, align: 'right', render: formatCny },
@@ -103,7 +102,7 @@ export const MonthlyProfitTable: React.FC<MonthlyProfitTableProps> = ({
         </div>
       ),
     },
-    { title: '关联合同', dataIndex: 'contractCount', key: 'contractCount', width: 80, render: (value: number) => value ? `${value} 组` : '-' },
+    { title: '总体交易', dataIndex: 'contractCount', key: 'contractCount', width: 90, render: (value: number) => value ? `${value} 笔` : '-' },
     { title: '销售含税金额', dataIndex: 'salesAmountIncTax', key: 'salesAmountIncTax', width: 125, align: 'right', render: formatCny },
     { title: '采购含税金额', dataIndex: 'purchaseAmountIncTax', key: 'purchaseAmountIncTax', width: 125, align: 'right', render: formatCny },
     { title: '运杂及税费', dataIndex: 'expenses', key: 'expenses', width: 110, align: 'right', render: formatCny },
@@ -142,11 +141,11 @@ export const MonthlyProfitTable: React.FC<MonthlyProfitTableProps> = ({
             size="small"
             scroll={{ x: 1230 }}
             onRow={(contract) => ({
-              onClick: () => navigate(`/manager/overview/contract/${contract.id}`),
+              onClick: () => navigate(`/manager/overview/contract/${contract.primarySalesId}`),
               onKeyDown: (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  navigate(`/manager/overview/contract/${contract.id}`);
+                  navigate(`/manager/overview/contract/${contract.primarySalesId}`);
                 }
               },
               tabIndex: 0,
@@ -160,7 +159,7 @@ export const MonthlyProfitTable: React.FC<MonthlyProfitTableProps> = ({
         <Table.Summary.Row>
           <Table.Summary.Cell index={0} />
           <Table.Summary.Cell index={1}><strong>年度合计</strong></Table.Summary.Cell>
-          <Table.Summary.Cell index={2}>{overview.totals.contractCount} 组</Table.Summary.Cell>
+          <Table.Summary.Cell index={2}>{overview.totals.contractCount} 笔</Table.Summary.Cell>
           <Table.Summary.Cell index={3} align="right">{formatCny(overview.totals.salesAmountIncTax)}</Table.Summary.Cell>
           <Table.Summary.Cell index={4} align="right">{formatCny(overview.totals.purchaseAmountIncTax)}</Table.Summary.Cell>
           <Table.Summary.Cell index={5} align="right">{formatCny(overview.totals.expenses)}</Table.Summary.Cell>

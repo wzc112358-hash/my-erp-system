@@ -44,6 +44,7 @@ const OpportunityMonitorPage = lazy(() => import('@/pages/manager/OpportunityMon
 const DashboardPage = lazy(() => import('@/pages/manager/DashboardPage').then(m => ({ default: m.default })));
 const MonthlyProfitPage = lazy(() => import('@/pages/manager/MonthlyProfitPage').then(m => ({ default: m.default })));
 const DataSafetyPage = lazy(() => import('@/pages/manager/DataSafetyPage').then(m => ({ default: m.default })));
+const ProfitSettingsPage = lazy(() => import('@/pages/manager/ProfitSettingsPage').then(m => ({ default: m.default })));
 const ServiceList = lazy(() => import('@/pages/sales/services/ServiceList').then(m => ({ default: m.ServiceList })));
 const ServiceDetail = lazy(() => import('@/pages/sales/services/ServiceDetail').then(m => ({ default: m.ServiceDetail })));
 const BiddingList = lazy(() => import('@/pages/sales/bidding/BiddingList').then(m => ({ default: m.BiddingList })));
@@ -328,6 +329,10 @@ export const router = createBrowserRouter([
           {
             path: 'exchange-rate',
             element: <ExchangeRatePage />,
+          },
+          {
+            path: 'profit-settings',
+            element: <ProfitSettingsPage />,
           },
           {
             path: 'inventory',

@@ -143,7 +143,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
         </Col>
       </Row>
       <Row gutter={16}>
-        <Col xs={24} md={12}>
+        {!initialValues && <Col xs={24} md={12}>
           <Form.Item
             name="sales_contract"
             label="关联销售合同"
@@ -161,7 +161,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
               }
             />
           </Form.Item>
-        </Col>
+        </Col>}
         <Col xs={24} md={12}>
           <Form.Item
             name="product_name"
@@ -236,7 +236,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({
             </div>
             {isCrossBorder && (
               <Alert
-                message={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(6)}（汇率：${exchangeRate}）`}
+                title={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(6)}（汇率：${exchangeRate}）`}
                 type="info"
                 style={{ marginTop: 8 }}
                 showIcon

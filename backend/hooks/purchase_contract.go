@@ -40,7 +40,7 @@ func RegisterPurchaseContractHooks(app *pocketbase.PocketBase) {
 	app.OnRecordAfterCreateSuccess("purchase_contracts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			salesContractId := e.Record.GetString("sales_contract")
-			if salesContractId != "" {
+			if salesContractId != "" || contractIsInBusinessDeal(app, "purchase", e.Record.Id) {
 				return e.Next()
 			}
 

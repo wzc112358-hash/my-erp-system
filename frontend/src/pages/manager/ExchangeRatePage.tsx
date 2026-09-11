@@ -92,7 +92,7 @@ export const ExchangeRatePage: React.FC = () => {
               min={0.01}
               precision={4}
               style={{ width: '100%' }}
-              addonAfter="CNY"
+              suffix="CNY"
             />
           </div>
 

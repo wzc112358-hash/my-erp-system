@@ -118,7 +118,7 @@ func requireManager(e *core.RecordRequestEvent) error {
 	if e.HasSuperuserAuth() || (e.Auth != nil && e.Auth.GetString("type") == "manager") {
 		return nil
 	}
-	return router.NewForbiddenError("仅经理账号可以维护库存", nil)
+	return router.NewForbiddenError("仅管理账号可以维护库存", nil)
 }
 
 func validateStockMovement(record *core.Record) error {

@@ -9,6 +9,18 @@ export interface RelationPurchaseContract {
   sales_contract?: string | string[];
 }
 
+export interface BusinessDealRecord {
+  id: string;
+  name: string;
+  deal_date: string;
+  sales_contracts: string[];
+  purchase_contracts: string[];
+  tax_rate: number;
+  created_by?: string;
+  created?: string;
+  updated?: string;
+}
+
 export interface ContractRelationEdge {
   salesId: string;
   purchaseId: string;
@@ -18,6 +30,9 @@ export interface ContractRelationIndex {
   edges: ContractRelationEdge[];
   purchaseIdsBySales: Map<string, string[]>;
   salesIdsByPurchase: Map<string, string[]>;
+  dealIdBySales: Map<string, string>;
+  dealIdByPurchase: Map<string, string>;
+  dealsById: Map<string, BusinessDealRecord>;
 }
 
 export type ContractRelationFilter = 'all' | 'unlinked' | 'linked';
@@ -56,6 +71,7 @@ export const matchesContractRelationFilter = (
 export const buildContractRelationIndex = (
   salesContracts: RelationSalesContract[],
   purchaseContracts: RelationPurchaseContract[],
+  businessDeals?: BusinessDealRecord[],
 ): ContractRelationIndex => {
   const salesIds = new Set(salesContracts.map((contract) => contract.id));
   const purchaseIds = new Set(purchaseContracts.map((contract) => contract.id));
@@ -68,12 +84,31 @@ export const buildContractRelationIndex = (
     purchaseSetsBySales.get(salesId)?.add(purchaseId);
   };
 
-  purchaseContracts.forEach((purchase) => {
-    relationIds(purchase.sales_contract).forEach((salesId) => addEdge(salesId, purchase.id));
-  });
-  salesContracts.forEach((sales) => {
-    relationIds(sales.purchase_contract).forEach((purchaseId) => addEdge(sales.id, purchaseId));
-  });
+  const dealIdBySales = new Map<string, string>();
+  const dealIdByPurchase = new Map<string, string>();
+  const dealsById = new Map<string, BusinessDealRecord>();
+
+  if (businessDeals) {
+    businessDeals.forEach((deal) => {
+      dealsById.set(deal.id, deal);
+      const validSalesIds = relationIds(deal.sales_contracts).filter((id) => salesIds.has(id));
+      const validPurchaseIds = relationIds(deal.purchase_contracts).filter((id) => purchaseIds.has(id));
+      validSalesIds.forEach((salesId) => {
+        dealIdBySales.set(salesId, deal.id);
+        validPurchaseIds.forEach((purchaseId) => addEdge(salesId, purchaseId));
+      });
+      validPurchaseIds.forEach((purchaseId) => dealIdByPurchase.set(purchaseId, deal.id));
+    });
+  } else {
+    // Rollback/reconciliation compatibility only. Production callers pass the
+    // business_deals collection and therefore never read the old fields.
+    purchaseContracts.forEach((purchase) => {
+      relationIds(purchase.sales_contract).forEach((salesId) => addEdge(salesId, purchase.id));
+    });
+    salesContracts.forEach((sales) => {
+      relationIds(sales.purchase_contract).forEach((purchaseId) => addEdge(sales.id, purchaseId));
+    });
+  }
 
   const purchaseOrder = new Map(purchaseContracts.map((contract, index) => [contract.id, index]));
   const salesOrder = new Map(salesContracts.map((contract, index) => [contract.id, index]));
@@ -105,26 +140,12 @@ export const buildContractRelationIndex = (
     }))
   ));
 
-  return { edges, purchaseIdsBySales, salesIdsByPurchase };
-};
-
-export const getPurchaseAllocationRatio = (
-  index: ContractRelationIndex,
-  salesContracts: RelationSalesContract[],
-  purchaseId: string,
-  salesId: string,
-) => {
-  const relatedSalesIds = index.salesIdsByPurchase.get(purchaseId) || [];
-  if (!relatedSalesIds.includes(salesId)) return 0;
-  if (relatedSalesIds.length === 1) return 1;
-
-  const salesById = new Map(salesContracts.map((contract) => [contract.id, contract]));
-  const totalQuantity = relatedSalesIds.reduce(
-    (sum, id) => sum + (Number(salesById.get(id)?.total_quantity) || 0),
-    0,
-  );
-  if (totalQuantity > 0) {
-    return (Number(salesById.get(salesId)?.total_quantity) || 0) / totalQuantity;
-  }
-  return 1 / relatedSalesIds.length;
+  return {
+    edges,
+    purchaseIdsBySales,
+    salesIdsByPurchase,
+    dealIdBySales,
+    dealIdByPurchase,
+    dealsById,
+  };
 };

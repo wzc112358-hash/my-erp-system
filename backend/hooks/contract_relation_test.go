@@ -7,32 +7,6 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func TestValidateRelationChange(t *testing.T) {
-	tests := []struct {
-		name        string
-		current     string
-		requested   string
-		isManager   bool
-		expectedErr error
-	}{
-		{name: "unchanged is allowed", current: "sales-a", requested: "sales-a"},
-		{name: "manager links empty field", requested: "sales-a", isManager: true},
-		{name: "staff cannot link", requested: "sales-a", expectedErr: errRelationManagerRequired},
-		{name: "occupied field cannot be overwritten", current: "sales-a", requested: "sales-b", isManager: true, expectedErr: errRelationAlreadyOccupied},
-		{name: "manager can clear an occupied field", current: "sales-a", isManager: true},
-		{name: "staff cannot clear an occupied field", current: "sales-a", expectedErr: errRelationManagerRequired},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := validateRelationChange(test.current, test.requested, test.isManager)
-			if !errors.Is(err, test.expectedErr) {
-				t.Fatalf("want %v, got %v", test.expectedErr, err)
-			}
-		})
-	}
-}
-
 func TestCanRoleManageContractRelation(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -91,20 +65,109 @@ func TestLinkContractsSupportsStaffAndMultipleRelationDirections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	purchaseOne, _ = app.FindRecordById("purchase_contracts", purchaseOne.Id)
-	purchaseTwo, _ = app.FindRecordById("purchase_contracts", purchaseTwo.Id)
-	salesTwo, _ = app.FindRecordById("sales_contracts", salesTwo.Id)
-	if purchaseOne.GetString("sales_contract") != salesOne.Id {
-		t.Fatalf("first purchase should point to first sales contract")
+	deals, err := app.FindRecordsByFilter("business_deals", "deleted_at = ''", "", 0, 0)
+	if err != nil || len(deals) != 1 {
+		t.Fatalf("want one overall deal, got %d (%v)", len(deals), err)
 	}
-	if purchaseTwo.GetString("sales_contract") != salesOne.Id {
-		t.Fatalf("second purchase should support one sales to many purchases")
+	if got := deals[0].GetStringSlice("sales_contracts"); len(got) != 2 || !containsContractID(got, salesOne.Id) || !containsContractID(got, salesTwo.Id) {
+		t.Fatalf("deal sales members not preserved: %v", got)
 	}
-	if salesTwo.GetString("purchase_contract") != purchaseOne.Id {
-		t.Fatalf("second sales should support one purchase to many sales")
+	if got := deals[0].GetStringSlice("purchase_contracts"); len(got) != 2 || !containsContractID(got, purchaseOne.Id) || !containsContractID(got, purchaseTwo.Id) {
+		t.Fatalf("deal purchase members not preserved: %v", got)
+	}
+	if purchaseOne.GetString("sales_contract") != "" || purchaseTwo.GetString("sales_contract") != "" || salesTwo.GetString("purchase_contract") != "" {
+		t.Fatal("new links must not write the frozen legacy fields")
 	}
 
 	if err := linkContracts(app, salesOne.Id, purchaseOne.Id, "viewer", "viewer-user", false); !errors.Is(err, errRelationManagerRequired) {
 		t.Fatalf("unauthorized role: want %v, got %v", errRelationManagerRequired, err)
+	}
+}
+
+func TestLinkContractsRejectsImplicitMergeOfTwoOverallDeals(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+	purchaseCollection, _ := app.FindCollectionByNameOrId("purchase_contracts")
+	newPurchase := func(no string) *core.Record {
+		record := core.NewRecord(purchaseCollection)
+		record.Set("no", no)
+		record.Set("product_name", "产品")
+		record.Set("supplier", "supplier")
+		if err := app.Save(record); err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	salesOne := newDuplicateSalesContract(t, app, "")
+	salesTwo := newDuplicateSalesContract(t, app, "")
+	purchaseOne := newPurchase("P-1")
+	purchaseTwo := newPurchase("P-2")
+	if err := linkContracts(app, salesOne.Id, purchaseOne.Id, "manager", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkContracts(app, salesTwo.Id, purchaseTwo.Id, "manager", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkContracts(app, salesOne.Id, purchaseTwo.Id, "manager", "", false); !errors.Is(err, errContractsBelongDifferentDeals) {
+		t.Fatalf("want different-deal conflict, got %v", err)
+	}
+}
+
+func TestRemoveContractArchivesDealWhenOnlyOneSideRemains(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+	sales := newDuplicateSalesContract(t, app, "")
+	purchaseCollection, _ := app.FindCollectionByNameOrId("purchase_contracts")
+	purchase := core.NewRecord(purchaseCollection)
+	purchase.Set("no", "P-1")
+	purchase.Set("product_name", "产品")
+	purchase.Set("supplier", "supplier")
+	if err := app.Save(purchase); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkContracts(app, sales.Id, purchase.Id, "manager", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeContractFromBusinessDeal(app, "purchase", purchase.Id, "manager-user"); err != nil {
+		t.Fatal(err)
+	}
+	active, err := activeBusinessDeals(app)
+	if err != nil || len(active) != 0 {
+		t.Fatalf("deal should be archived, active=%d err=%v", len(active), err)
+	}
+	if contractIsInBusinessDeal(app, "sales", sales.Id) || contractIsInBusinessDeal(app, "purchase", purchase.Id) {
+		t.Fatal("both contracts should be independent after deal archival")
+	}
+}
+
+func TestBusinessDealSnapshotsEffectiveProfitTaxRate(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+	if err := createProfitTaxRate(app, 0.2, "2026-01-01 00:00:00.000Z", ""); err != nil {
+		t.Fatal(err)
+	}
+	sales := newDuplicateSalesContract(t, app, "")
+	sales.Set("sign_date", "2026-02-01 00:00:00.000Z")
+	if err := app.Save(sales); err != nil {
+		t.Fatal(err)
+	}
+	purchaseCollection, _ := app.FindCollectionByNameOrId("purchase_contracts")
+	purchase := core.NewRecord(purchaseCollection)
+	purchase.Set("no", "P-1")
+	purchase.Set("product_name", "产品")
+	purchase.Set("supplier", "supplier")
+	purchase.Set("sign_date", "2026-02-02 00:00:00.000Z")
+	if err := app.Save(purchase); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkContracts(app, sales.Id, purchase.Id, "manager", "", false); err != nil {
+		t.Fatal(err)
+	}
+	deals, err := activeBusinessDeals(app)
+	if err != nil || len(deals) != 1 {
+		t.Fatalf("want one deal, got %d (%v)", len(deals), err)
+	}
+	if got := deals[0].GetFloat("tax_rate"); got != 0.2 {
+		t.Fatalf("want rate snapshot 0.2, got %v", got)
 	}
 }

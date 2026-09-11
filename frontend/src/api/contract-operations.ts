@@ -10,6 +10,13 @@ export const ContractOperationsAPI = {
     })
   ),
 
+  removeFromDeal: (type: ContractOperationType, contractId: string) => (
+    pb.send<{ success: boolean }>('/api/erp/business-deals/remove-contract', {
+      method: 'POST',
+      body: { type, contractId },
+    })
+  ),
+
   unlinkAndDelete: (type: ContractOperationType, contractId: string) => (
     pb.send<{ success: boolean }>('/api/erp/contracts/unlink-delete', {
       method: 'POST',

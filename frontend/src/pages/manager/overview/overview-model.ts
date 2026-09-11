@@ -4,7 +4,8 @@ import type { OverviewContract } from '@/types/comparison';
 
 export interface RelationRow {
   id: string;
-  sales?: OverviewContract;
+  dealId?: string;
+  sales: OverviewContract[];
   purchases: OverviewContract[];
 }
 
@@ -53,55 +54,47 @@ export const buildRelationRows = ({
   sortField,
   sortDescending,
 }: BuildRelationRowsInput): RelationRow[] => {
+  const grouped = new Map<string, RelationRow>();
   const rows: RelationRow[] = [];
-  const purchaseById = new Map(purchaseContracts.map((contract) => [contract.id, contract]));
-  const linkedPurchaseIds = new Set<string>();
 
-  salesContracts.forEach((sales) => {
-    const allPurchases = (sales.associatedPurchaseIds || [])
-      .map((id) => purchaseById.get(id))
-      .filter((contract): contract is OverviewContract => Boolean(contract));
-    allPurchases.forEach((contract) => linkedPurchaseIds.add(contract.id));
-
-    if (customerFilter && sales.customerName !== customerFilter) return;
-    if (!matchesDate(sales, dateRange) && !allPurchases.some((contract) => matchesDate(contract, dateRange))) return;
-
-    const salesMatches = matchesSearch(sales, searchText);
-    let purchases = allPurchases;
-    if (supplierFilter) {
-      purchases = purchases.filter((contract) => contract.supplierName === supplierFilter);
-      if (purchases.length === 0) return;
+  const addContract = (contract: OverviewContract) => {
+    if (!contract.businessDealId) {
+      rows.push({
+        id: `${contract.type}-${contract.id}`,
+        sales: contract.type === 'sales' ? [contract] : [],
+        purchases: contract.type === 'purchase' ? [contract] : [],
+      });
+      return;
     }
-    if (searchText && !salesMatches) {
-      purchases = purchases.filter((contract) => matchesSearch(contract, searchText));
-      if (purchases.length === 0) return;
-    }
-    if (dateRange?.[0] && dateRange?.[1] && !matchesDate(sales, dateRange)) {
-      purchases = purchases.filter((contract) => matchesDate(contract, dateRange));
-      if (purchases.length === 0) return;
-    }
-    rows.push({ id: `sales-${sales.id}`, sales, purchases });
-  });
+    const row = grouped.get(contract.businessDealId) || {
+      id: `deal-${contract.businessDealId}`,
+      dealId: contract.businessDealId,
+      sales: [],
+      purchases: [],
+    };
+    if (contract.type === 'sales') row.sales.push(contract);
+    else row.purchases.push(contract);
+    grouped.set(contract.businessDealId, row);
+  };
 
-  if (!customerFilter) {
-    purchaseContracts.forEach((purchase) => {
-      if (linkedPurchaseIds.has(purchase.id)) return;
-      if (supplierFilter && purchase.supplierName !== supplierFilter) return;
-      if (!matchesSearch(purchase, searchText) || !matchesDate(purchase, dateRange)) return;
-      rows.push({ id: `purchase-${purchase.id}`, purchases: [purchase] });
-    });
-  }
+  salesContracts.forEach(addContract);
+  purchaseContracts.forEach(addContract);
+  rows.push(...grouped.values());
 
   const filteredRows = rows.filter((row) => {
-    const isLinked = Boolean(row.sales && row.purchases.length > 0);
-    if (relationFilter === 'linked') return isLinked;
-    if (relationFilter === 'unlinked') return !isLinked;
-    return true;
+    const contracts = [...row.sales, ...row.purchases];
+    const isLinked = Boolean(row.dealId && row.sales.length > 0 && row.purchases.length > 0);
+    if (relationFilter === 'linked' && !isLinked) return false;
+    if (relationFilter === 'unlinked' && isLinked) return false;
+    if (customerFilter && !row.sales.some((contract) => contract.customerName === customerFilter)) return false;
+    if (supplierFilter && !row.purchases.some((contract) => contract.supplierName === supplierFilter)) return false;
+    if (searchText && !contracts.some((contract) => matchesSearch(contract, searchText))) return false;
+    return contracts.some((contract) => matchesDate(contract, dateRange));
   });
 
   return filteredRows.sort((left, right) => {
-    const leftContract = left.sales || left.purchases[0];
-    const rightContract = right.sales || right.purchases[0];
+    const leftContract = [...left.sales, ...left.purchases][0];
+    const rightContract = [...right.sales, ...right.purchases][0];
     if (!leftContract || !rightContract) return 0;
     let comparison = 0;
     if (sortField === 'no') {
@@ -119,7 +112,7 @@ export const buildVisibleContractIds = (rows: RelationRow[]) => {
   const sales = new Set<string>();
   const purchases = new Set<string>();
   rows.forEach((row) => {
-    if (row.sales) sales.add(row.sales.id);
+    row.sales.forEach((contract) => sales.add(contract.id));
     row.purchases.forEach((contract) => purchases.add(contract.id));
   });
   return { sales, purchases };

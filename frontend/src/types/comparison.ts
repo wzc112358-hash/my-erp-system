@@ -65,6 +65,20 @@ export interface OverviewContract {
   associatedSalesIds?: string[];
   purchaseSummary?: PurchaseSummary;
   pendingCount?: number;
+  businessDealId?: string;
+  businessDealDate?: string;
+}
+
+export interface BusinessDeal {
+  id: string;
+  name: string;
+  deal_date: string;
+  sales_contracts: string[];
+  purchase_contracts: string[];
+  tax_rate: number;
+  created_by?: string;
+  created?: string;
+  updated?: string;
 }
 
 export interface ComparisonPurchaseContract {
@@ -237,6 +251,7 @@ export interface ComparisonData {
 
 export interface SalesShipmentRecord {
   id: string;
+  sales_contract: string;
   product_name: string;
   tracking_contract_no: string;
   date: string;
@@ -260,6 +275,7 @@ export interface SaleInvoiceRecord {
   uninvoiced_amount: number;
   uninvoiced_percent: number;
   manager_confirmed: string;
+  is_verified: string;
   remark: string;
   attachments: string[];
   created: string;
@@ -350,7 +366,9 @@ export interface PurchasePaymentRecord {
 }
 
 export interface ContractDetailData {
+  business_deal?: BusinessDeal;
   sales_contract?: ComparisonSalesContract;
+  sales_contracts?: ComparisonSalesContract[];
   purchase_contracts: ComparisonPurchaseContract[];
   sales_shipments: SalesShipmentRecord[];
   sale_invoices: SaleInvoiceRecord[];
@@ -383,6 +401,7 @@ export interface FlowNodeData {
   date?: string;
   status?: string;
   managerConfirmed?: string;
+  verificationStatus?: string;
   contractId?: string;
   collectionName: string;
   recordId: string;

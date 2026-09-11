@@ -130,6 +130,7 @@ export interface SaleInvoice {
   created: string;
   updated?: string;
   manager_confirmed?: string;
+  is_verified?: string;
   expand?: {
     sales_contract?: {
       id: string;

@@ -1,10 +1,13 @@
 export interface MonthlyProfitContract {
   id: string;
+  primarySalesId: string;
   no: string;
   signDate: string;
   customerName: string;
   productName: string;
   purchaseContractCount: number;
+  salesContractCount: number;
+  taxRate: number;
   salesAmountIncTax: number;
   purchaseAmountIncTax: number;
   freight: number;

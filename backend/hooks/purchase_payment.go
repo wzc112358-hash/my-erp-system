@@ -73,7 +73,7 @@ func RegisterPurchasePaymentHooks(app core.App) {
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
 			oldRecord := e.Record.Original()
-			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
+			// 仅当 product_amount 真正变化时才校验超额，避免纯状态变更（管理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "product_amount", totalProductAmount, contractTotalQuantity, 1.0, "付款产品数量"); err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func RegisterPurchasePaymentHooks(app core.App) {
 				contractNo := contract.GetString("no")
 				productName := contract.GetString("product_name")
 				title := fmt.Sprintf("%s %s - 采购付款已确认", contractNo, productName)
-				message := fmt.Sprintf("经理已确认您的采购付款申请，付款金额：%.2f", amount)
+				message := fmt.Sprintf("管理已确认您的采购付款申请，付款金额：%.2f", amount)
 
 				log.Printf("[PurchasePayment] Sending notification to %s: %s\n", creatorId, title)
 				if err := CreateNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {

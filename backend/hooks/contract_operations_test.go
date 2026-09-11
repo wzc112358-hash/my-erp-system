@@ -28,6 +28,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.TextField{Name: "no", Required: true},
 		&core.TextField{Name: "product_name", Required: true},
 		&core.TextField{Name: "customer", Required: true},
+		&core.DateField{Name: "sign_date"},
 		&core.NumberField{Name: "unit_price"},
 		&core.NumberField{Name: "total_quantity"},
 		&core.NumberField{Name: "total_amount"},
@@ -57,6 +58,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		&core.TextField{Name: "no", Required: true},
 		&core.TextField{Name: "product_name", Required: true},
 		&core.TextField{Name: "supplier", Required: true},
+		&core.DateField{Name: "sign_date"},
 		&core.NumberField{Name: "unit_price"},
 		&core.NumberField{Name: "total_quantity"},
 		&core.NumberField{Name: "total_amount"},
@@ -85,6 +87,41 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		t.Fatal(err)
 	}
 
+	taxRates := core.NewBaseCollection("profit_tax_rates")
+	taxRates.Fields.Add(
+		&core.NumberField{Name: "rate", Required: true, Min: floatPointer(0), Max: floatPointer(1)},
+		&core.DateField{Name: "effective_from", Required: true},
+	)
+	if err := app.Save(taxRates); err != nil {
+		app.Cleanup()
+		t.Fatal(err)
+	}
+	defaultRate := core.NewRecord(taxRates)
+	defaultRate.Set("rate", defaultProfitTaxRate)
+	defaultRate.Set("effective_from", "1970-01-01 00:00:00.000Z")
+	if err := app.Save(defaultRate); err != nil {
+		app.Cleanup()
+		t.Fatal(err)
+	}
+
+	deals := core.NewBaseCollection("business_deals")
+	deals.Fields.Add(
+		&core.TextField{Name: "name", Required: true},
+		&core.DateField{Name: "deal_date", Required: true},
+		&core.RelationField{Name: "sales_contracts", CollectionId: sales.Id, MaxSelect: 999},
+		&core.RelationField{Name: "purchase_contracts", CollectionId: purchases.Id, MaxSelect: 999},
+		&core.NumberField{Name: "tax_rate", Required: true, Min: floatPointer(0), Max: floatPointer(1)},
+		&core.TextField{Name: "created_by"},
+		&core.DateField{Name: "deleted_at"},
+		&core.TextField{Name: "deleted_by"},
+		&core.AutodateField{Name: "created", OnCreate: true},
+		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+	)
+	if err := app.Save(deals); err != nil {
+		app.Cleanup()
+		t.Fatal(err)
+	}
+
 	addSalesChild := func(name string, fields ...core.Field) {
 		collection := core.NewBaseCollection(name)
 		collection.Fields.Add(&core.RelationField{Name: "sales_contract", CollectionId: sales.Id, MaxSelect: 1})
@@ -98,7 +135,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 	}
 	addSalesChild("sales_shipments", &core.NumberField{Name: "quantity"})
 	addSalesChild("sale_receipts", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
-	addSalesChild("sale_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
+	addSalesChild("sale_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"}, &core.TextField{Name: "is_verified"})
 	addSalesChild("bidding_records", &core.TextField{Name: "title"})
 	saleInvoices, _ := app.FindCollectionByNameOrId("sale_invoices")
 	saleInvoices.Fields.Add(&core.RelationField{Name: "purchase_contract", CollectionId: purchases.Id, MaxSelect: 1})
@@ -120,7 +157,7 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		}
 	}
 	addPurchaseChild("purchase_arrivals", &core.NumberField{Name: "quantity"})
-	addPurchaseChild("purchase_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
+	addPurchaseChild("purchase_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"}, &core.TextField{Name: "is_verified"})
 	addPurchaseChild("purchase_payments", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
 
 	auditLogs := core.NewBaseCollection("contract_operation_logs")
@@ -148,6 +185,10 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 	}
 
 	return app
+}
+
+func floatPointer(value float64) *float64 {
+	return &value
 }
 
 func newDuplicateSalesContract(t *testing.T, app core.App, attachmentName string) *core.Record {

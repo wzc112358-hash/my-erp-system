@@ -10,15 +10,49 @@ import (
 
 var (
 	errRelationManagerRequired = errors.New("manager role required")
-	errRelationAlreadyOccupied = errors.New("relation field already occupied")
 )
 
-// RegisterContractRelationHooks protects both legacy relation directions.
-// The schema can represent sales->purchase and purchase->sales edges; together
-// they support the one-to-many and many-to-one contract views used by reports.
+// RegisterContractRelationHooks treats the old single-value relation fields as
+// an input compatibility layer only. New relationships are persisted in
+// business_deals; the old fields remain frozen for rollback and reconciliation.
 func RegisterContractRelationHooks(app core.App) {
+	bindContractRelationCreate(app, "purchase_contracts", "sales_contract")
+	bindContractRelationCreate(app, "sales_contracts", "purchase_contract")
 	bindContractRelationUpdate(app, "purchase_contracts", "sales_contract")
 	bindContractRelationUpdate(app, "sales_contracts", "purchase_contract")
+}
+
+func bindContractRelationCreate(app core.App, collection, field string) {
+	app.OnRecordCreateRequest(collection).Bind(&hook.Handler[*core.RecordRequestEvent]{
+		Func: func(e *core.RecordRequestEvent) error {
+			counterpartID := e.Record.GetString(field)
+			if counterpartID == "" {
+				return e.Next()
+			}
+			role := ""
+			operatorID := ""
+			if e.Auth != nil {
+				role = e.Auth.GetString("type")
+				operatorID = e.Auth.Id
+			}
+			if !canRoleManageContractRelation(collection, role, e.HasSuperuserAuth()) {
+				return router.NewForbiddenError("当前账号不能修改该模块的合同关联", errRelationManagerRequired)
+			}
+
+			// Do not persist a new legacy edge. The selected counterpart is added
+			// to the overall deal inside the same transaction as contract create.
+			e.Record.Set(field, "")
+			return runRecordRequestTransaction(e, func(txApp core.App) error {
+				if err := e.Next(); err != nil {
+					return err
+				}
+				if collection == "sales_contracts" {
+					return linkContractsInTransaction(txApp, e.Record.Id, counterpartID, operatorID)
+				}
+				return linkContractsInTransaction(txApp, counterpartID, e.Record.Id, operatorID)
+			})
+		},
+	})
 }
 
 func bindContractRelationUpdate(app core.App, collection, field string) {
@@ -45,21 +79,10 @@ func bindContractRelationUpdate(app core.App, collection, field string) {
 					return e.Next()
 				}
 
-				role := ""
-				if e.Auth != nil {
-					role = e.Auth.GetString("type")
+				if requested != current {
+					return router.NewBadRequestError("请使用合同列表或关联合同总览中的“关联/移出交易”功能", errors.New("legacy relation field is read-only"))
 				}
-				canManage := canRoleManageContractRelation(collection, role, e.HasSuperuserAuth())
-				if err := validateRelationChange(current, requested, canManage); err != nil {
-					switch {
-					case errors.Is(err, errRelationManagerRequired):
-						return router.NewForbiddenError("当前账号不能修改该模块的合同关联", err)
-					case errors.Is(err, errRelationAlreadyOccupied):
-						return router.NewBadRequestError("该合同已被其他关联占用，请刷新后重试", err)
-					default:
-						return err
-					}
-				}
+				e.Record.Set(field, current)
 				return e.Next()
 			})
 		},
@@ -72,20 +95,4 @@ func canRoleManageContractRelation(collection, role string, isSuperuser bool) bo
 	}
 	return (collection == "sales_contracts" && role == "sales") ||
 		(collection == "purchase_contracts" && role == "purchasing")
-}
-
-func validateRelationChange(current, requested string, canManage bool) error {
-	if current == requested {
-		return nil
-	}
-	if !canManage {
-		return errRelationManagerRequired
-	}
-	if requested == "" {
-		return nil
-	}
-	if current != "" {
-		return errRelationAlreadyOccupied
-	}
-	return nil
 }

@@ -47,7 +47,7 @@ export const MonthlyProfitPage: React.FC = () => {
         <div>
           <Title level={2}>月度利润</Title>
           <Paragraph>
-            按销售合同签约月份汇总关联合同详情中的净利润，可展开核对每份合同。
+            按总体交易日期汇总净利润；一对一、一对多和多对多交易都只计算一次。
           </Paragraph>
         </div>
         <div className="monthly-profit-page__controls">
@@ -74,7 +74,7 @@ export const MonthlyProfitPage: React.FC = () => {
               <strong className={overview.totals.netProfit < 0 ? 'is-negative' : ''}>
                 {formatCny(overview.totals.netProfit)}
               </strong>
-              <small>{overview.totals.contractCount} 组关联合同</small>
+              <small>{overview.totals.contractCount} 笔总体交易</small>
             </div>
             <dl>
               <div>
@@ -100,7 +100,7 @@ export const MonthlyProfitPage: React.FC = () => {
             <Alert
               type="info"
               showIcon
-              message={`${year}年另有 ${overview.unlinkedSalesCount} 份销售合同尚未关联采购合同，未计入利润。`}
+              title={`${year}年另有 ${overview.unlinkedSalesCount} 份销售合同尚未关联采购合同，未计入利润。`}
               className="monthly-profit-page__alert"
             />
           )}

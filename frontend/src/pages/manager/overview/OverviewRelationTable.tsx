@@ -17,7 +17,7 @@ interface OverviewRelationTableProps {
   onView: (contract: OverviewContract) => void;
   onViewFlow: (contract: OverviewContract) => void;
   onLink: (contract: OverviewContract) => void;
-  onUnlink: (sales: OverviewContract, purchase: OverviewContract) => void;
+  onUnlink: (contract: OverviewContract) => void;
   onDelete: (contract: OverviewContract) => void;
 }
 
@@ -47,21 +47,28 @@ export const OverviewRelationTable: React.FC<OverviewRelationTableProps> = ({
       {rows.map((row) => (
         <div className="overview-relation-row" key={row.id}>
           <div className="overview-relation-side">
-            {row.sales ? (
-              <OverviewContractCard
-                contract={row.sales}
-                selected={selectedSales.has(row.sales.id)}
-                onSelect={(_, checked) => onSelect(row.sales!, checked)}
-                onView={() => onView(row.sales!)}
-                onViewFlow={() => onViewFlow(row.sales!)}
-                onLink={() => onLink(row.sales!)}
-                onDelete={() => onDelete(row.sales!)}
-              />
+            {row.sales.length > 0 ? (
+              <div className="overview-purchase-stack">
+                {row.sales.map((sales) => (
+                  <OverviewContractCard
+                    key={sales.id}
+                    contract={sales}
+                    compact={row.sales.length > 1}
+                    selected={selectedSales.has(sales.id)}
+                    onSelect={(_, checked) => onSelect(sales, checked)}
+                    onView={() => onView(sales)}
+                    onViewFlow={() => onViewFlow(sales)}
+                    onLink={() => onLink(sales)}
+                    onUnlink={row.dealId ? () => onUnlink(sales) : undefined}
+                    onDelete={() => onDelete(sales)}
+                  />
+                ))}
+              </div>
             ) : <div className="overview-empty-side">未关联销售合同</div>}
           </div>
 
-          <div className={`overview-connector ${row.sales && row.purchases.length ? '' : 'is-empty'}`}>
-            {row.sales && row.purchases.length > 0 && <span className="overview-connector-badge">{row.purchases.length}</span>}
+          <div className={`overview-connector ${row.dealId ? '' : 'is-empty'}`}>
+            {row.dealId && <span className="overview-connector-badge">{row.sales.length} × {row.purchases.length}</span>}
           </div>
 
           <div className="overview-relation-side is-purchase">
@@ -77,7 +84,7 @@ export const OverviewRelationTable: React.FC<OverviewRelationTableProps> = ({
                     onView={() => onView(purchase)}
                     onViewFlow={() => onViewFlow(purchase)}
                     onLink={() => onLink(purchase)}
-                    onUnlink={row.sales ? () => onUnlink(row.sales!, purchase) : undefined}
+                    onUnlink={row.dealId ? () => onUnlink(purchase) : undefined}
                     onDelete={() => onDelete(purchase)}
                   />
                 ))}
@@ -88,7 +95,7 @@ export const OverviewRelationTable: React.FC<OverviewRelationTableProps> = ({
       ))}
 
       <div className="overview-pagination">
-        <Pagination current={currentPage} pageSize={pageSize} total={totalRows} onChange={onPageChange} showSizeChanger={false} showTotal={(total) => `共 ${total} 组对应关系`} />
+        <Pagination current={currentPage} pageSize={pageSize} total={totalRows} onChange={onPageChange} showSizeChanger={false} showTotal={(total) => `共 ${total} 笔总体交易/独立合同`} />
       </div>
     </section>
   );

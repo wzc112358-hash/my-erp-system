@@ -171,7 +171,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
         <Row gutter={16}>
           <Col span={24}>
             <Alert
-              message={`合同剩余未开票金额: ${formatRemainingAmount(selectedContract.uninvoiced_amount, selectedContract.is_cross_border, exchangeRate)}`}
+              title={`合同剩余未开票金额: ${formatRemainingAmount(selectedContract.uninvoiced_amount, selectedContract.is_cross_border, exchangeRate)}`}
               type="info"
               showIcon
               style={{ marginBottom: 16 }}

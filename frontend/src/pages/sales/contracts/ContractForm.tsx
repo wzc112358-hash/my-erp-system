@@ -165,7 +165,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             <Input placeholder="请输入产品名称" />
           </Form.Item>
         </Col>
-        <Col xs={24} md={12}>
+        {!initialValues && <Col xs={24} md={12}>
           <Form.Item
             name="purchase_contract"
             label="关联采购合同"
@@ -183,7 +183,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
               }
             />
           </Form.Item>
-        </Col>
+        </Col>}
       </Row>
 
       <Form.Item name="is_price_excluding_tax" label="按不含税单价填写" valuePropName="checked">
@@ -253,7 +253,7 @@ export const ContractForm: React.FC<ContractFormProps> = ({ form, onFinish, onCa
             </div>
             {isCrossBorder && (
               <Alert
-                message={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(6)}（汇率：${exchangeRate}）`}
+                title={`折合人民币：¥ ${(totalAmount * exchangeRate).toFixed(6)}（汇率：${exchangeRate}）`}
                 type="info"
                 style={{ marginTop: 8 }}
                 showIcon

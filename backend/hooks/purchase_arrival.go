@@ -81,7 +81,7 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 			contractTotalQuantity := contract.GetFloat("total_quantity")
 
 			oldRecord := e.Record.Original()
-			// 仅当 quantity 真正变化时才校验超额，避免纯状态变更（经理确认）被拦截
+			// 仅当 quantity 真正变化时才校验超额，避免纯状态变更（管理确认）被拦截
 			if err := CheckOverageIfChanged(oldRecord, e.Record, "quantity", totalQuantity, contractTotalQuantity, 1.0, "到货数量"); err != nil {
 				return err
 			}
@@ -96,7 +96,7 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 				creatorId := e.Record.GetString("creator_user")
 				trackingNo := e.Record.GetString("tracking_contract_no")
 				title := "采购发货已确认"
-				message := fmt.Sprintf("经理已确认您的采购发货信息，发货批次：%s", trackingNo)
+				message := fmt.Sprintf("管理已确认您的采购发货信息，发货批次：%s", trackingNo)
 
 				log.Printf("[PurchaseArrival] Sending notification to %s: %s\n", creatorId, title)
 				if err := CreateNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {

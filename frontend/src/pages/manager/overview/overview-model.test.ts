@@ -15,12 +15,12 @@ const contract = (values: Partial<OverviewContract> & Pick<OverviewContract, 'id
 });
 
 const salesContracts = [
-  contract({ id: 'sales-linked', type: 'sales', associatedPurchaseIds: ['purchase-linked'] }),
+  contract({ id: 'sales-linked', type: 'sales', businessDealId: 'deal-one', associatedPurchaseIds: ['purchase-linked'] }),
   contract({ id: 'sales-unlinked', type: 'sales' }),
 ];
 
 const purchaseContracts = [
-  contract({ id: 'purchase-linked', type: 'purchase', associatedSalesIds: ['sales-linked'] }),
+  contract({ id: 'purchase-linked', type: 'purchase', businessDealId: 'deal-one', associatedSalesIds: ['sales-linked'] }),
   contract({ id: 'purchase-unlinked', type: 'purchase' }),
 ];
 
@@ -37,7 +37,7 @@ const rowsFor = (relationFilter: OverviewRelationFilter) => buildRelationRows({
 test('keeps the current mixed overview as the default all-contract view', () => {
   assert.deepEqual(rowsFor('all').map((row) => row.id), [
     'purchase-purchase-unlinked',
-    'sales-sales-linked',
+    'deal-deal-one',
     'sales-sales-unlinked',
   ]);
 });
@@ -46,8 +46,8 @@ test('shows only standalone sales and purchase contracts', () => {
   const rows = rowsFor('unlinked');
 
   assert.equal(rows.length, 2);
-  assert.ok(rows.every((row) => !row.sales || row.purchases.length === 0));
-  assert.deepEqual(new Set(rows.map((row) => row.sales?.id || row.purchases[0]?.id)), new Set([
+  assert.ok(rows.every((row) => !row.dealId));
+  assert.deepEqual(new Set(rows.map((row) => row.sales[0]?.id || row.purchases[0]?.id)), new Set([
     'sales-unlinked',
     'purchase-unlinked',
   ]));
@@ -57,6 +57,6 @@ test('shows only aligned sales-purchase relationships', () => {
   const rows = rowsFor('linked');
 
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].sales?.id, 'sales-linked');
+  assert.equal(rows[0].sales[0]?.id, 'sales-linked');
   assert.deepEqual(rows[0].purchases.map((purchase) => purchase.id), ['purchase-linked']);
 });

@@ -42,7 +42,7 @@ export const TopNav: React.FC<TopNavProps> = ({ user, onMenuToggle }) => {
     const roleMap: Record<string, string> = {
       sales: '销售职员',
       purchasing: '采购职员',
-      manager: '经理',
+      manager: '管理',
     };
     return roleMap[type] || '用户';
   };

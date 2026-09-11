@@ -13,10 +13,10 @@ export const useManagerPendingStore = create<ManagerPendingState>((set) => ({
   fetchPendingCount: async () => {
     try {
       const [salesInvoices, saleReceipts, purchaseArrivals, purchaseInvoices, purchasePayments] = await Promise.all([
-        pb.collection('sale_invoices').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('sale_invoices').getList(1, 1, { filter: '(manager_confirmed = "pending" || is_verified != "yes")' }),
         pb.collection('sale_receipts').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
         pb.collection('purchase_arrivals').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
-        pb.collection('purchase_invoices').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
+        pb.collection('purchase_invoices').getList(1, 1, { filter: '(manager_confirmed = "pending" || is_verified != "yes")' }),
         pb.collection('purchase_payments').getList(1, 1, { filter: 'manager_confirmed = "pending"' }),
       ]);
       const total = salesInvoices.totalItems + saleReceipts.totalItems + purchaseArrivals.totalItems + purchaseInvoices.totalItems + purchasePayments.totalItems;

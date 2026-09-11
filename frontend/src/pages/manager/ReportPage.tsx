@@ -144,8 +144,8 @@ export const ReportPage: React.FC = () => {
         : `${year}年${startMonth}月至${endMonth}月`;
       const workbook = buildReportWorkbook(displayData, summary, { scopeLabel, exchangeRate });
       const fileName = hasContractFilter
-        ? `合同关联与利润报表_筛选${displayData.length}条.xlsx`
-        : `合同关联与利润报表_${year}年${startMonth}-${endMonth}月.xlsx`;
+        ? `总体交易与利润报表_筛选${displayData.length}条.xlsx`
+        : `总体交易与利润报表_${year}年${startMonth}-${endMonth}月.xlsx`;
       const bytes = XLSX.write(workbook, {
         type: 'array',
         bookType: 'xlsx',
@@ -170,6 +170,20 @@ export const ReportPage: React.FC = () => {
   };
 
   const columns = [
+    {
+      title: '总体交易',
+      dataIndex: 'businessDealName',
+      key: 'businessDealName',
+      width: 220,
+      fixed: 'left' as const,
+    },
+    {
+      title: '交易税率',
+      dataIndex: 'taxRate',
+      key: 'taxRate',
+      width: 90,
+      render: (value: number) => value ? `${(value * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%` : '-',
+    },
     {
       title: '采购合同编号',
       dataIndex: 'purchaseContractNo',
@@ -500,8 +514,8 @@ export const ReportPage: React.FC = () => {
           <Table
             dataSource={displayData}
             columns={columns}
-            rowKey={(record) => `${record.salesContractId || 'no-sales'}:${record.purchaseContractId || 'no-purchase'}`}
-            scroll={{ x: 2900 }}
+            rowKey={(record) => `${record.businessDealId || 'independent'}:${record.salesContractId || 'no-sales'}:${record.purchaseContractId || 'no-purchase'}`}
+            scroll={{ x: 3200 }}
             pagination={false}
             size="small"
             footer={() => (

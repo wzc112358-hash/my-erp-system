@@ -230,7 +230,7 @@ export const PaymentList: React.FC = () => {
           />
           <Popconfirm
             title="将此付款记录移入回收站？"
-            description="附件会保留，经理可恢复。"
+            description="附件会保留，管理可恢复。"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"

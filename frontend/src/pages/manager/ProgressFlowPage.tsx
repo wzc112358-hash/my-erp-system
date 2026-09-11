@@ -9,7 +9,9 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ComparisonAPI } from '@/api/comparison';
 import { getPbErrorMessage, isAbortedError } from '@/api/helpers';
 import { ManagerConfirmationAPI } from '@/api/manager-confirmation';
-import type { ManagerConfirmableCollection } from '@/api/manager-confirmation';
+import type { ManagerConfirmableCollection, ManagerConfirmationDecision } from '@/api/manager-confirmation';
+import { InvoiceVerificationAPI } from '@/api/invoice-verification';
+import type { InvoiceVerificationCollection, InvoiceVerificationStatus } from '@/api/invoice-verification';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
@@ -90,7 +92,16 @@ const CustomFlowNode: React.FC<{ data: FlowNodeData }> = ({ data }) => {
       {data.sublabel && <div className="flow-node-info">{data.sublabel}</div>}
       {data.amount != null && <div className="flow-node-amount">{formatCurrency(data.amount)}</div>}
       {data.date && <div className="flow-node-date">{data.date}</div>}
-      {data.managerConfirmed && <div className="flow-node-status">{getStatusTag(data.managerConfirmed)}</div>}
+      {(data.managerConfirmed || data.verificationStatus) && (
+        <div className="flow-node-status">
+          {data.managerConfirmed && getStatusTag(data.managerConfirmed)}
+          {data.verificationStatus && (
+            <Tag color={data.verificationStatus === 'yes' ? 'green' : 'orange'}>
+              {data.verificationStatus === 'yes' ? '已验票' : '未验票'}
+            </Tag>
+          )}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -172,6 +183,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         sublabel: formatCurrency(si.amount),
         date: formatDate(si.issue_date),
         managerConfirmed: si.manager_confirmed,
+        verificationStatus: si.is_verified || 'no',
         collectionName: 'sale_invoices', recordId: si.id,
         record: si as unknown as Record<string, unknown>,
         attachments: si.attachments,
@@ -257,6 +269,7 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
           sublabel: formatCurrency(i.amount),
           date: formatDate(i.receive_date),
           managerConfirmed: i.manager_confirmed,
+          verificationStatus: i.is_verified || 'no',
           collectionName: 'purchase_invoices', recordId: i.id,
           record: i as unknown as Record<string, unknown>,
           attachments: i.attachments,
@@ -396,9 +409,10 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="发票金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="开票日期">{formatDate(r.issue_date as string)}</Descriptions.Item>
-          <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="是否验票">{r.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
+          <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
         </Descriptions>
       );
@@ -411,7 +425,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="收款日期">{formatDate(r.receive_date as string)}</Descriptions.Item>
           <Descriptions.Item label="收款方式">{(r.method as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="收款账号">{(r.account as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
@@ -434,7 +448,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="杂费">{formatCurrency(r.miscellaneous_expenses as number)}</Descriptions.Item>
           <Descriptions.Item label="关税">{formatCurrency((r.tariff as number) || 0)}</Descriptions.Item>
           <Descriptions.Item label="增值税">{formatCurrency((r.value_added_tax as number) || 0)}</Descriptions.Item>
-          <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
@@ -449,7 +463,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="货物数量(吨)">{(r.product_amount as number) || '-'} </Descriptions.Item>
           <Descriptions.Item label="发票金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="收票日期">{formatDate(r.receive_date as string)}</Descriptions.Item>
-          <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="是否验票">{r.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
@@ -465,7 +479,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="付款金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="付款日期">{formatDate(r.pay_date as string)}</Descriptions.Item>
           <Descriptions.Item label="付款方式">{(r.method as string) || '-'}</Descriptions.Item>
-          <Descriptions.Item label="经理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
+          <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间" span={2}>{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
@@ -496,7 +510,8 @@ export const ProgressFlowPage: React.FC = () => {
   const [flowReloadKey, setFlowReloadKey] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalData, setModalData] = useState<FlowNodeData | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<ManagerConfirmationDecision>();
+  const [verificationUpdating, setVerificationUpdating] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
 
   useEffect(() => { getUsdToCnyRate().then(setExchangeRate); }, []);
@@ -577,7 +592,7 @@ export const ProgressFlowPage: React.FC = () => {
 
   const handleConfirm = useCallback(async () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
-    setConfirming(true);
+    setConfirming('approved');
     try {
       await ManagerConfirmationAPI.submit(
         modalData.collectionName as ManagerConfirmableCollection,
@@ -599,13 +614,13 @@ export const ProgressFlowPage: React.FC = () => {
     } catch (err) {
       message.error(getPbErrorMessage(err, '确认失败'));
     } finally {
-      setConfirming(false);
+      setConfirming(undefined);
     }
   }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
   const handleReject = useCallback(async () => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
-    setConfirming(true);
+    setConfirming('rejected');
     try {
       await ManagerConfirmationAPI.submit(
         modalData.collectionName as ManagerConfirmableCollection,
@@ -627,24 +642,81 @@ export const ProgressFlowPage: React.FC = () => {
     } catch (err) {
       message.error(getPbErrorMessage(err, '驳回失败'));
     } finally {
-      setConfirming(false);
+      setConfirming(undefined);
     }
   }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
+  const handleVerificationChange = useCallback(async (status: InvoiceVerificationStatus) => {
+    if (!modalData || (modalData.flowType !== 'sale_invoice' && modalData.flowType !== 'purchase_invoice')) return;
+    const collection = modalData.collectionName as InvoiceVerificationCollection;
+    const nodeId = `${modalData.flowType === 'sale_invoice' ? 'si' : 'pi'}-${modalData.recordId}`;
+    setVerificationUpdating(true);
+    try {
+      await InvoiceVerificationAPI.update(collection, modalData.recordId, status);
+      setModalData((current) => current ? {
+        ...current,
+        verificationStatus: status,
+        record: current.record ? { ...current.record, is_verified: status } : current.record,
+      } : current);
+      setFlowNodes((current) => current.map((node) => (
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                verificationStatus: status,
+                record: node.data.record
+                  ? { ...(node.data.record as Record<string, unknown>), is_verified: status }
+                  : node.data.record,
+              },
+            }
+          : node
+      )));
+      message.success('验票状态已更新');
+    } catch (err) {
+      message.error(getPbErrorMessage(err, '验票状态更新失败'));
+    } finally {
+      setVerificationUpdating(false);
+    }
+  }, [message, modalData]);
+
   const getModalFooter = useCallback(() => {
     if (!modalData) return null;
+    const isInvoice = modalData.flowType === 'sale_invoice' || modalData.flowType === 'purchase_invoice';
     const needsConfirm = modalData.flowType !== 'sales_contract'
       && modalData.flowType !== 'purchase_contract'
       && modalData.flowType !== 'sales_shipment';
-    if (!needsConfirm) return null;
-    if (modalData.managerConfirmed === 'pending') {
-      return [
-        <Button key="reject" danger loading={confirming} onClick={handleReject}>驳回</Button>,
-        <Button key="confirm" type="primary" loading={confirming} onClick={handleConfirm}>确认</Button>,
-      ];
-    }
-    return null;
-  }, [modalData, confirming, handleConfirm, handleReject]);
+    if (!needsConfirm && !isInvoice) return null;
+
+    return (
+      <div className="manager-invoice-action-bar">
+        {isInvoice && (
+          <div className="manager-invoice-verification">
+            <span>验票状态</span>
+            <Select
+              size="small"
+              value={modalData.verificationStatus === 'yes' ? 'yes' : 'no'}
+              options={[
+                { label: '已验票', value: 'yes' },
+                { label: '未验票', value: 'no' },
+              ]}
+              loading={verificationUpdating}
+              disabled={confirming !== undefined || verificationUpdating}
+              onChange={handleVerificationChange}
+              style={{ width: 96 }}
+              aria-label="验票状态"
+            />
+          </div>
+        )}
+        {needsConfirm && modalData.managerConfirmed === 'pending' && (
+          <div className="manager-confirmation-actions">
+            <Button danger disabled={verificationUpdating || confirming !== undefined} loading={confirming === 'rejected'} onClick={handleReject}>驳回</Button>
+            <Button type="primary" disabled={verificationUpdating || confirming !== undefined} loading={confirming === 'approved'} onClick={handleConfirm}>确认</Button>
+          </div>
+        )}
+      </div>
+    );
+  }, [modalData, confirming, verificationUpdating, handleConfirm, handleReject, handleVerificationChange]);
 
   const selectOptions = useMemo(() => {
     return contractOptions.map(opt => {
@@ -705,7 +777,7 @@ export const ProgressFlowPage: React.FC = () => {
           <Alert
             type="error"
             showIcon
-            message={optionsError}
+            title={optionsError}
             style={{ marginTop: 12 }}
             action={(
               <Button
@@ -726,7 +798,7 @@ export const ProgressFlowPage: React.FC = () => {
             <Alert
               type="error"
               showIcon
-              message={flowError}
+              title={flowError}
               style={{ width: '100%' }}
               action={(
                 <Button

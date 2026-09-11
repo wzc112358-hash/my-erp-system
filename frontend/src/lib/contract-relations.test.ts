@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   buildContractRelationIndex,
-  getPurchaseAllocationRatio,
   hasPurchaseContractRelation,
   hasSalesContractRelation,
   matchesContractRelationFilter,
@@ -30,9 +29,20 @@ test('combines both relation directions and deduplicates mirrored edges', () => 
     { salesId: 'sales-1', purchaseId: 'purchase-2' },
     { salesId: 'sales-2', purchaseId: 'purchase-1' },
   ]);
-  assert.equal(getPurchaseAllocationRatio(index, salesContracts, 'purchase-1', 'sales-1'), 0.4);
-  assert.equal(getPurchaseAllocationRatio(index, salesContracts, 'purchase-1', 'sales-2'), 0.6);
-  assert.equal(getPurchaseAllocationRatio(index, salesContracts, 'purchase-2', 'sales-1'), 1);
+});
+
+test('uses the overall-deal table as the authoritative relation source', () => {
+  const index = buildContractRelationIndex(
+    [{ id: 'sales-1', purchase_contract: 'legacy-purchase' }],
+    [{ id: 'purchase-1' }, { id: 'legacy-purchase' }],
+    [{
+      id: 'deal-1', name: '交易一', deal_date: '2026-08-01', tax_rate: 0.1881,
+      sales_contracts: ['sales-1'], purchase_contracts: ['purchase-1'],
+    }],
+  );
+  assert.deepEqual(index.edges, [{ salesId: 'sales-1', purchaseId: 'purchase-1' }]);
+  assert.equal(index.dealIdBySales.get('sales-1'), 'deal-1');
+  assert.equal(index.dealIdByPurchase.get('purchase-1'), 'deal-1');
 });
 
 test('ignores dangling relation ids that are outside the loaded contract set', () => {

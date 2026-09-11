@@ -25,7 +25,7 @@ test('builds three calendar-month windows across a year boundary', () => {
 
 test('links purchase contracts and calculates the current-month full collection rate', () => {
   const sales = [
-    contract({ id: 's1', type: 'sales', signDate: '2026-08-02', associatedPurchaseIds: ['p1'], invoiceProgress: 100, settlementProgress: 100 }),
+    contract({ id: 's1', type: 'sales', businessDealId: 'deal-1', businessDealDate: '2026-08-02', signDate: '2026-08-02', associatedPurchaseIds: ['p1'], invoiceProgress: 100, settlementProgress: 100 }),
     contract({ id: 's2', type: 'sales', signDate: '2026-08-03', settlementProgress: 50 }),
     contract({ id: 's3', type: 'sales', signDate: '2026-07-03', associatedPurchaseIds: ['p2'], status: 'cancelled' }),
   ];

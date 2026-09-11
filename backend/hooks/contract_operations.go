@@ -101,9 +101,9 @@ func RegisterContractOperationRoutes(app core.App) {
 				if err := linkContracts(request.App, body.SalesID, body.PurchaseID, role, operatorID, request.HasSuperuserAuth()); err != nil {
 					switch {
 					case errors.Is(err, errRelationManagerRequired):
-						return router.NewForbiddenError("仅销售、采购或经理账号可以关联合同", err)
-					case errors.Is(err, errRelationAlreadyOccupied):
-						return router.NewApiError(http.StatusConflict, "两个合同的关系字段都已占用，无法继续新增关联", err)
+						return router.NewForbiddenError("仅销售、采购或管理账号可以关联合同", err)
+					case errors.Is(err, errContractsBelongDifferentDeals), errors.Is(err, errContractAlreadyInOtherDeal):
+						return router.NewApiError(http.StatusConflict, "两个合同已分别属于不同的总体交易；请先由管理移出原交易，再重新关联", err)
 					default:
 						return router.NewBadRequestError("关联合同失败", err)
 					}
@@ -150,50 +150,11 @@ func RegisterContractOperationRoutes(app core.App) {
 	})
 }
 
-func linkContracts(app core.App, salesID, purchaseID, role, operatorID string, isSuperuser bool) error {
-	if salesID == "" || purchaseID == "" {
-		return fmt.Errorf("sales and purchase contract ids are required")
-	}
-	if !isSuperuser && role != "manager" && role != "sales" && role != "purchasing" {
-		return errRelationManagerRequired
-	}
-
-	return app.RunInTransaction(func(txApp core.App) error {
-		sales, err := txApp.FindRecordById("sales_contracts", salesID)
-		if err != nil {
-			return fmt.Errorf("find sales contract: %w", err)
-		}
-		purchase, err := txApp.FindRecordById("purchase_contracts", purchaseID)
-		if err != nil {
-			return fmt.Errorf("find purchase contract: %w", err)
-		}
-
-		if purchase.GetString("sales_contract") == salesID || sales.GetString("purchase_contract") == purchaseID {
-			return nil
-		}
-		if purchase.GetString("sales_contract") == "" {
-			purchase.Set("sales_contract", salesID)
-			if err := txApp.Save(purchase); err != nil {
-				return err
-			}
-		} else if sales.GetString("purchase_contract") == "" {
-			sales.Set("purchase_contract", purchaseID)
-			if err := txApp.Save(sales); err != nil {
-				return err
-			}
-		} else {
-			return errRelationAlreadyOccupied
-		}
-
-		return saveContractOperationLog(txApp, "link", "sales_purchase", sales, purchase, operatorID, nil)
-	})
-}
-
 func requireManagerRequest(e *core.RequestEvent) error {
 	if e.HasSuperuserAuth() || (e.Auth != nil && e.Auth.GetString("type") == "manager") {
 		return nil
 	}
-	return router.NewForbiddenError("仅经理账号可以执行合同解除关联或删除", nil)
+	return router.NewForbiddenError("仅管理账号可以执行合同解除关联或删除", nil)
 }
 
 func contractOperationAPIError(err error) error {
@@ -254,6 +215,9 @@ func mergeDuplicateContracts(app core.App, contractType, sourceID, targetID stri
 			return err
 		}
 		if err := preserveOutgoingContractRelation(txApp, contractType, source, target); err != nil {
+			return err
+		}
+		if err := preserveBusinessDealMembership(txApp, contractType, source, target); err != nil {
 			return err
 		}
 
@@ -436,6 +400,9 @@ func moveContractReferences(app core.App, source, target *core.Record) (map[stri
 				continue
 			}
 			if relation.IsMultiple() {
+				if collection.Name == "business_deals" {
+					continue
+				}
 				return nil, fmt.Errorf("multi-value relation %s.%s is not supported for contract merge", collection.Name, relation.Name)
 			}
 			records, err := app.FindRecordsByFilter(collection, relation.Name+" = {:source}", "", 0, 0, dbx.Params{"source": source.Id})
@@ -452,6 +419,32 @@ func moveContractReferences(app core.App, source, target *core.Record) (map[stri
 		}
 	}
 	return counts, nil
+}
+
+func preserveBusinessDealMembership(app core.App, contractType string, source, target *core.Record) error {
+	sourceMembership, err := findBusinessDealForContract(app, contractType, source.Id)
+	if err != nil || sourceMembership == nil {
+		return err
+	}
+	targetMembership, err := findBusinessDealForContract(app, contractType, target.Id)
+	if err != nil {
+		return err
+	}
+	if targetMembership != nil && targetMembership.deal.Id != sourceMembership.deal.Id {
+		return errMergeRelationConflict
+	}
+	deal := sourceMembership.deal
+	if contractType == "sales" {
+		ids := appendUniqueContractID(withoutContractID(sourceMembership.sales, source.Id), target.Id)
+		deal.Set("sales_contracts", ids)
+	} else {
+		ids := appendUniqueContractID(withoutContractID(sourceMembership.purchases, source.Id), target.Id)
+		deal.Set("purchase_contracts", ids)
+	}
+	if err := refreshBusinessDealMetadata(app, deal); err != nil {
+		return err
+	}
+	return app.Save(deal)
 }
 
 func updateRelationReferences(app core.App, collection *core.Collection, field, currentID, nextID string) error {
@@ -539,37 +532,31 @@ func unlinkContracts(app core.App, salesID, purchaseID string, operatorID ...str
 		return fmt.Errorf("sales and purchase contract ids are required")
 	}
 	return app.RunInTransaction(func(txApp core.App) error {
-		sales, err := txApp.FindRecordById("sales_contracts", salesID)
+		salesMembership, err := findBusinessDealForContract(txApp, "sales", salesID)
 		if err != nil {
 			return err
 		}
-		purchase, err := txApp.FindRecordById("purchase_contracts", purchaseID)
+		purchaseMembership, err := findBusinessDealForContract(txApp, "purchase", purchaseID)
 		if err != nil {
 			return err
 		}
-		changed := false
-		if sales.GetString("purchase_contract") == purchaseID {
-			sales.Set("purchase_contract", "")
-			if err := txApp.Save(sales); err != nil {
-				return err
-			}
-			changed = true
-		}
-		if purchase.GetString("sales_contract") == salesID {
-			purchase.Set("sales_contract", "")
-			if err := txApp.Save(purchase); err != nil {
-				return err
-			}
-			changed = true
-		}
-		if !changed {
+		if salesMembership == nil || purchaseMembership == nil || salesMembership.deal.Id != purchaseMembership.deal.Id {
 			return errContractRelationNotFound
 		}
 		operator := ""
 		if len(operatorID) > 0 {
 			operator = operatorID[0]
 		}
-		return saveContractOperationLog(txApp, "unlink", "sales_purchase", sales, purchase, operator, nil)
+		// Compatibility for old clients: a pair can only be unlinked without
+		// ambiguity when one side has a single member. New clients use the
+		// explicit remove-contract endpoint.
+		if len(salesMembership.sales) == 1 {
+			return removeContractFromBusinessDealInTransaction(txApp, "purchase", purchaseID, operator)
+		}
+		if len(salesMembership.purchases) == 1 {
+			return removeContractFromBusinessDealInTransaction(txApp, "sales", salesID, operator)
+		}
+		return fmt.Errorf("总体交易包含多份销售和采购合同，请明确选择要移出的合同")
 	})
 }
 

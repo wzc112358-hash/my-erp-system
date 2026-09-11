@@ -98,16 +98,16 @@ export const RecentContractOverview: React.FC<RecentContractOverviewProps> = ({
               {month.groups.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`${month.relativeLabel}暂无关联合同`} />
               ) : month.groups.map((group) => (
-                <div className="recent-contract-group" key={group.sales.id}>
+                <div className="recent-contract-group" key={group.id}>
                   <button
                     type="button"
                     className="recent-contract-group__contract"
-                    onClick={() => onOpenContract(group.sales.id)}
-                    aria-label={`查看销售合同 ${group.sales.no}`}
+                    onClick={() => onOpenContract(group.sales[0].id)}
+                    aria-label={`查看总体交易 ${group.sales.map((contract) => contract.no).join('、')}`}
                   >
                     <span>
-                      <strong>{group.sales.no}</strong>
-                      <small>{group.sales.customerName || '未填写客户'} · {group.sales.productName}</small>
+                      <strong>{group.sales.map((contract) => contract.no).join('、')}</strong>
+                      <small>{Array.from(new Set(group.sales.map((contract) => contract.customerName || '未填写客户'))).join('、')} · {Array.from(new Set(group.sales.map((contract) => contract.productName))).join('、')}</small>
                     </span>
                     <ArrowRightOutlined />
                   </button>
@@ -118,8 +118,8 @@ export const RecentContractOverview: React.FC<RecentContractOverviewProps> = ({
                     </strong>
                   </div>
                   <div className="recent-contract-group__progress-grid">
-                    <ProgressLine label="销售开票" value={group.sales.invoiceProgress || 0} kind="invoice" />
-                    <ProgressLine label="销售收款" value={group.sales.settlementProgress || 0} kind="settlement" />
+                    <ProgressLine label="销售开票" value={group.salesInvoiceProgress} kind="invoice" />
+                    <ProgressLine label="销售收款" value={group.salesSettlementProgress} kind="settlement" />
                     <ProgressLine label="采购收票" value={group.purchaseInvoiceProgress} kind="invoice" />
                     <ProgressLine label="采购付款" value={group.purchaseSettlementProgress} kind="settlement" />
                   </div>

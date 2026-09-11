@@ -1,4 +1,6 @@
-export const PROFIT_TAX_RATE = 0.1881;
+export const DEFAULT_PROFIT_TAX_RATE = 0.1881;
+/** @deprecated Use DEFAULT_PROFIT_TAX_RATE or a business deal tax-rate snapshot. */
+export const PROFIT_TAX_RATE = DEFAULT_PROFIT_TAX_RATE;
 
 export interface ContractProfitInput {
   salesAmount: number;
@@ -8,6 +10,18 @@ export interface ContractProfitInput {
   miscellaneous: number;
   tariff: number;
   valueAddedTax: number;
+  taxRate?: number;
+}
+
+export interface BusinessDealProfitInput {
+  salesAmountIncTax: number;
+  salesAmountExTax: number;
+  purchaseAmountIncTax: number;
+  freight: number;
+  miscellaneous: number;
+  tariff: number;
+  valueAddedTax: number;
+  taxRate?: number;
 }
 
 export interface ContractProfitResult {
@@ -32,19 +46,45 @@ export const calculateContractProfit = ({
   miscellaneous,
   tariff,
   valueAddedTax,
+  taxRate,
 }: ContractProfitInput): ContractProfitResult => {
   const salesAmountIncTax = salesPriceExcludingTax ? salesAmount * 1.13 : salesAmount;
   const salesAmountExTax = salesPriceExcludingTax ? salesAmount : salesAmount / 1.13;
-  const purchaseAmountExTax = purchaseAmount / 1.13;
+  return calculateBusinessDealProfit({
+    salesAmountIncTax,
+    salesAmountExTax,
+    purchaseAmountIncTax: purchaseAmount,
+    freight,
+    miscellaneous,
+    tariff,
+    valueAddedTax,
+    taxRate,
+  });
+};
+
+export const calculateBusinessDealProfit = ({
+  salesAmountIncTax,
+  salesAmountExTax,
+  purchaseAmountIncTax,
+  freight,
+  miscellaneous,
+  tariff,
+  valueAddedTax,
+  taxRate = DEFAULT_PROFIT_TAX_RATE,
+}: BusinessDealProfitInput): ContractProfitResult => {
+  const safeTaxRate = Number.isFinite(taxRate) && taxRate >= 0 && taxRate <= 1
+    ? taxRate
+    : DEFAULT_PROFIT_TAX_RATE;
+  const purchaseAmountExTax = purchaseAmountIncTax / 1.13;
   const operatingProfit = salesAmountExTax
     - purchaseAmountExTax
     - freight
     - miscellaneous
     - tariff
     - valueAddedTax;
-  const taxAmount = (salesAmountIncTax - purchaseAmount) * PROFIT_TAX_RATE;
+  const taxAmount = (salesAmountIncTax - purchaseAmountIncTax) * safeTaxRate;
   const netProfit = salesAmountIncTax
-    - purchaseAmount
+    - purchaseAmountIncTax
     - taxAmount
     - freight
     - miscellaneous
@@ -54,7 +94,7 @@ export const calculateContractProfit = ({
   return {
     salesAmountIncTax,
     salesAmountExTax,
-    purchaseAmountIncTax: purchaseAmount,
+    purchaseAmountIncTax,
     purchaseAmountExTax,
     operatingProfit,
     taxAmount,

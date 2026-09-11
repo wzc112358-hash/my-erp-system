@@ -5,10 +5,13 @@ import type { MonthlyProfitContract } from '../types/monthly-profit.ts';
 import { summarizeMonthlyProfits } from '../lib/monthly-profit.ts';
 
 const contract = (values: Partial<MonthlyProfitContract> & Pick<MonthlyProfitContract, 'id' | 'signDate' | 'netProfit'>): MonthlyProfitContract => ({
+  primarySalesId: values.id,
   no: values.id,
   customerName: '客户',
   productName: '产品',
   purchaseContractCount: 1,
+  salesContractCount: 1,
+  taxRate: 0.1881,
   salesAmountIncTax: 100,
   purchaseAmountIncTax: 50,
   freight: 1,

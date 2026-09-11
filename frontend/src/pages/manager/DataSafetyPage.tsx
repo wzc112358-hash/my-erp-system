@@ -29,7 +29,7 @@ const collectionLabels: Record<string, string> = {
 const operationLabels: Record<string, string> = {
   create_record: '创建成功', create_failed: '创建失败',
   update_record: '修改成功', update_failed: '修改失败',
-  confirm_record: '经理确认', reject_record: '经理驳回',
+  confirm_record: '管理确认', reject_record: '管理驳回',
   soft_delete: '移入回收站', restore_record: '恢复记录',
   merge: '合并合同（旧）', link: '关联合同', unlink: '解除关联',
   unlink_delete: '删除合同（旧）', delete_record: '删除记录（旧）',
@@ -64,8 +64,8 @@ const standardOperationOptions = [
   { label: '创建失败', value: 'create_failed' },
   { label: '修改成功', value: 'update_record' },
   { label: '修改失败', value: 'update_failed' },
-  { label: '经理确认', value: 'confirm_record' },
-  { label: '经理驳回', value: 'reject_record' },
+  { label: '管理确认', value: 'confirm_record' },
+  { label: '管理驳回', value: 'reject_record' },
   { label: '移入回收站', value: 'soft_delete' },
   { label: '恢复记录', value: 'restore_record' },
 ];
@@ -324,7 +324,7 @@ export const DataSafetyPage = () => {
       <SafetyCertificateOutlined className="data-safety-header-icon" aria-hidden="true" />
     </header>
 
-    <Alert type="info" showIcon message="删除操作保留数据和附件"
+    <Alert type="info" showIcon title="删除操作保留数据和附件"
       description="合同及其发货、到货、发票和收付款记录会按批次进入回收站；恢复时一并恢复并重新计算合同进度。" />
 
     <Tabs activeKey={activeTab} onChange={changeTab} items={[
@@ -346,7 +346,7 @@ export const DataSafetyPage = () => {
     ]} />
 
     <Modal title="操作详情" open={Boolean(selectedLog)} footer={null} onCancel={() => setSelectedLog(undefined)} width={720}>
-      {selectedLog?.error_message && <Alert type="error" showIcon message={selectedLog.error_message} />}
+      {selectedLog?.error_message && <Alert type="error" showIcon title={selectedLog.error_message} />}
       <dl className="data-safety-detail">
         <dt>操作人</dt><dd>{selectedLog?.operator_name || '系统'}</dd>
         <dt>记录 ID</dt><dd>{selectedLog?.record_id || '-'}</dd>

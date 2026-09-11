@@ -82,7 +82,7 @@ export const OverviewContractCard: React.FC<OverviewContractCardProps> = ({
     ...(onViewFlow ? [{ key: 'flow', icon: <EyeOutlined />, label: '查看执行流程', onClick: onViewFlow }] : []),
     { type: 'divider' },
     { key: 'link', icon: <LinkOutlined />, label: `新增关联${isSales ? '采购' : '销售'}合同`, onClick: onLink },
-    ...(onUnlink ? [{ key: 'unlink', icon: <DisconnectOutlined />, label: '解除当前合同关联', onClick: onUnlink }] : []),
+    ...(onUnlink ? [{ key: 'unlink', icon: <DisconnectOutlined />, label: '将本合同移出总体交易', onClick: onUnlink }] : []),
     { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '解除关联并删除', onClick: onDelete },
   ];

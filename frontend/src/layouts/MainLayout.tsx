@@ -19,6 +19,7 @@ import {
   InboxOutlined as InventoryIcon,
   SafetyCertificateOutlined,
   CheckSquareOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { TopNav } from './TopNav';
 import type { UserRole } from '@/types/layout';
@@ -72,6 +73,7 @@ const MENU_CONFIG: Record<UserRole, MenuConfig[]> = {
     { key: 'inventory', label: '库存管理', icon: <InventoryIcon />, path: '/manager/inventory' },
     { key: 'data-safety', label: '数据安全', icon: <SafetyCertificateOutlined />, path: '/manager/data-safety' },
     { key: 'exchange-rate', label: '汇率设置', icon: <DollarOutlined />, path: '/manager/exchange-rate' },
+    { key: 'profit-settings', label: '利润参数', icon: <SettingOutlined />, path: '/manager/profit-settings' },
   ],
 };
 

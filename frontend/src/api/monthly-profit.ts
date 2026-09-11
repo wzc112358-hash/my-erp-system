@@ -1,10 +1,10 @@
 import { pb } from '@/lib/pocketbase';
-import { calculateContractProfit } from '@/lib/contract-profit';
-import { buildContractRelationIndex, getPurchaseAllocationRatio } from '@/lib/contract-relations';
+import { calculateBusinessDealProfit } from '@/lib/contract-profit';
 import { businessYearUtcRange } from '@/lib/business-month';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { summarizeMonthlyProfits } from '@/lib/monthly-profit';
 import type {
+  BusinessDeal,
   ComparisonPurchaseContract,
   ComparisonSalesContract,
   PurchaseArrivalRecord,
@@ -53,11 +53,15 @@ const arrivalCostsInCny = (arrivals: PurchaseArrivalRecord[], rate: number) => a
   { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
 );
 
+const uniqueText = (values: (string | undefined)[]) => Array.from(
+  new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
+).join('、');
+
 export const MonthlyProfitAPI = {
   getYearOverview: async (year: number): Promise<MonthlyProfitOverview> => {
     const exchangeRate = await getUsdToCnyRate();
     const yearRange = businessYearUtcRange(year);
-    const [allSalesContracts, allPurchaseContracts] = await Promise.all([
+    const [allSalesContracts, allPurchaseContracts, allDeals] = await Promise.all([
       pb.collection('sales_contracts').getFullList<ComparisonSalesContract>({
         filter: 'status != "cancelled"',
         expand: 'customer',
@@ -66,22 +70,16 @@ export const MonthlyProfitAPI = {
       pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
         filter: 'status != "cancelled"',
       }),
+      pb.collection('business_deals').getFullList<BusinessDeal>({ sort: 'deal_date' }),
     ]);
-    const salesContracts = allSalesContracts.filter((contract) => (
-      contract.sign_date >= yearRange.start && contract.sign_date < yearRange.end
-    ));
-    const relationIndex = buildContractRelationIndex(allSalesContracts, allPurchaseContracts);
+    const deals = allDeals.filter((deal) => deal.deal_date >= yearRange.start && deal.deal_date < yearRange.end);
+    const salesById = new Map(allSalesContracts.map((contract) => [contract.id, contract]));
     const purchaseById = new Map(allPurchaseContracts.map((contract) => [contract.id, contract]));
-    const purchaseContracts = Array.from(new Set(salesContracts.flatMap(
-      (contract) => relationIndex.purchaseIdsBySales.get(contract.id) || [],
-    )))
-      .map((id) => purchaseById.get(id))
-      .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
-
+    const purchaseIds = Array.from(new Set(deals.flatMap((deal) => deal.purchase_contracts || [])));
     const arrivals = await listByRelationIds<PurchaseArrivalRecord>(
       'purchase_arrivals',
       'purchase_contract',
-      purchaseContracts.map((contract) => contract.id),
+      purchaseIds,
     );
     const arrivalsByPurchase = new Map<string, PurchaseArrivalRecord[]>();
     arrivals.forEach((arrival) => {
@@ -90,65 +88,60 @@ export const MonthlyProfitAPI = {
       arrivalsByPurchase.set(arrival.purchase_contract, related);
     });
 
-    let unlinkedSalesCount = 0;
-    const contractProfits = salesContracts.flatMap((salesContract): MonthlyProfitContract[] => {
-      const linkedPurchases = (relationIndex.purchaseIdsBySales.get(salesContract.id) || [])
+    const linkedSalesIds = new Set(allDeals.flatMap((deal) => deal.sales_contracts || []));
+    const unlinkedSalesCount = allSalesContracts.filter((contract) => (
+      contract.sign_date >= yearRange.start
+      && contract.sign_date < yearRange.end
+      && !linkedSalesIds.has(contract.id)
+    )).length;
+
+    const contractProfits = deals.flatMap((deal): MonthlyProfitContract[] => {
+      const salesContracts = (deal.sales_contracts || [])
+        .map((id) => salesById.get(id))
+        .filter((contract): contract is ComparisonSalesContract => Boolean(contract));
+      const purchaseContracts = (deal.purchase_contracts || [])
         .map((id) => purchaseById.get(id))
         .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
-      if (!linkedPurchases.length) {
-        unlinkedSalesCount += 1;
-        return [];
-      }
-      const purchaseAmount = linkedPurchases.reduce(
-        (sum, contract) => sum + amountInCny(
-          contract.total_amount,
-          contract.is_cross_border,
-          exchangeRate,
-        ) * getPurchaseAllocationRatio(
-          relationIndex,
-          allSalesContracts,
-          contract.id,
-          salesContract.id,
-        ),
-        0,
-      );
-      const costs = linkedPurchases.reduce(
-        (totals, contract) => {
-          const contractCosts = arrivalCostsInCny(
-            arrivalsByPurchase.get(contract.id) || [],
-            exchangeRate,
-          );
-          const ratio = getPurchaseAllocationRatio(
-            relationIndex,
-            allSalesContracts,
-            contract.id,
-            salesContract.id,
-          );
-          totals.freight += contractCosts.freight * ratio;
-          totals.miscellaneous += contractCosts.miscellaneous * ratio;
-          totals.tariff += contractCosts.tariff * ratio;
-          totals.valueAddedTax += contractCosts.valueAddedTax * ratio;
-          return totals;
-        },
-        { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
-      );
-      const profit = calculateContractProfit({
-        salesAmount: amountInCny(salesContract.total_amount, salesContract.is_cross_border, exchangeRate),
-        salesPriceExcludingTax: salesContract.is_price_excluding_tax,
-        purchaseAmount,
+      if (!salesContracts.length || !purchaseContracts.length) return [];
+
+      const salesAmounts = salesContracts.reduce((total, contract) => {
+        const amount = amountInCny(contract.total_amount, contract.is_cross_border, exchangeRate);
+        total.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
+        total.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
+        return total;
+      }, { incTax: 0, exTax: 0 });
+      const purchaseAmount = purchaseContracts.reduce((sum, contract) => (
+        sum + amountInCny(contract.total_amount, contract.is_cross_border, exchangeRate)
+      ), 0);
+      const costs = purchaseContracts.reduce((totals, contract) => {
+        const contractCosts = arrivalCostsInCny(arrivalsByPurchase.get(contract.id) || [], exchangeRate);
+        totals.freight += contractCosts.freight;
+        totals.miscellaneous += contractCosts.miscellaneous;
+        totals.tariff += contractCosts.tariff;
+        totals.valueAddedTax += contractCosts.valueAddedTax;
+        return totals;
+      }, { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 });
+      const profit = calculateBusinessDealProfit({
+        salesAmountIncTax: salesAmounts.incTax,
+        salesAmountExTax: salesAmounts.exTax,
+        purchaseAmountIncTax: purchaseAmount,
         freight: costs.freight,
         miscellaneous: costs.miscellaneous,
         tariff: costs.tariff,
         valueAddedTax: costs.valueAddedTax,
+        taxRate: deal.tax_rate,
       });
 
       return [{
-        id: salesContract.id,
-        no: salesContract.no,
-        signDate: salesContract.sign_date,
-        customerName: salesContract.expand?.customer?.name || salesContract.customer_name || '-',
-        productName: salesContract.product_name,
-        purchaseContractCount: linkedPurchases.length,
+        id: deal.id,
+        primarySalesId: salesContracts[0].id,
+        no: salesContracts.map((contract) => contract.no).join('、'),
+        signDate: deal.deal_date,
+        customerName: uniqueText(salesContracts.map((contract) => contract.expand?.customer?.name || contract.customer_name)) || '-',
+        productName: uniqueText([...salesContracts, ...purchaseContracts].map((contract) => contract.product_name)) || '-',
+        salesContractCount: salesContracts.length,
+        purchaseContractCount: purchaseContracts.length,
+        taxRate: deal.tax_rate,
         salesAmountIncTax: profit.salesAmountIncTax,
         purchaseAmountIncTax: profit.purchaseAmountIncTax,
         freight: costs.freight,

@@ -155,6 +155,9 @@ func softDeleteBusinessRecord(app core.App, collectionName, recordID, operatorID
 					}
 				}
 			}
+			if err := removeContractFromBusinessDealInTransaction(txApp, config.contractType, record.Id, operatorID); err != nil && !errors.Is(err, errBusinessDealNotFound) {
+				return err
+			}
 			if err := detachExternalContractReferences(txApp, config.contractType, record); err != nil {
 				return err
 			}
@@ -204,6 +207,11 @@ func detachExternalContractReferences(app core.App, contractType string, contrac
 				continue
 			}
 			if _, owned := ownedBusinessRecordConfig(contractType, collection.Name, relation.Name); owned {
+				continue
+			}
+			// Overall-deal membership is removed explicitly above so a multi-value
+			// relation never blocks moving a contract and its children to recycle.
+			if collection.Name == "business_deals" {
 				continue
 			}
 			if relation.IsMultiple() {

@@ -2,16 +2,13 @@ import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { fetchAllByFieldBatches } from '@/api/helpers';
 import { buildContractRelationIndex } from '@/lib/contract-relations';
+import { calculateBusinessDealProfit, DEFAULT_PROFIT_TAX_RATE } from '@/lib/contract-profit';
+import { invoiceNeedsManagerAction } from '@/lib/invoice-workflow';
 
 import type {
   ComparisonSalesContract,
   ComparisonPurchaseContract,
-  ProgressComparison,
   ProfitAnalysis,
-  ProgressDetailType,
-  ProgressShipmentPerContract,
-  ProgressPaymentPerContract,
-  ProgressInvoicePerContract,
   OverviewContract,
   SaleReceipt,
   PurchasePayment,
@@ -23,6 +20,7 @@ import type {
   PurchasePaymentRecord,
   ContractDetailData,
   FlowContractOption,
+  BusinessDeal,
 } from '@/types/comparison';
 
 interface PurchaseArrivalItem {
@@ -47,24 +45,6 @@ interface SaleInvoiceItem {
 const contractProgress = (completedAmount: number, totalAmount: number) => {
   if (totalAmount <= 0) return 0;
   return Math.min(100, Math.max(0, (completedAmount / totalAmount) * 100));
-};
-
-const getPurchasesForSales = async (salesContract: ComparisonSalesContract) => {
-  const [forwardPurchases, reversePurchase] = await Promise.all([
-    pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
-      filter: `sales_contract="${salesContract.id}"`,
-      expand: 'supplier',
-    }),
-    salesContract.purchase_contract
-      ? pb.collection('purchase_contracts')
-        .getOne<ComparisonPurchaseContract>(salesContract.purchase_contract, { expand: 'supplier' })
-      : Promise.resolve(undefined),
-  ]);
-
-  return Array.from(new Map(
-    [...forwardPurchases, ...(reversePurchase ? [reversePurchase] : [])]
-      .map((contract) => [contract.id, contract]),
-  ).values());
 };
 
 const getPurchaseRecords = <T>(collectionName: string, purchaseIds: string[]) => (
@@ -93,11 +73,12 @@ interface ArrivalForRealized {
 // - 运费/杂费/关税/增值税按实际已发生（到货记录）
 // 返回值均为 CNY 口径。
 function computeRealizedProfit(
-  salesContract: ComparisonSalesContract | undefined,
+  salesContracts: ComparisonSalesContract[],
   purchaseContracts: ComparisonPurchaseContract[],
-  salesShipments: { quantity: number }[],
+  salesShipments: { quantity: number; sales_contract?: string }[],
   arrivals: ArrivalForRealized[],
   rate: number,
+  taxRate: number,
 ): Pick<
   ProfitAnalysis,
   | 'realized_sales_quantity'
@@ -137,30 +118,27 @@ function computeRealizedProfit(
     return sum + amountCny * ratio;
   }, 0);
 
-  // 销售收入：按已发货量计算（含税口径）
-  let realizedSalesAmountCny = 0;
-  if (salesContract && salesContract.total_quantity > 0) {
-    const unitPriceCny = salesContract.is_cross_border
-      ? (salesContract.unit_price * rate)
-      : salesContract.unit_price;
-    realizedSalesAmountCny = unitPriceCny * realizedSalesQty;
-  }
-
-  const isExTax = salesContract ? salesContract.is_price_excluding_tax : false;
-  // 含税/不含税调整，与全额利润保持一致
-  const realizedSalesIncTax = isExTax ? realizedSalesAmountCny * 1.13 : realizedSalesAmountCny;
-  const realizedSalesExTax = isExTax ? realizedSalesAmountCny : realizedSalesAmountCny / 1.13;
+  const realizedSalesAmounts = salesContracts.reduce((totals, contract) => {
+    const shippedQuantity = salesShipments
+      .filter((shipment) => shipment.sales_contract === contract.id || (salesContracts.length === 1 && !shipment.sales_contract))
+      .reduce((sum, shipment) => sum + (shipment.quantity || 0), 0);
+    const unitPriceCny = contract.unit_price * (contract.is_cross_border ? rate : 1);
+    const amount = unitPriceCny * shippedQuantity;
+    totals.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
+    totals.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
+    return totals;
+  }, { incTax: 0, exTax: 0 });
 
   const realizedOperating =
-    realizedSalesExTax - realizedPurchaseAmountCny / 1.13 - realizedFreight - realizedMisc - realizedTariff - realizedVat;
-  const realizedTax = (realizedSalesIncTax - realizedPurchaseAmountCny) * 0.1881;
+    realizedSalesAmounts.exTax - realizedPurchaseAmountCny / 1.13 - realizedFreight - realizedMisc - realizedTariff - realizedVat;
+  const realizedTax = (realizedSalesAmounts.incTax - realizedPurchaseAmountCny) * taxRate;
   const realizedNet =
-    realizedSalesIncTax - realizedPurchaseAmountCny - realizedTax - realizedFreight - realizedMisc - realizedTariff - realizedVat;
+    realizedSalesAmounts.incTax - realizedPurchaseAmountCny - realizedTax - realizedFreight - realizedMisc - realizedTariff - realizedVat;
 
   return {
     realized_sales_quantity: realizedSalesQty,
     realized_purchase_quantity: realizedPurchaseQty,
-    realized_sales_amount: realizedSalesIncTax,
+    realized_sales_amount: realizedSalesAmounts.incTax,
     realized_purchase_amount: realizedPurchaseAmountCny,
     realized_freight: realizedFreight,
     realized_miscellaneous: realizedMisc,
@@ -170,6 +148,126 @@ function computeRealizedProfit(
   };
 }
 
+const getBusinessDealForContract = async (
+  contractType: 'sales' | 'purchase',
+  contractId: string,
+) => {
+  const deals = await pb.collection('business_deals').getFullList<BusinessDeal>();
+  const field = contractType === 'sales' ? 'sales_contracts' : 'purchase_contracts';
+  return deals.find((deal) => (deal[field] || []).includes(contractId));
+};
+
+const loadSalesContracts = (ids: string[]) => Promise.all(ids.map((id) => (
+  pb.collection('sales_contracts').getOne<ComparisonSalesContract>(id, { expand: 'customer' })
+)));
+
+const loadPurchaseContracts = (ids: string[]) => Promise.all(ids.map((id) => (
+  pb.collection('purchase_contracts').getOne<ComparisonPurchaseContract>(id, { expand: 'supplier' })
+)));
+
+const getOverallContractDetail = async (
+  contractType: 'sales' | 'purchase',
+  contractId: string,
+): Promise<ContractDetailData> => {
+  const [rate, businessDeal] = await Promise.all([
+    getUsdToCnyRate(),
+    getBusinessDealForContract(contractType, contractId),
+  ]);
+  const salesIds = businessDeal?.sales_contracts || (contractType === 'sales' ? [contractId] : []);
+  const purchaseIds = businessDeal?.purchase_contracts || (contractType === 'purchase' ? [contractId] : []);
+  const [salesContracts, purchaseContracts] = await Promise.all([
+    loadSalesContracts(salesIds),
+    loadPurchaseContracts(purchaseIds),
+  ]);
+
+  const [salesShipments, purchaseArrivals, saleReceipts, purchasePayments, saleInvoices, purchaseInvoices] = await Promise.all([
+    fetchAllByFieldBatches<SalesShipmentRecord>(salesIds, 'sales_contract', (filter) => (
+      pb.collection('sales_shipments').getFullList<SalesShipmentRecord>({ filter })
+    )),
+    getPurchaseRecords<PurchaseArrivalRecord>('purchase_arrivals', purchaseIds),
+    fetchAllByFieldBatches<SaleReceiptRecord>(salesIds, 'sales_contract', (filter) => (
+      pb.collection('sale_receipts').getFullList<SaleReceiptRecord>({ filter })
+    )),
+    getPurchaseRecords<PurchasePaymentRecord>('purchase_payments', purchaseIds),
+    fetchAllByFieldBatches<SaleInvoiceRecord>(salesIds, 'sales_contract', (filter) => (
+      pb.collection('sale_invoices').getFullList<SaleInvoiceRecord>({ filter })
+    )),
+    getPurchaseRecords<PurchaseInvoiceRecord>('purchase_invoices', purchaseIds),
+  ]);
+
+  const salesAmounts = salesContracts.reduce((totals, contract) => {
+    const amount = contract.total_amount * (contract.is_cross_border ? rate : 1);
+    totals.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
+    totals.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
+    return totals;
+  }, { incTax: 0, exTax: 0 });
+  const purchaseAmount = purchaseContracts.reduce((sum, contract) => (
+    sum + contract.total_amount * (contract.is_cross_border ? rate : 1)
+  ), 0);
+  const costs = purchaseArrivals.reduce((totals, arrival) => {
+    totals.freight += (arrival.freight_1 || 0) * (arrival.freight_1_currency === 'USD' ? rate : 1)
+      + (arrival.freight_2 || 0) * (arrival.freight_2_currency === 'USD' ? rate : 1);
+    totals.miscellaneous += (arrival.miscellaneous_expenses || 0)
+      * (arrival.miscellaneous_expenses_currency === 'USD' ? rate : 1);
+    totals.tariff += arrival.tariff || 0;
+    totals.valueAddedTax += arrival.value_added_tax || 0;
+    return totals;
+  }, { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 });
+  const taxRate = businessDeal?.tax_rate ?? DEFAULT_PROFIT_TAX_RATE;
+  const calculated = calculateBusinessDealProfit({
+    salesAmountIncTax: salesAmounts.incTax,
+    salesAmountExTax: salesAmounts.exTax,
+    purchaseAmountIncTax: purchaseAmount,
+    freight: costs.freight,
+    miscellaneous: costs.miscellaneous,
+    tariff: costs.tariff,
+    valueAddedTax: costs.valueAddedTax,
+    taxRate,
+  });
+  const salesQuantity = salesContracts.reduce((sum, contract) => sum + contract.total_quantity, 0);
+  const purchaseQuantity = purchaseContracts.reduce((sum, contract) => sum + contract.total_quantity, 0);
+  const profit: ProfitAnalysis = {
+    unit_profit: salesQuantity > 0 ? (salesAmounts.incTax - purchaseAmount) / salesQuantity : 0,
+    total_profit: calculated.operatingProfit,
+    sales_amount: salesAmounts.incTax,
+    purchase_amount: purchaseAmount,
+    sales_quantity: salesQuantity,
+    purchase_quantity: purchaseQuantity,
+    total_freight: costs.freight,
+    total_miscellaneous: costs.miscellaneous,
+    total_tariff: costs.tariff,
+    total_value_added_tax: costs.valueAddedTax,
+    is_quantity_matched: Math.abs(salesQuantity - purchaseQuantity) < 0.01,
+    tax_rate: taxRate,
+    after_tax_profit: calculated.netProfit,
+    ...computeRealizedProfit(
+      salesContracts,
+      purchaseContracts,
+      salesShipments,
+      purchaseArrivals,
+      rate,
+      taxRate,
+    ),
+  };
+
+  const selectedSales = contractType === 'sales'
+    ? salesContracts.find((contract) => contract.id === contractId)
+    : salesContracts[0];
+  return {
+    business_deal: businessDeal,
+    sales_contract: selectedSales,
+    sales_contracts: salesContracts,
+    purchase_contracts: purchaseContracts,
+    sales_shipments: salesShipments,
+    sale_invoices: saleInvoices,
+    sale_receipts: saleReceipts,
+    purchase_arrivals: purchaseArrivals,
+    purchase_invoices: purchaseInvoices,
+    purchase_payments: purchasePayments,
+    profit,
+  };
+};
+
 export const ComparisonAPI = {
   getSalesContracts: async () => {
     const items = await pb.collection('sales_contracts').getFullList();
@@ -177,13 +275,14 @@ export const ComparisonAPI = {
   },
 
   getAllContractsForOverview: async () => {
-    const [salesItems, purchaseItems, saleInvoiceItems, purchaseInvoiceItems, saleReceiptItems, purchasePaymentItems, purchaseArrivalItems] = await Promise.all([
+    const [salesItems, purchaseItems, businessDealItems, saleInvoiceItems, purchaseInvoiceItems, saleReceiptItems, purchasePaymentItems, purchaseArrivalItems] = await Promise.all([
       pb.collection('sales_contracts').getFullList({
         expand: 'customer',
       }),
       pb.collection('purchase_contracts').getFullList({
         expand: 'supplier',
       }),
+      pb.collection('business_deals').getFullList<BusinessDeal>({ sort: 'deal_date' }),
       pb.collection('sale_invoices').getFullList(),
       pb.collection('purchase_invoices').getFullList(),
       pb.collection('sale_receipts').getFullList(),
@@ -201,12 +300,13 @@ export const ComparisonAPI = {
 
     const salesContracts = salesResult.items as unknown as ComparisonSalesContract[];
     const purchaseContracts = purchaseResult.items as unknown as ComparisonPurchaseContract[];
+    const businessDeals = businessDealItems as BusinessDeal[];
     const saleInvoices = saleInvoicesResult.items as unknown as SaleInvoiceItem[];
     const purchaseInvoices = purchaseInvoicesResult.items as unknown as PurchaseInvoiceItem[];
     const saleReceipts = saleReceiptsResult.items as unknown as SaleReceipt[];
     const purchasePayments = purchasePaymentsResult.items as unknown as PurchasePayment[];
     const purchaseArrivals = purchaseArrivalsResult.items as unknown as PurchaseArrivalItem[];
-    const relationIndex = buildContractRelationIndex(salesContracts, purchaseContracts);
+    const relationIndex = buildContractRelationIndex(salesContracts, purchaseContracts, businessDeals);
 
     const saleInvoiceMap = new Map<string, { no: string; issueDate: string }>();
     const saleReceiptsMap = new Map<string, string>();
@@ -269,8 +369,8 @@ export const ComparisonAPI = {
     const pendingCountMap = new Map<string, number>();
     
     // 销售子信息中的待确认
-    (saleInvoicesResult.items as unknown as { sales_contract: string; manager_confirmed: string }[]).forEach(inv => {
-      if (inv.manager_confirmed === 'pending') {
+    (saleInvoicesResult.items as unknown as { sales_contract: string; manager_confirmed: string; is_verified?: string }[]).forEach(inv => {
+      if (invoiceNeedsManagerAction(inv)) {
         pendingCountMap.set(inv.sales_contract, (pendingCountMap.get(inv.sales_contract) || 0) + 1);
       }
     });
@@ -292,8 +392,8 @@ export const ComparisonAPI = {
         addPurchasePending(arrival.purchase_contract);
       }
     });
-    (purchaseInvoicesResult.items as unknown as { purchase_contract: string; manager_confirmed: string }[]).forEach(inv => {
-      if (inv.manager_confirmed === 'pending') {
+    (purchaseInvoicesResult.items as unknown as { purchase_contract: string; manager_confirmed: string; is_verified?: string }[]).forEach(inv => {
+      if (invoiceNeedsManagerAction(inv)) {
         addPurchasePending(inv.purchase_contract);
       }
     });
@@ -345,6 +445,8 @@ export const ComparisonAPI = {
           paymentDates: allPaymentDates,
         } : undefined,
         pendingCount: pendingCountMap.get(sc.id) || 0,
+        businessDealId: relationIndex.dealIdBySales.get(sc.id),
+        businessDealDate: relationIndex.dealsById.get(relationIndex.dealIdBySales.get(sc.id) || '')?.deal_date,
       };
     });
 
@@ -366,6 +468,8 @@ export const ComparisonAPI = {
       executionProgress: pc.execution_percent ?? 0,
       supplierName: pc.expand?.supplier?.name || pc.supplier_name || '-',
       associatedSalesIds: relationIndex.salesIdsByPurchase.get(pc.id) || [],
+      businessDealId: relationIndex.dealIdByPurchase.get(pc.id),
+      businessDealDate: relationIndex.dealsById.get(relationIndex.dealIdByPurchase.get(pc.id) || '')?.deal_date,
     }));
 
     const associatedPurchaseIds = new Set(
@@ -397,6 +501,7 @@ export const ComparisonAPI = {
       salesContracts: overviewSalesContracts,
       purchaseContracts: overviewPurchaseContracts,
       standalonePurchaseContracts,
+      businessDeals,
     };
   },
 
@@ -407,392 +512,16 @@ export const ComparisonAPI = {
     });
   },
 
-  getComparisonData: async (salesContractId: string) => {
-    const [rate, salesContract] = await Promise.all([
-      getUsdToCnyRate(),
-      pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
-        expand: 'customer',
-      }),
-    ]);
-    const purchaseContracts = await getPurchasesForSales(salesContract);
-    const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
-
-    const [salesShipmentsList, purchaseArrivalsList, saleReceiptsList, purchasePaymentsList, saleInvoicesList, purchaseInvoicesList] =
-      await Promise.all([
-        pb.collection('sales_shipments').getFullList<{ quantity: number }>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<ArrivalForRealized>('purchase_arrivals', purchaseContractIds),
-        pb.collection('sale_receipts').getFullList<{ amount: number }>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<{ amount: number; purchase_contract: string }>('purchase_payments', purchaseContractIds),
-        pb.collection('sale_invoices').getFullList<{ amount: number }>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<{ amount: number; purchase_contract: string }>('purchase_invoices', purchaseContractIds),
-      ]);
-
-    const salesShipped = salesShipmentsList.reduce((sum, s) => sum + s.quantity, 0);
-    const salesReceipted = saleReceiptsList.reduce((sum, r) => sum + r.amount, 0);
-    const salesInvoiced = saleInvoicesList.reduce((sum, i) => sum + i.amount, 0);
-
-    let totalFreight = 0;
-    let totalMiscellaneous = 0;
-
-    const shipmentPerContract: ProgressShipmentPerContract[] = purchaseContracts.map((pc) => {
-      const arrivals = purchaseArrivalsList.filter((a) => a.purchase_contract === pc.id);
-      const quantity = arrivals.reduce((sum, a) => sum + a.quantity, 0);
-      
-      // 计算运费和杂费，考虑币种
-      let freight1 = 0;
-      let freight2 = 0;
-      let misc = 0;
-      arrivals.forEach(a => {
-        const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
-        const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
-        const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
-        freight1 += (a.freight_1 || 0) * f1Rate;
-        freight2 += (a.freight_2 || 0) * f2Rate;
-        misc += (a.miscellaneous_expenses || 0) * mRate;
-      });
-      
-      if (pc.id === purchaseContracts[0]?.id) {
-        totalFreight = freight1 + freight2;
-        totalMiscellaneous = misc;
-      } else {
-        totalFreight += freight1 + freight2;
-        totalMiscellaneous += misc;
-      }
-
-      const salesPercentage = salesShipped > 0 ? (salesShipped / (salesContract.total_quantity || 1)) * 100 : 0;
-      const purchasePercentage = pc.total_quantity > 0 ? (quantity / pc.total_quantity) * 100 : 0;
-
-      return {
-        purchase_contract_id: pc.id,
-        purchase_contract_no: pc.no,
-        sales_executed_quantity: salesShipped,
-        sales_total_quantity: salesContract.total_quantity || 0,
-        purchase_executed_quantity: quantity,
-        purchase_total_quantity: pc.total_quantity,
-        sales_percentage: salesPercentage,
-        purchase_percentage: purchasePercentage,
-      };
-    });
-
-    const paymentPerContract: ProgressPaymentPerContract[] = purchaseContracts.map((pc) => {
-      const payments = purchasePaymentsList.filter((p) => p.purchase_contract === pc.id);
-      const amount = payments.reduce((sum, p) => sum + p.amount, 0);
-      
-      const salesPercentage = salesReceipted > 0 ? (salesReceipted / (salesContract.total_amount || 1)) * 100 : 0;
-      const purchasePercentage = pc.total_amount > 0 ? (amount / pc.total_amount) * 100 : 0;
-
-      return {
-        purchase_contract_id: pc.id,
-        purchase_contract_no: pc.no,
-        sales_received_amount: salesReceipted,
-        sales_total_amount: salesContract.total_amount || 0,
-        purchase_paid_amount: amount,
-        purchase_total_amount: pc.total_amount,
-        sales_percentage: salesPercentage,
-        purchase_percentage: purchasePercentage,
-      };
-    });
-
-    const invoicePerContract: ProgressInvoicePerContract[] = purchaseContracts.map((pc) => {
-      const invoices = purchaseInvoicesList.filter((i) => i.purchase_contract === pc.id);
-      const amount = invoices.reduce((sum, i) => sum + i.amount, 0);
-      
-      const salesPercentage = salesInvoiced > 0 ? (salesInvoiced / (salesContract.total_amount || 1)) * 100 : 0;
-      const purchasePercentage = pc.total_amount > 0 ? (amount / pc.total_amount) * 100 : 0;
-
-      return {
-        purchase_contract_id: pc.id,
-        purchase_contract_no: pc.no,
-        sales_invoiced_amount: salesInvoiced,
-        sales_total_amount: salesContract.total_amount || 0,
-        purchase_invoiced_amount: amount,
-        purchase_total_amount: pc.total_amount,
-        sales_percentage: salesPercentage,
-        purchase_percentage: purchasePercentage,
-      };
-    });
-
-    const purchaseArrived = purchaseArrivalsList.reduce((sum, a) => sum + a.quantity, 0);
-    const purchasePaid = purchasePaymentsList.reduce((sum, p) => sum + p.amount, 0);
-    const purchaseInvoiced = purchaseInvoicesList.reduce((sum, i) => sum + i.amount, 0);
-
-    const progress: ProgressComparison = {
-      shipment: {
-        sales_quantity: salesShipped,
-        purchase_quantity: purchaseArrived,
-        percentage: salesShipped > 0 ? (purchaseArrived / salesShipped) * 100 : 0,
-      },
-      shipment_per_contract: shipmentPerContract,
-      payment: {
-        sales_amount: salesReceipted,
-        purchase_amount: purchasePaid,
-        percentage: salesReceipted > 0 ? (purchasePaid / salesReceipted) * 100 : 0,
-      },
-      payment_per_contract: paymentPerContract,
-      invoice: {
-        sales_amount: salesInvoiced,
-        purchase_amount: purchaseInvoiced,
-        percentage: salesInvoiced > 0 ? (purchaseInvoiced / salesInvoiced) * 100 : 0,
-      },
-      invoice_per_contract: invoicePerContract,
-    };
-
-    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => {
-      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-      return sum + amountCny;
-    }, 0);
-    const purchaseTotalQuantity = purchaseContracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
-    const isQuantityMatched = Math.abs(salesContract.total_quantity - purchaseTotalQuantity) < 0.01;
-
-    const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
-    const freightCny = totalFreight;
-    const miscCny = totalMiscellaneous;
-
-    const profit: ProfitAnalysis = {
-      unit_profit:
-        purchaseContracts.length > 0
-          ? (salesContract.is_price_excluding_tax
-            ? salesAmountCny / salesContract.total_quantity * 1.13 - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price)
-            : salesAmountCny / salesContract.total_quantity - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price))
-          : 0,
-      total_profit: salesContract.is_price_excluding_tax
-        ? salesAmountCny - purchaseTotalAmount / 1.13 - freightCny - miscCny
-        : salesAmountCny / 1.13 - purchaseTotalAmount / 1.13 - freightCny - miscCny,
-      sales_amount: salesAmountCny,
-      purchase_amount: purchaseTotalAmount,
-      sales_quantity: salesContract.total_quantity,
-      purchase_quantity: purchaseTotalQuantity,
-      total_freight: freightCny,
-      total_miscellaneous: miscCny,
-      is_quantity_matched: isQuantityMatched,
-      ...computeRealizedProfit(
-        salesContract,
-        purchaseContracts,
-        salesShipmentsList,
-        purchaseArrivalsList,
-        rate,
-      ),
-    };
-
-    return {
-      sales_contract: salesContract,
-      purchase_contracts: purchaseContracts,
-      progress,
-      profit,
-    };
-  },
-
-  getProgressDetail: async (salesContractId: string, type: ProgressDetailType) => {
-    const salesContract = await pb.collection('sales_contracts')
-      .getOne<ComparisonSalesContract>(salesContractId);
-    const purchaseContracts = await getPurchasesForSales(salesContract);
-    const purchaseContractIds = purchaseContracts.map((pc: { id: string }) => pc.id);
-
-    switch (type) {
-      case 'shipment': {
-        const salesShipments = await pb.collection('sales_shipments').getFullList({
-          filter: `sales_contract="${salesContractId}"`,
-        });
-        
-        const purchaseArrivals = await getPurchaseRecords('purchase_arrivals', purchaseContractIds);
-        
-        return { sales: salesShipments, purchase: purchaseArrivals };
-      }
-      case 'payment': {
-        const saleReceipts = await pb.collection('sale_receipts').getFullList({
-          filter: `sales_contract="${salesContractId}"`,
-        });
-        
-        const purchasePayments = await getPurchaseRecords('purchase_payments', purchaseContractIds);
-        
-        return { sales: saleReceipts, purchase: purchasePayments };
-      }
-      case 'invoice': {
-        const saleInvoices = await pb.collection('sale_invoices').getFullList({
-          filter: `sales_contract="${salesContractId}"`,
-        });
-        
-        const purchaseInvoices = await getPurchaseRecords('purchase_invoices', purchaseContractIds);
-        
-        return { sales: saleInvoices, purchase: purchaseInvoices };
-      }
-      default:
-        return { sales: [], purchase: [] };
-    }
-  },
-
   getContractDetail: async (salesContractId: string): Promise<ContractDetailData> => {
-    const [rate, salesContract] = await Promise.all([
-      getUsdToCnyRate(),
-      pb.collection('sales_contracts').getOne<ComparisonSalesContract>(salesContractId, {
-        expand: 'customer',
-      }),
-    ]);
-    const purchaseContracts = await getPurchasesForSales(salesContract);
-    const purchaseContractIds = purchaseContracts.map((pc) => pc.id);
-
-    const [salesShipments, purchaseArrivals, saleReceipts, purchasePayments, saleInvoices, purchaseInvoices] =
-      await Promise.all([
-        pb.collection('sales_shipments').getFullList<SalesShipmentRecord>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<PurchaseArrivalRecord>('purchase_arrivals', purchaseContractIds),
-        pb.collection('sale_receipts').getFullList<SaleReceiptRecord>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<PurchasePaymentRecord>('purchase_payments', purchaseContractIds),
-        pb.collection('sale_invoices').getFullList<SaleInvoiceRecord>({
-          filter: `sales_contract="${salesContractId}"`,
-        }),
-        getPurchaseRecords<PurchaseInvoiceRecord>('purchase_invoices', purchaseContractIds),
-      ]);
-
-    const purchaseTotalAmount = purchaseContracts.reduce((sum, pc) => {
-      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-      return sum + amountCny;
-    }, 0);
-    const purchaseTotalQuantity = purchaseContracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
-    const isQuantityMatched = Math.abs(salesContract.total_quantity - purchaseTotalQuantity) < 0.01;
-
-    let totalFreight = 0;
-    let totalMiscellaneous = 0;
-    const arrivalsRaw = purchaseArrivals as unknown as {
-      freight_1: number;
-      freight_1_currency: 'USD' | 'CNY';
-      freight_2?: number;
-      freight_2_currency?: 'USD' | 'CNY';
-      miscellaneous_expenses: number;
-      miscellaneous_expenses_currency: 'USD' | 'CNY';
-      purchase_contract: string;
-    }[];
-    arrivalsRaw.forEach((a) => {
-      const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
-      const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
-      const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
-      totalFreight += ((a.freight_1 || 0) * f1Rate) + ((a.freight_2 || 0) * f2Rate);
-      totalMiscellaneous += (a.miscellaneous_expenses || 0) * mRate;
-    });
-
-    const salesAmountCny = salesContract.is_cross_border ? salesContract.total_amount * rate : salesContract.total_amount;
-
-    const profit: ProfitAnalysis = {
-      unit_profit: purchaseContracts.length > 0
-        ? (salesContract.is_price_excluding_tax
-          ? salesAmountCny / salesContract.total_quantity * 1.13 - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price)
-          : salesAmountCny / salesContract.total_quantity - (purchaseContracts[0].is_cross_border ? purchaseContracts[0].unit_price * rate : purchaseContracts[0].unit_price))
-        : 0,
-      total_profit: salesContract.is_price_excluding_tax
-        ? salesAmountCny - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous
-        : salesAmountCny / 1.13 - purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
-      sales_amount: salesAmountCny,
-      purchase_amount: purchaseTotalAmount,
-      sales_quantity: salesContract.total_quantity,
-      purchase_quantity: purchaseTotalQuantity,
-      total_freight: totalFreight,
-      total_miscellaneous: totalMiscellaneous,
-      is_quantity_matched: isQuantityMatched,
-      ...computeRealizedProfit(
-        salesContract,
-        purchaseContracts,
-        salesShipments,
-        purchaseArrivals,
-        rate,
-      ),
-    };
-
-    return {
-      sales_contract: salesContract,
-      purchase_contracts: purchaseContracts,
-      sales_shipments: salesShipments,
-      sale_invoices: saleInvoices,
-      sale_receipts: saleReceipts,
-      purchase_arrivals: purchaseArrivals,
-      purchase_invoices: purchaseInvoices,
-      purchase_payments: purchasePayments,
-      profit,
-    };
+    return getOverallContractDetail('sales', salesContractId);
   },
 
   getPurchaseContractDetail: async (purchaseContractId: string): Promise<ContractDetailData> => {
-    const rate = await getUsdToCnyRate();
-    const purchaseContract = await pb.collection('purchase_contracts').getOne<ComparisonPurchaseContract>(purchaseContractId, {
-      expand: 'supplier',
-    });
-
-    const filterForPurchase = `purchase_contract="${purchaseContractId}"`;
-
-    const [purchaseArrivals, purchasePayments, purchaseInvoices] =
-      await Promise.all([
-        pb.collection('purchase_arrivals').getFullList<PurchaseArrivalRecord>({
-          filter: filterForPurchase,
-        }),
-        pb.collection('purchase_payments').getFullList<PurchasePaymentRecord>({
-          filter: filterForPurchase,
-        }),
-        pb.collection('purchase_invoices').getFullList<PurchaseInvoiceRecord>({
-          filter: filterForPurchase,
-        }),
-      ]);
-
-    const purchaseTotalAmount = purchaseContract.is_cross_border ? purchaseContract.total_amount * rate : purchaseContract.total_amount;
-
-    let totalFreight = 0;
-    let totalMiscellaneous = 0;
-    const arrivalsRaw = purchaseArrivals as unknown as {
-      freight_1: number;
-      freight_1_currency: 'USD' | 'CNY';
-      freight_2?: number;
-      freight_2_currency?: 'USD' | 'CNY';
-      miscellaneous_expenses: number;
-      miscellaneous_expenses_currency: 'USD' | 'CNY';
-    }[];
-    arrivalsRaw.forEach((a) => {
-      const f1Rate = a.freight_1_currency === 'USD' ? rate : 1;
-      const f2Rate = a.freight_2_currency === 'USD' ? rate : 1;
-      const mRate = a.miscellaneous_expenses_currency === 'USD' ? rate : 1;
-      totalFreight += ((a.freight_1 || 0) * f1Rate) + ((a.freight_2 || 0) * f2Rate);
-      totalMiscellaneous += (a.miscellaneous_expenses || 0) * mRate;
-    });
-
-    const profit: ProfitAnalysis = {
-      unit_profit: 0,
-      total_profit: -purchaseTotalAmount / 1.13 - totalFreight - totalMiscellaneous,
-      sales_amount: 0,
-      purchase_amount: purchaseTotalAmount,
-      sales_quantity: 0,
-      purchase_quantity: purchaseContract.total_quantity,
-      total_freight: totalFreight,
-      total_miscellaneous: totalMiscellaneous,
-      is_quantity_matched: true,
-      ...computeRealizedProfit(
-        undefined,
-        [purchaseContract],
-        [],
-        purchaseArrivals,
-        rate,
-      ),
-    };
-
-    return {
-      purchase_contracts: [purchaseContract],
-      sales_shipments: [],
-      sale_invoices: [],
-      sale_receipts: [],
-      purchase_arrivals: purchaseArrivals,
-      purchase_invoices: purchaseInvoices,
-      purchase_payments: purchasePayments,
-      profit,
-    };
+    return getOverallContractDetail('purchase', purchaseContractId);
   },
 
   getUncompletedContracts: async (): Promise<FlowContractOption[]> => {
-    const [salesItems, allPurchaseContracts] = await Promise.all([
+    const [salesItems, allPurchaseContracts, businessDeals] = await Promise.all([
       pb.collection('sales_contracts').getFullList<ComparisonSalesContract>({
         sort: '-created_at',
         expand: 'customer',
@@ -800,24 +529,25 @@ export const ComparisonAPI = {
       pb.collection('purchase_contracts').getFullList<ComparisonPurchaseContract>({
         sort: '-created_at',
       }),
+      pb.collection('business_deals').getFullList<BusinessDeal>(),
     ]);
     const salesResult = { items: salesItems };
     const salesIds = salesItems.map((sc) => sc.id);
-    const relationIndex = buildContractRelationIndex(salesItems, allPurchaseContracts);
+    const relationIndex = buildContractRelationIndex(salesItems, allPurchaseContracts, businessDeals);
     const relatedPurchaseIds = new Set(relationIndex.edges.map((edge) => edge.purchaseId));
     const purchaseItems = allPurchaseContracts.filter((contract) => relatedPurchaseIds.has(contract.id));
     const purchaseIds = purchaseItems.map((contract) => contract.id);
 
     // 分批 OR 查询：PocketBase filter 超过 89 个 OR 条件会返回 400
     const [saleInvoiceItems, saleReceiptItems, purchaseArrivalItems, purchaseInvoiceItems, purchasePaymentItems] = await Promise.all([
-      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
+      fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; is_verified?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
         return pb.collection('sale_invoices').getFullList({ filter });
       }),
       fetchAllByFieldBatches<{ sales_contract?: string; manager_confirmed?: string; updated?: string }>(salesIds, 'sales_contract', async (filter) => {
         return pb.collection('sale_receipts').getFullList({ filter });
       }),
       getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_arrivals', purchaseIds),
-      getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_invoices', purchaseIds),
+      getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; is_verified?: string; updated?: string }>('purchase_invoices', purchaseIds),
       getPurchaseRecords<{ purchase_contract?: string; manager_confirmed?: string; updated?: string }>('purchase_payments', purchaseIds),
     ]);
 
@@ -839,10 +569,12 @@ export const ComparisonAPI = {
       const countPurchase = (list: { purchase_contract?: string; manager_confirmed?: string }[]) => {
         list.forEach((r) => { if (relatedPcIds.includes(r.purchase_contract || '') && r.manager_confirmed === 'pending') count++; });
       };
-      countSales(saleInvoices.items as unknown as { sales_contract: string; manager_confirmed: string }[]);
+      (saleInvoices.items as unknown as { sales_contract: string; manager_confirmed: string; is_verified?: string }[])
+        .forEach((invoice) => { if (invoice.sales_contract === scId && invoiceNeedsManagerAction(invoice)) count++; });
       countSales(saleReceipts.items as unknown as { sales_contract: string; manager_confirmed: string }[]);
       countPurchase(purchaseArrivals.items as unknown as { purchase_contract: string; manager_confirmed: string }[]);
-      countPurchase(purchaseInvoices.items as unknown as { purchase_contract: string; manager_confirmed: string }[]);
+      (purchaseInvoices.items as unknown as { purchase_contract: string; manager_confirmed: string; is_verified?: string }[])
+        .forEach((invoice) => { if (relatedPcIds.includes(invoice.purchase_contract) && invoiceNeedsManagerAction(invoice)) count++; });
       countPurchase(purchasePayments.items as unknown as { purchase_contract: string; manager_confirmed: string }[]);
       return count;
     };
@@ -929,8 +661,8 @@ export const ComparisonAPI = {
       let count = 0;
       (standaloneArrivals.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
         .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
-      (standaloneInvoices.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
-        .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
+      (standaloneInvoices.items as unknown as { purchase_contract?: string; manager_confirmed?: string; is_verified?: string }[])
+        .forEach((invoice) => { if (invoice.purchase_contract === pcId && invoiceNeedsManagerAction(invoice)) count++; });
       (standalonePayments.items as unknown as { purchase_contract?: string; manager_confirmed?: string }[])
         .forEach((r) => { if (r.purchase_contract === pcId && r.manager_confirmed === 'pending') count++; });
       return count;
@@ -939,7 +671,7 @@ export const ComparisonAPI = {
     const purchaseOptions = (standalonePurchases.items as unknown as { id: string; no: string; product_name: string; total_quantity: number; sign_date?: string; status?: string; created_at?: string }[])
       .filter((pc) => {
         if (pc.status !== 'completed') return true;
-        // 已完成的独立采购合同若仍有待确认的到货/收票/付款，仍需显示以便经理确认
+        // 已完成的独立采购合同若仍有待确认的到货/收票/付款，仍需显示以便管理确认
         return countStandalonePending(pc.id) > 0;
       })
       .map((pc) => ({

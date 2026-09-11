@@ -81,8 +81,11 @@ export const OverviewPage: React.FC = () => {
     purchaseContracts.map((contract) => contract.supplierName).filter((name): name is string => Boolean(name)),
   )).map((name) => ({ label: name, value: name })), [purchaseContracts]);
   const linkedEdgeCount = useMemo(
-    () => salesContracts.reduce((sum, contract) => sum + (contract.associatedPurchaseIds?.length || 0), 0),
-    [salesContracts],
+    () => new Set([
+      ...salesContracts.map((contract) => contract.businessDealId),
+      ...purchaseContracts.map((contract) => contract.businessDealId),
+    ].filter(Boolean)).size,
+    [purchaseContracts, salesContracts],
   );
   const unlinkedSalesCount = salesContracts.filter((contract) => !contract.associatedPurchaseIds?.length).length;
   const unlinkedPurchaseCount = purchaseContracts.filter((contract) => !contract.associatedSalesIds?.length).length;
@@ -137,16 +140,16 @@ export const OverviewPage: React.FC = () => {
     }
   }, [fetchData, message]);
 
-  const handleUnlink = useCallback((sales: OverviewContract, purchase: OverviewContract) => {
+  const handleUnlink = useCallback((contract: OverviewContract) => {
     modal.confirm({
-      title: '解除这两个合同的关联？',
-      content: `${sales.no} 与 ${purchase.no} 的业务记录都会保留，仅移除合同之间的对应关系。`,
-      okText: '解除关联',
+      title: `将 ${contract.no} 移出总体交易？`,
+      content: '合同及其发货/到货、发票、收付款记录都会保留，只移除总体交易成员关系。如果交易只剩单侧合同，该交易会自动归档。',
+      okText: '确认移出',
       cancelText: '取消',
       onOk: async () => {
         try {
-          await ContractOperationsAPI.unlink(sales.id, purchase.id);
-          message.success('合同关联已解除');
+          await ContractOperationsAPI.removeFromDeal(contract.type, contract.id);
+          message.success('合同已移出总体交易');
           await fetchData();
         } catch (error) {
           message.error(getPbErrorMessage(error, '解除关联失败'));

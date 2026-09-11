@@ -1,4 +1,8 @@
 export interface ReportData {
+  businessDealId: string;
+  businessDealName: string;
+  businessDealDate: string;
+  taxRate: number;
   purchaseContractId: string;
   purchaseContractNo: string;
   purchaseSignDate: string;

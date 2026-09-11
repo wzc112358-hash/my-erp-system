@@ -6,15 +6,16 @@ import { ComparisonAPI } from '@/api/comparison';
 import { getPbErrorMessage } from '@/api/helpers';
 import { ManagerConfirmationAPI } from '@/api/manager-confirmation';
 import type { ManagerConfirmableCollection, ManagerConfirmationDecision } from '@/api/manager-confirmation';
-import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
+import { InvoiceVerificationAPI } from '@/api/invoice-verification';
+import type { InvoiceVerificationCollection, InvoiceVerificationStatus } from '@/api/invoice-verification';
 import { assertAttachmentFileSize } from '@/utils/file';
 import { BiddingRecordAPI } from '@/api/bidding-record';
 import { pb } from '@/lib/pocketbase';
 import { RecycleBinAPI } from '@/api/recycle-bin';
 import type { RecycleCollection } from '@/api/recycle-bin';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
-import { calculateContractProfit } from '@/lib/contract-profit';
-import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord } from '@/types/comparison';
+import { calculateBusinessDealProfit, DEFAULT_PROFIT_TAX_RATE } from '@/lib/contract-profit';
+import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord, SaleInvoiceRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import { useManagerPendingStore } from '@/stores/manager-pending';
 import dayjs from 'dayjs';
@@ -90,62 +91,41 @@ const readRealizedUSD = (data: ContractDetailData, rate: number) => {
 };
 
 const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
-  const sc = data.sales_contract;
-  const salesReceivable = sc ? sc.executed_quantity * sc.unit_price : 0;
-  const salesReceivableAmount = sc?.is_cross_border ? salesReceivable * rate : salesReceivable;
-  const paidAmount = (data.purchase_payments || []).reduce((sum, p) => {
-    return sum + (p.amount ?? 0);
-  }, 0);
-
-  const salesQty = sc ? sc.total_quantity : 0;
+  const salesContracts = data.sales_contracts?.length
+    ? data.sales_contracts
+    : (data.sales_contract ? [data.sales_contract] : []);
+  const salesReceivableAmount = salesContracts.reduce((sum, contract) => (
+    sum + contract.executed_quantity * contract.unit_price * (contract.is_cross_border ? rate : 1)
+  ), 0);
+  const paidAmount = (data.purchase_payments || []).reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
+  const salesQty = salesContracts.reduce((sum, contract) => sum + contract.total_quantity, 0);
   const purchaseQty = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
   const minQty = Math.min(salesQty, purchaseQty);
-
-  // 已执行利润：直接读取后端已按 CNY 口径算好的值
   const realized = readRealizedCNY(data);
-
-  if (!sc) {
-    const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
-      const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-      return sum + amountCny;
-    }, 0);
-    return {
-      operatingProfit: 0, taxAmount: 0, netProfit: 0,
-      salesAmountIncTax: 0, purchaseAmountIncTax: purchaseTotalAmountCny,
-      salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmountCny / 1.13,
-      totalFreight: data.profit.total_freight, totalMiscellaneous: data.profit.total_miscellaneous,
-      quantityMatched: true,
-      salesReceivableAmount: 0,
-      purchasePaidAmount: paidAmount,
-      currentProfit: 0, currentProfitTax: 0, currentProfitNet: 0,
-      minQty: 0, salesQty: 0, purchaseQty: purchaseQty,
-      ...realized,
-    };
-  }
-  const salesAmountCny = sc.is_cross_border ? sc.total_amount * rate : sc.total_amount;
+  const salesAmounts = salesContracts.reduce((totals, contract) => {
+    const amount = contract.total_amount * (contract.is_cross_border ? rate : 1);
+    totals.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
+    totals.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
+    return totals;
+  }, { incTax: 0, exTax: 0 });
   const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
     const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
     return sum + amountCny;
   }, 0);
-  const freightCny = data.purchase_contracts.reduce((sum, pc) => {
-    return sum + (pc.is_cross_border ? data.profit.total_freight : data.profit.total_freight);
-  }, 0) > 0 || data.profit.total_freight > 0 ? data.profit.total_freight : 0;
+  const freightCny = data.profit.total_freight;
   const miscCny = data.profit.total_miscellaneous;
-  // Calculate total tariff and VAT from arrival records
-  const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0);
-  const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0);
-  const profit = calculateContractProfit({
-    salesAmount: salesAmountCny,
-    salesPriceExcludingTax: sc.is_price_excluding_tax,
-    purchaseAmount: purchaseTotalAmountCny,
+  const totalTariff = data.profit.total_tariff ?? data.purchase_arrivals.reduce((sum, arrival) => sum + (arrival.tariff || 0), 0);
+  const totalVAT = data.profit.total_value_added_tax ?? data.purchase_arrivals.reduce((sum, arrival) => sum + (arrival.value_added_tax || 0), 0);
+  const profit = calculateBusinessDealProfit({
+    salesAmountIncTax: salesAmounts.incTax,
+    salesAmountExTax: salesAmounts.exTax,
+    purchaseAmountIncTax: purchaseTotalAmountCny,
     freight: freightCny,
     miscellaneous: miscCny,
     tariff: totalTariff,
     valueAddedTax: totalVAT,
+    taxRate: data.profit.tax_rate ?? DEFAULT_PROFIT_TAX_RATE,
   });
-
-  // currentProfit 已被新的「已执行利润」行取代（旧逻辑用合同签订量且未扣运费/税，口径不准）。
-  // 此处保留字段供兼容，但 UI 不再渲染该行。
   const currentProfit = realized.realizedNetProfit;
 
   return {
@@ -168,68 +148,23 @@ const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
 };
 
 const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
-  const sc = data.sales_contract;
-  const salesReceivable = sc ? sc.executed_quantity * sc.unit_price : 0;
-  const paidAmountUSD = (data.purchase_payments || []).reduce((sum, p) => {
-    return sum + (p.amount ?? 0);
-  }, 0);
-
-  const salesQty = sc ? sc.total_quantity : 0;
-  const purchaseQty = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
-  const minQty = Math.min(salesQty, purchaseQty);
-
-  if (!sc) {
-    const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
-    return {
-      operatingProfit: 0, taxAmount: 0, netProfit: 0,
-      salesAmountIncTax: 0, purchaseAmountIncTax: purchaseTotalAmount,
-      salesAmountExTax: 0, purchaseAmountExTax: purchaseTotalAmount / 1.13,
-      totalFreight: data.profit.total_freight / rate,
-      totalMiscellaneous: data.profit.total_miscellaneous / rate,
-      quantityMatched: true,
-      salesReceivableAmount: 0,
-      purchasePaidAmount: paidAmountUSD,
-      currentProfit: 0, currentProfitTax: 0, currentProfitNet: 0,
-      minQty: 0, salesQty: 0, purchaseQty: purchaseQty,
-      ...readRealizedUSD(data, rate),
-    };
-  }
-  const salesAmount = sc.total_amount;
-  const purchaseTotalAmount = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_amount, 0);
-  const freight = data.profit.total_freight / rate;
-  const misc = data.profit.total_miscellaneous / rate;
-  // Calculate total tariff and VAT from arrival records (convert to USD)
-  const totalTariff = data.purchase_arrivals.reduce((sum, a) => sum + (a.tariff || 0), 0) / rate;
-  const totalVAT = data.purchase_arrivals.reduce((sum, a) => sum + (a.value_added_tax || 0), 0) / rate;
-  const profit = calculateContractProfit({
-    salesAmount,
-    salesPriceExcludingTax: sc.is_price_excluding_tax,
-    purchaseAmount: purchaseTotalAmount,
-    freight,
-    miscellaneous: misc,
-    tariff: totalTariff,
-    valueAddedTax: totalVAT,
-  });
-
-  // currentProfit 已被「已执行利润」行取代，此处仅保留兼容字段
-  const currentProfit = (data.profit.realized_net_profit ?? 0) / rate;
-
+  const cny = calcProfitCNY(data, rate);
+  const divisor = rate > 0 ? rate : 1;
   return {
-    operatingProfit: profit.operatingProfit,
-    taxAmount: profit.taxAmount,
-    netProfit: profit.netProfit,
-    salesAmountIncTax: profit.salesAmountIncTax,
-    purchaseAmountIncTax: profit.purchaseAmountIncTax,
-    salesAmountExTax: profit.salesAmountExTax,
-    purchaseAmountExTax: profit.purchaseAmountExTax,
-    totalFreight: freight,
-    totalMiscellaneous: misc,
-    quantityMatched: data.profit.is_quantity_matched,
-    salesReceivableAmount: salesReceivable,
-    purchasePaidAmount: paidAmountUSD,
-    currentProfit, currentProfitTax: 0, currentProfitNet: 0,
-    minQty, salesQty, purchaseQty,
-    ...readRealizedUSD(data, rate),
+    ...cny,
+    operatingProfit: cny.operatingProfit / divisor,
+    taxAmount: cny.taxAmount / divisor,
+    netProfit: cny.netProfit / divisor,
+    salesAmountIncTax: cny.salesAmountIncTax / divisor,
+    purchaseAmountIncTax: cny.purchaseAmountIncTax / divisor,
+    salesAmountExTax: cny.salesAmountExTax / divisor,
+    purchaseAmountExTax: cny.purchaseAmountExTax / divisor,
+    totalFreight: cny.totalFreight / divisor,
+    totalMiscellaneous: cny.totalMiscellaneous / divisor,
+    salesReceivableAmount: cny.salesReceivableAmount / divisor,
+    purchasePaidAmount: cny.purchasePaidAmount / divisor,
+    currentProfit: cny.currentProfit / divisor,
+    ...readRealizedUSD(data, divisor),
   };
 };
 
@@ -279,11 +214,13 @@ const ContractDetailPage: React.FC = () => {
         }
         if (!cancelled) {
           setDetailData(data);
-          if (!isStandalonePurchase) {
+          if (data.sales_contracts?.length) {
             try {
-              const biddingResult = await BiddingRecordAPI.getBySalesContract(id);
+              const biddingResults = await Promise.all(
+                data.sales_contracts.map((contract) => BiddingRecordAPI.getBySalesContract(contract.id)),
+              );
               if (!cancelled) {
-                setBiddingRecords(biddingResult.items);
+                setBiddingRecords(biddingResults.flatMap((result) => result.items));
               }
             } catch {
               // bidding records are optional
@@ -330,10 +267,15 @@ const ContractDetailPage: React.FC = () => {
     }
   }, [id, message, isStandalonePurchase]);
 
-  const handleVerificationChange = useCallback(async (recordId: string, value: 'yes' | 'no') => {
-    setVerificationUpdating(recordId);
+  const handleVerificationChange = useCallback(async (
+    collection: InvoiceVerificationCollection,
+    recordId: string,
+    value: InvoiceVerificationStatus,
+  ) => {
+    const key = `${collection}:${recordId}`;
+    setVerificationUpdating(key);
     try {
-      await PurchaseInvoiceAPI.updateVerification(recordId, value);
+      await InvoiceVerificationAPI.update(collection, recordId, value);
       if (id) {
         const data = isStandalonePurchase
           ? await ComparisonAPI.getPurchaseContractDetail(id)
@@ -347,6 +289,31 @@ const ContractDetailPage: React.FC = () => {
       setVerificationUpdating(undefined);
     }
   }, [id, isStandalonePurchase, message]);
+
+  const invoiceVerificationColumn = (collection: InvoiceVerificationCollection) => ({
+    title: '验票状态',
+    dataIndex: 'is_verified',
+    key: 'is_verified',
+    width: 110,
+    render: (value: string, record: { id: string }) => {
+      const key = `${collection}:${record.id}`;
+      return (
+        <Select
+          size="small"
+          value={value === 'yes' ? 'yes' : 'no'}
+          options={[
+            { label: '已验票', value: 'yes' },
+            { label: '未验票', value: 'no' },
+          ]}
+          loading={verificationUpdating === key}
+          disabled={verificationUpdating !== undefined}
+          onChange={(nextValue: InvoiceVerificationStatus) => handleVerificationChange(collection, record.id, nextValue)}
+          style={{ width: 92 }}
+          aria-label="验票状态"
+        />
+      );
+    },
+  });
 
   const handleManagerDecision = useCallback(async (
     collection: ManagerConfirmableCollection,
@@ -373,7 +340,7 @@ const ContractDetailPage: React.FC = () => {
   }, [fetchPendingCount, id, isStandalonePurchase, message]);
 
   const managerConfirmationColumn = (collection: ManagerConfirmableCollection) => ({
-    title: '经理确认状态',
+    title: '管理确认状态',
     dataIndex: 'manager_confirmed',
     key: 'manager_confirmed',
     width: 220,
@@ -387,7 +354,7 @@ const ContractDetailPage: React.FC = () => {
           <StatusTag status={status} />
           <Popconfirm
             title="确认这条记录？"
-            description="提交后会写入经理确认日志。"
+            description="提交后会写入管理确认日志。"
             okText="确认"
             cancelText="取消"
             onConfirm={() => handleManagerDecision(collection, record.id, 'approved')}
@@ -426,6 +393,7 @@ const ContractDetailPage: React.FC = () => {
   });
 
   const salesColumns = [
+    { title: '所属销售合同', dataIndex: 'sales_contract', key: 'sales_contract', render: (v: string) => detailData?.sales_contracts?.find((contract) => contract.id === v)?.no || '-' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '运单号', dataIndex: 'tracking_contract_no', key: 'tracking_contract_no' },
     { title: '发货日期', dataIndex: 'date', key: 'date', render: (v: string) => formatDate(v) },
@@ -458,36 +426,39 @@ const ContractDetailPage: React.FC = () => {
   ];
 
   const saleInvoiceColumns = [
+    { title: '所属销售合同', dataIndex: 'sales_contract', key: 'sales_contract', render: (v: string) => detailData?.sales_contracts?.find((contract) => contract.id === v)?.no || '-' },
     { title: '发票号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '单价', key: 'unit_price', render: () => {
-      const sc = detailData?.sales_contract;
+    { title: '单价', key: 'unit_price', render: (_: unknown, record: SaleInvoiceRecord) => {
+      const sc = detailData?.sales_contracts?.find((contract) => contract.id === record.sales_contract) || detailData?.sales_contract;
       if (!sc) return formatCurrency(0);
       return formatCrossBorderAmount(sc.unit_price, sc.is_cross_border, exchangeRate);
     } },
-    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number) => {
-      const sc = detailData?.sales_contract;
+    { title: '发票金额', dataIndex: 'amount', key: 'amount', render: (v: number, record: SaleInvoiceRecord) => {
+      const sc = detailData?.sales_contracts?.find((contract) => contract.id === record.sales_contract) || detailData?.sales_contract;
       if (!sc) return formatCurrency(v);
       return formatCrossBorderAmount(v, sc.is_cross_border, exchangeRate);
     } },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
     managerConfirmationColumn('sale_invoices'),
+    invoiceVerificationColumn('sale_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
 
   const saleReceiptColumns = [
+    { title: '所属销售合同', dataIndex: 'sales_contract', key: 'sales_contract', render: (v: string) => detailData?.sales_contracts?.find((contract) => contract.id === v)?.no || '-' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
-    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number) => {
-      const sc = detailData?.sales_contract;
+    { title: '收款金额', dataIndex: 'amount', key: 'amount', render: (v: number, record: { sales_contract: string }) => {
+      const sc = detailData?.sales_contracts?.find((contract) => contract.id === record.sales_contract) || detailData?.sales_contract;
       if (!sc) return formatCurrency(v);
       return formatCrossBorderAmount(v, sc.is_cross_border, exchangeRate);
     } },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
-    { title: '单价', key: 'unit_price', render: () => {
-      const sc = detailData?.sales_contract;
+    { title: '单价', key: 'unit_price', render: (_: unknown, record: { sales_contract: string }) => {
+      const sc = detailData?.sales_contracts?.find((contract) => contract.id === record.sales_contract) || detailData?.sales_contract;
       if (!sc) return formatCurrency(0);
       return formatCrossBorderAmount(sc.unit_price, sc.is_cross_border, exchangeRate);
     } },
@@ -500,6 +471,7 @@ const ContractDetailPage: React.FC = () => {
   ];
 
   const purchaseArrivalColumns = [
+    { title: '所属采购合同', dataIndex: 'purchase_contract', key: 'purchase_contract', render: (v: string) => detailData?.purchase_contracts.find((contract) => contract.id === v)?.no || '-' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '运单号', dataIndex: 'tracking_contract_no', key: 'tracking_contract_no' },
     { title: '发货日期', dataIndex: 'shipment_date', key: 'shipment_date', render: (v: string) => formatDate(v) },
@@ -532,6 +504,7 @@ const ContractDetailPage: React.FC = () => {
   ];
 
   const purchaseInvoiceColumns = [
+    { title: '所属采购合同', dataIndex: 'purchase_contract', key: 'purchase_contract', render: (v: string) => detailData?.purchase_contracts.find((contract) => contract.id === v)?.no || '-' },
     { title: '发票号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type' },
@@ -547,31 +520,13 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     managerConfirmationColumn('purchase_invoices'),
-    {
-      title: '验票状态',
-      dataIndex: 'is_verified',
-      key: 'is_verified',
-      width: 110,
-      render: (value: string, record: PurchaseInvoiceRecord) => (
-        <Select
-          size="small"
-          value={value === 'yes' ? 'yes' : 'no'}
-          options={[
-            { label: '已验票', value: 'yes' },
-            { label: '未验票', value: 'no' },
-          ]}
-          loading={verificationUpdating === record.id}
-          disabled={verificationUpdating !== undefined}
-          onChange={(nextValue: 'yes' | 'no') => handleVerificationChange(record.id, nextValue)}
-          style={{ width: 92 }}
-        />
-      ),
-    },
+    invoiceVerificationColumn('purchase_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
 
   const purchasePaymentColumns = [
+    { title: '所属采购合同', dataIndex: 'purchase_contract', key: 'purchase_contract', render: (v: string) => detailData?.purchase_contracts.find((contract) => contract.id === v)?.no || '-' },
     { title: '付款编号', dataIndex: 'no', key: 'no' },
     { title: '品名', dataIndex: 'product_name', key: 'product_name' },
     { title: '货物数量(吨)', dataIndex: 'product_amount', key: 'product_amount_qty', render: (v: number) => v || '-' },
@@ -596,57 +551,52 @@ const ContractDetailPage: React.FC = () => {
 
   const renderSalesInfo = () => {
     if (!detailData || !detailData.sales_contract) return null;
-    const sc = detailData.sales_contract;
-    const isCrossBorder = sc.is_cross_border;
-    const totalAmountLabel = isCrossBorder
-      ? (sc.is_price_excluding_tax ? '总金额（不含税，USD）' : '总金额（USD）')
-      : (sc.is_price_excluding_tax ? '总金额（不含税）' : '总金额');
-    const totalAmountDisplay = isCrossBorder
-      ? `$${sc.total_amount.toFixed(6)}（≈ ¥${(sc.total_amount  * exchangeRate).toFixed(6)}）`
-      : formatCurrency(sc.total_amount);
-    const unitPriceLabel = isCrossBorder
-      ? (sc.is_price_excluding_tax ? '单价（不含税，USD）' : '单价（USD）')
-      : (sc.is_price_excluding_tax ? '单价（不含税）' : '单价');
-    const unitPriceDisplay = isCrossBorder
-      ? `$${sc.unit_price.toFixed(6)}（≈ ¥${(sc.unit_price  * exchangeRate).toFixed(6)}）`
-      : formatCurrency(sc.unit_price);
+    const salesContracts = detailData.sales_contracts?.length
+      ? detailData.sales_contracts
+      : [detailData.sales_contract];
     return (
-      <Card title="销售合同基本信息" style={cardStyle} styles={{ body: cardBodyStyle }}>
-        <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
-          <Descriptions.Item label="合同编号">{sc.no}</Descriptions.Item>
-          <Descriptions.Item label="品名">{sc.product_name}</Descriptions.Item>
-          <Descriptions.Item label="客户">{sc.expand?.customer?.name || sc.customer_name || '-'}</Descriptions.Item>
-          <Descriptions.Item label={totalAmountLabel}>{totalAmountDisplay}</Descriptions.Item>
-          <Descriptions.Item label={unitPriceLabel}>{unitPriceDisplay}</Descriptions.Item>
-          <Descriptions.Item label="总数量">{sc.total_quantity} 吨</Descriptions.Item>
-          <Descriptions.Item label="已执行数量">{sc.executed_quantity} 吨</Descriptions.Item>
-          <Descriptions.Item label="执行比例">{sc.execution_percent ? percentFormat(sc.execution_percent) : '-'}</Descriptions.Item>
-          <Descriptions.Item label="应收金额">
-            {(() => {
-              const receivable = sc.executed_quantity * sc.unit_price;
-              return isCrossBorder
-                ? `$${receivable.toFixed(6)}（≈ ¥${(receivable * exchangeRate).toFixed(6)}）`
-                : formatCurrency(receivable);
-            })()}
-          </Descriptions.Item>
-          <Descriptions.Item label="已收金额">{formatCurrency(sc.receipted_amount)}</Descriptions.Item>
-          <Descriptions.Item label="收款比例">{sc.receipt_percent ? percentFormat(sc.receipt_percent) : '-'}</Descriptions.Item>
-          <Descriptions.Item label="欠款金额">{formatCurrency(sc.debt_amount)}</Descriptions.Item>
-          <Descriptions.Item label="已开票金额">{formatCurrency(sc.invoiced_amount)}</Descriptions.Item>
-          <Descriptions.Item label="签约日期">{formatDate(sc.sign_date)}</Descriptions.Item>
-          <Descriptions.Item label="状态">
-            <Tag color={sc.status === 'executing' ? 'blue' : sc.status === 'completed' ? 'green' : 'red'}>
-              {sc.status === 'executing' ? '执行中' : sc.status === 'completed' ? '已完成' : sc.status}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="备注">{sc.remark || '-'}</Descriptions.Item>
-          <Descriptions.Item label="销售负责人">{sc.sales_manager || '-'}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{formatDate(sc.created_at || '')}</Descriptions.Item>
-        </Descriptions>
-        <div style={{ marginTop: 12 }}>
-          {renderRecordAttachments('sales_contracts', sc.id, sc.attachments)}
-        </div>
-      </Card>
+      <>
+        {salesContracts.map((sc) => {
+          const isCrossBorder = sc.is_cross_border;
+          const totalAmountLabel = isCrossBorder
+            ? (sc.is_price_excluding_tax ? '总金额（不含税，USD）' : '总金额（USD）')
+            : (sc.is_price_excluding_tax ? '总金额（不含税）' : '总金额');
+          const totalAmountDisplay = isCrossBorder
+            ? `$${sc.total_amount.toFixed(6)}（≈ ¥${(sc.total_amount * exchangeRate).toFixed(6)}）`
+            : formatCurrency(sc.total_amount);
+          const unitPriceLabel = isCrossBorder
+            ? (sc.is_price_excluding_tax ? '单价（不含税，USD）' : '单价（USD）')
+            : (sc.is_price_excluding_tax ? '单价（不含税）' : '单价');
+          const unitPriceDisplay = isCrossBorder
+            ? `$${sc.unit_price.toFixed(6)}（≈ ¥${(sc.unit_price * exchangeRate).toFixed(6)}）`
+            : formatCurrency(sc.unit_price);
+          return (
+            <Card key={sc.id} title={`销售合同 ${sc.no}${isCrossBorder ? '（跨境）' : ''}`} style={cardStyle} styles={{ body: cardBodyStyle }}>
+              <Descriptions bordered size="small" column={responsiveDescriptionColumns}>
+                <Descriptions.Item label="合同编号">{sc.no}</Descriptions.Item>
+                <Descriptions.Item label="品名">{sc.product_name}</Descriptions.Item>
+                <Descriptions.Item label="客户">{sc.expand?.customer?.name || sc.customer_name || '-'}</Descriptions.Item>
+                <Descriptions.Item label={totalAmountLabel}>{totalAmountDisplay}</Descriptions.Item>
+                <Descriptions.Item label={unitPriceLabel}>{unitPriceDisplay}</Descriptions.Item>
+                <Descriptions.Item label="总数量">{sc.total_quantity} 吨</Descriptions.Item>
+                <Descriptions.Item label="已执行数量">{sc.executed_quantity} 吨</Descriptions.Item>
+                <Descriptions.Item label="执行比例">{sc.execution_percent ? percentFormat(sc.execution_percent) : '-'}</Descriptions.Item>
+                <Descriptions.Item label="应收金额">{formatCrossBorderAmount(sc.executed_quantity * sc.unit_price, isCrossBorder, exchangeRate)}</Descriptions.Item>
+                <Descriptions.Item label="已收金额">{formatCurrency(sc.receipted_amount)}</Descriptions.Item>
+                <Descriptions.Item label="收款比例">{sc.receipt_percent ? percentFormat(sc.receipt_percent) : '-'}</Descriptions.Item>
+                <Descriptions.Item label="欠款金额">{formatCurrency(sc.debt_amount)}</Descriptions.Item>
+                <Descriptions.Item label="已开票金额">{formatCurrency(sc.invoiced_amount)}</Descriptions.Item>
+                <Descriptions.Item label="签约日期">{formatDate(sc.sign_date)}</Descriptions.Item>
+                <Descriptions.Item label="状态"><Tag color={sc.status === 'executing' ? 'blue' : sc.status === 'completed' ? 'green' : 'red'}>{sc.status === 'executing' ? '执行中' : sc.status === 'completed' ? '已完成' : sc.status}</Tag></Descriptions.Item>
+                <Descriptions.Item label="备注">{sc.remark || '-'}</Descriptions.Item>
+                <Descriptions.Item label="销售负责人">{sc.sales_manager || '-'}</Descriptions.Item>
+                <Descriptions.Item label="创建时间">{formatDate(sc.created_at || '')}</Descriptions.Item>
+              </Descriptions>
+              <div style={{ marginTop: 12 }}>{renderRecordAttachments('sales_contracts', sc.id, sc.attachments)}</div>
+            </Card>
+          );
+        })}
+      </>
     );
   };
 
@@ -719,9 +669,15 @@ const ContractDetailPage: React.FC = () => {
 
   const renderProfitAnalysis = () => {
     if (!detailData || !detailData.sales_contract) return null;
-    const sc = detailData.sales_contract;
-    const hasCrossBorder = sc.is_cross_border || detailData.purchase_contracts.some(pc => pc.is_cross_border);
+    const salesContracts = detailData.sales_contracts?.length
+      ? detailData.sales_contracts
+      : [detailData.sales_contract];
+    const salesQuantity = salesContracts.reduce((sum, contract) => sum + contract.total_quantity, 0);
+    const hasCrossBorder = salesContracts.some((contract) => contract.is_cross_border)
+      || detailData.purchase_contracts.some(pc => pc.is_cross_border);
     const bothCrossBorder = hasCrossBorder;
+    const taxRate = detailData.profit.tax_rate ?? DEFAULT_PROFIT_TAX_RATE;
+    const taxRateLabel = `${(taxRate * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`;
 
     const cnyCalc = calcProfitCNY(detailData, exchangeRate);
     const usdCalc = bothCrossBorder ? calcProfitUSD(detailData, exchangeRate) : null;
@@ -731,7 +687,7 @@ const ContractDetailPage: React.FC = () => {
         {!cnyCalc.quantityMatched && (
           <Alert
             title="数量不匹配"
-            description={`销售合同总数量 (${sc.total_quantity} 吨) 与采购合同总数量之和 (${detailData.profit.purchase_quantity} 吨) 不相等`}
+            description={`销售合同总数量 (${salesQuantity} 吨) 与采购合同总数量之和 (${detailData.profit.purchase_quantity} 吨) 不相等`}
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
@@ -776,7 +732,7 @@ const ContractDetailPage: React.FC = () => {
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
                     <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+                    <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
                     <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
                     <div>汇率: 1 USD = {exchangeRate} CNY</div>
@@ -811,7 +767,7 @@ const ContractDetailPage: React.FC = () => {
                   </Descriptions>
                   <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
                     <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+                    <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
                     <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
                     <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
                   </div>
@@ -843,7 +799,7 @@ const ContractDetailPage: React.FC = () => {
             </Descriptions>
             <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
               <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-              <div>税额 = (销售含税 - 采购含税) x 0.1881</div>
+              <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
               <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
               <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
               {hasCrossBorder && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
@@ -955,7 +911,7 @@ const ContractDetailPage: React.FC = () => {
     render: (_: unknown, record: { id: string }) => (
       <Popconfirm
         title="将此记录移入回收站？"
-        description="附件会保留，经理可在数据安全页面恢复。"
+        description="附件会保留，管理可在数据安全页面恢复。"
         onConfirm={() => handleDeleteSubRecord(collection, record.id)}
         okText="确定"
         cancelText="取消"
@@ -967,7 +923,7 @@ const ContractDetailPage: React.FC = () => {
 
   const tabItems = (() => {
     const items = [];
-    if (!isStandalonePurchase && detailData?.sales_contract) {
+    if (detailData?.sales_contract) {
       items.push({
         key: 'sales',
         label: '销售合同信息',
@@ -1083,6 +1039,16 @@ const ContractDetailPage: React.FC = () => {
   })();
 
   const headerTitle = useMemo(() => {
+    if (detailData?.business_deal) {
+      const salesNos = (detailData.sales_contracts || []).map((contract) => contract.no).join('、');
+      const purchaseNos = detailData.purchase_contracts.map((contract) => contract.no).join('、');
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span>总体交易：销售 {salesNos} / 采购 {purchaseNos}</span>
+          <Tag color="blue">{detailData.sales_contracts?.length || 0} × {detailData.purchase_contracts.length}</Tag>
+        </div>
+      );
+    }
     if (isStandalonePurchase && detailData?.purchase_contracts[0]) {
       const pc = detailData.purchase_contracts[0];
       return (

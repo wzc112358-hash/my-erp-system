@@ -78,8 +78,8 @@ export const PurchaseContractAPI = {
     const formData = new FormData();
     if (data.no !== undefined) formData.append('no', data.no);
     if (data.supplier !== undefined) formData.append('supplier', data.supplier);
-    if (data.sales_contract !== undefined)
-      formData.append('sales_contract', data.sales_contract);
+    // Relationship mutations go through the overall-deal API. The legacy
+    // sales_contract field is intentionally never written on update.
     if (data.product_name !== undefined)
       formData.append('product_name', data.product_name);
     if (data.unit_price !== undefined)

@@ -49,3 +49,33 @@
 .flow-node-status {
   margin-top: 4px;
 }
+
+.manager-invoice-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.manager-invoice-verification,
+.manager-confirmation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manager-invoice-verification > span {
+  color: rgba(0, 0, 0, 0.65);
+}
+
+@media (max-width: 575px) {
+  .manager-invoice-action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .manager-confirmation-actions {
+    justify-content: flex-end;
+  }
+}
