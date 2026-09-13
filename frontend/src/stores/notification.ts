@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { NotificationAPI } from '@/api/notification';
+import { PurchasingNotificationAPI } from '@/api/notification';
 import { SalesNotificationAPI } from '@/api/sales-notification';
 import { useAuthStore } from './auth';
 
@@ -19,7 +19,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     try {
       let count = 0;
       if (user.type === 'purchasing') {
-        count = await NotificationAPI.getUnreadCount();
+        count = await PurchasingNotificationAPI.getUnreadCount();
       } else if (user.type === 'sales') {
         count = await SalesNotificationAPI.getUnreadCount();
       }

@@ -97,7 +97,7 @@ func TestConfirmBusinessRecordCompletesForEveryRegisteredChildHook(t *testing.T)
 
 			done := make(chan error, 1)
 			go func() {
-				_, err := confirmBusinessRecord(app, test.collection, child.Id, "rejected", "manager-a", "经理甲", "manager")
+				_, err := confirmBusinessRecordWithReason(app, test.collection, child.Id, "rejected", "manager-a", "经理甲", "manager", "资料需要修正")
 				done <- err
 			}()
 

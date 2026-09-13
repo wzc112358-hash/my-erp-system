@@ -1,5 +1,6 @@
 *
 !Dockerfile
 !nginx.conf
+!security-headers.conf
 !dist/
 !dist/**

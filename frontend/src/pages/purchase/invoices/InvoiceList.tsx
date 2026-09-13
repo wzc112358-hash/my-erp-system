@@ -4,6 +4,7 @@ import { Table, Button, Space, Form, Input, App, Popconfirm, Modal, Select, Tag 
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PurchaseInvoiceAPI } from '@/api/purchase-invoice';
+import { InvoiceResubmissionAPI } from '@/api/invoice-resubmission';
 import type { PurchaseInvoice, PurchaseInvoiceFormData } from '@/types/purchase-contract';
 import { InvoiceForm } from './InvoiceForm';
 import { pb } from '@/lib/pocketbase';
@@ -15,7 +16,7 @@ interface ContractOption {
 
 export const InvoiceList: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { message } = App.useApp();
   const [data, setData] = useState<PurchaseInvoice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -31,6 +32,16 @@ export const InvoiceList: React.FC = () => {
 
   const prefilledContractId = searchParams.get('contractId');
   const prefilledProductName = searchParams.get('productName');
+  const editInvoiceId = searchParams.get('edit');
+
+  const closeForm = () => {
+    setFormVisible(false);
+    if (editInvoiceId) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('edit');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
 
   useEffect(() => {
     if (prefilledContractId) {
@@ -89,6 +100,27 @@ export const InvoiceList: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (!editInvoiceId) return;
+    let cancelled = false;
+    const openRejectedInvoice = async () => {
+      try {
+        const invoice = await PurchaseInvoiceAPI.getById(editInvoiceId);
+        if (cancelled) return;
+        if (invoice.manager_confirmed !== 'rejected') {
+          message.info('这张发票当前不是待返工状态，请刷新通知后查看');
+          return;
+        }
+        setEditingInvoice(invoice);
+        setFormVisible(true);
+      } catch (error) {
+        if (!cancelled) message.error(getPbErrorMessage(error, '被驳回的发票不存在或已删除'));
+      }
+    };
+    openRejectedInvoice();
+    return () => { cancelled = true; };
+  }, [editInvoiceId, message]);
+
   const handleSearch = () => {
     setPage(1);
     fetchData();
@@ -136,12 +168,22 @@ export const InvoiceList: React.FC = () => {
     try {
       if (editingInvoice) {
         await PurchaseInvoiceAPI.update(editingInvoice.id, data as Parameters<typeof PurchaseInvoiceAPI.update>[1]);
-        message.success('更新成功');
+        if (editingInvoice.manager_confirmed === 'rejected') {
+          try {
+            await InvoiceResubmissionAPI.submit('purchase_invoices', editingInvoice.id);
+          } catch (error) {
+            message.error(getPbErrorMessage(error, '资料已保存，但重新提交审核失败，请再次点击保存重试'));
+            return;
+          }
+          message.success('资料已保存，并已重新提交经理审核');
+        } else {
+          message.success('更新成功');
+        }
       } else {
         await PurchaseInvoiceAPI.create(data as unknown as Parameters<typeof PurchaseInvoiceAPI.create>[0]);
         message.success('创建成功');
       }
-      setFormVisible(false);
+      closeForm();
       fetchData();
     } catch (error) {
       const err = error as Error;
@@ -221,6 +263,7 @@ export const InvoiceList: React.FC = () => {
             type="text"
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
+            title={record.manager_confirmed === 'rejected' ? '修改并重新提交审核' : '编辑'}
           />
           <Popconfirm
             title="将此发票记录移入回收站？"
@@ -303,9 +346,9 @@ export const InvoiceList: React.FC = () => {
       />
 
       <Modal
-        title={editingInvoice ? '编辑发票' : '新增收票'}
+        title={editingInvoice?.manager_confirmed === 'rejected' ? '修改被驳回收票' : editingInvoice ? '编辑发票' : '新增收票'}
         open={formVisible}
-        onCancel={() => setFormVisible(false)}
+        onCancel={closeForm}
         footer={null}
         width={700}
       >
@@ -320,7 +363,9 @@ export const InvoiceList: React.FC = () => {
             })),
           } as unknown as Partial<PurchaseInvoiceFormData> & Record<string, unknown> : initialFormValues}
           onFinish={handleFormFinish}
-          onCancel={() => setFormVisible(false)}
+          onCancel={closeForm}
+          isResubmission={editingInvoice?.manager_confirmed === 'rejected'}
+          rejectionReason={editingInvoice?.rejection_reason}
         />
       </Modal>
     </div>

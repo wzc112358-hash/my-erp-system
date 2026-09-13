@@ -16,6 +16,7 @@ import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/typ
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { useManagerPendingStore } from '@/stores/manager-pending';
+import { InvoiceRejectModal } from '@/components/common/InvoiceRejectModal';
 import './ProgressFlow.css';
 
 const NODE_WIDTH = 240;
@@ -411,6 +412,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="开票日期">{formatDate(r.issue_date as string)}</Descriptions.Item>
           <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="是否验票">{r.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}</Descriptions.Item>
+          {Boolean(r.rejection_reason) && <Descriptions.Item label="最近驳回原因" span={2}>{r.rejection_reason as string}</Descriptions.Item>}
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
@@ -465,6 +467,7 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="收票日期">{formatDate(r.receive_date as string)}</Descriptions.Item>
           <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
           <Descriptions.Item label="是否验票">{r.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}</Descriptions.Item>
+          {Boolean(r.rejection_reason) && <Descriptions.Item label="最近驳回原因" span={2}>{r.rejection_reason as string}</Descriptions.Item>}
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
           {renderAttachments()}
@@ -510,6 +513,7 @@ export const ProgressFlowPage: React.FC = () => {
   const [flowReloadKey, setFlowReloadKey] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalData, setModalData] = useState<FlowNodeData | null>(null);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [confirming, setConfirming] = useState<ManagerConfirmationDecision>();
   const [verificationUpdating, setVerificationUpdating] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
@@ -618,7 +622,7 @@ export const ProgressFlowPage: React.FC = () => {
     }
   }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
-  const handleReject = useCallback(async () => {
+  const handleReject = useCallback(async (reason?: string) => {
     if (!modalData || modalData.managerConfirmed !== 'pending') return;
     setConfirming('rejected');
     try {
@@ -626,8 +630,10 @@ export const ProgressFlowPage: React.FC = () => {
         modalData.collectionName as ManagerConfirmableCollection,
         modalData.recordId,
         'rejected',
+        reason,
       );
       message.success('已驳回');
+      setRejectModalVisible(false);
       setModalVisible(false);
       setModalData(null);
       if (selectedContract && selectedType) {
@@ -710,7 +716,17 @@ export const ProgressFlowPage: React.FC = () => {
         )}
         {needsConfirm && modalData.managerConfirmed === 'pending' && (
           <div className="manager-confirmation-actions">
-            <Button danger disabled={verificationUpdating || confirming !== undefined} loading={confirming === 'rejected'} onClick={handleReject}>驳回</Button>
+            <Button
+              danger
+              disabled={verificationUpdating || confirming !== undefined}
+              loading={confirming === 'rejected'}
+              onClick={() => {
+                if (isInvoice) setRejectModalVisible(true);
+                else handleReject();
+              }}
+            >
+              驳回
+            </Button>
             <Button type="primary" disabled={verificationUpdating || confirming !== undefined} loading={confirming === 'approved'} onClick={handleConfirm}>确认</Button>
           </div>
         )}
@@ -845,6 +861,13 @@ export const ProgressFlowPage: React.FC = () => {
       >
         {modalData && renderModalDetail(modalData, exchangeRate)}
       </Modal>
+      <InvoiceRejectModal
+        open={rejectModalVisible}
+        invoiceLabel={modalData?.label ? `发票 ${modalData.label}` : '这张发票'}
+        submitting={confirming === 'rejected'}
+        onCancel={() => setRejectModalVisible(false)}
+        onSubmit={handleReject}
+      />
     </div>
   );
 };

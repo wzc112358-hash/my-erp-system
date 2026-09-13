@@ -11,34 +11,32 @@ import type {
 export const PurchaseArrivalAPI = {
   list: async (params: PurchaseArrivalListParams = {}) => {
     const filters: string[] = [];
-    if (params.purchase_contract)
-      filters.push(`purchase_contract = "${params.purchase_contract}"`);
+    if (params.purchase_contract) {
+      filters.push(pb.filter('purchase_contract = {:purchaseContract}', {
+        purchaseContract: params.purchase_contract,
+      }));
+    }
     if (params.search) {
       filters.push(
-        `(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}" || purchase_contract.no ~ "${params.search}")`
+        pb.filter(
+          '(tracking_contract_no ~ {:search} || product_name ~ {:search} || logistics_company ~ {:search} || purchase_contract.no ~ {:search})',
+          { search: params.search }
+        )
       );
+    }
+    if (params.contractNo) {
+      filters.push(pb.filter('purchase_contract.no ~ {:contractNo}', { contractNo: params.contractNo }));
     }
 
     const result = await pb.collection('purchase_arrivals').getList<PurchaseArrival>(
-      1,
-      500,
+      params.page || 1,
+      params.per_page || 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'purchase_contract,sales_contract',
       }
     );
-
-    if (params.contractNo) {
-      const filtered = result.items.filter((item) =>
-        item.expand?.purchase_contract?.no?.includes(params.contractNo || '')
-      );
-      return {
-        ...result,
-        items: filtered,
-        totalItems: filtered.length,
-      };
-    }
 
     return result;
   },

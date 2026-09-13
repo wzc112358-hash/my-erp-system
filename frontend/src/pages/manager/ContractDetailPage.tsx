@@ -18,6 +18,7 @@ import { calculateBusinessDealProfit, DEFAULT_PROFIT_TAX_RATE } from '@/lib/cont
 import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord, SaleInvoiceRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import { useManagerPendingStore } from '@/stores/manager-pending';
+import { InvoiceRejectModal } from '@/components/common/InvoiceRejectModal';
 import dayjs from 'dayjs';
 
 const formatCurrency = (value: number) => `¥${(value ?? 0).toFixed(6)}`;
@@ -193,6 +194,11 @@ const ContractDetailPage: React.FC = () => {
     key: string;
     decision: ManagerConfirmationDecision;
   }>();
+  const [invoiceRejectTarget, setInvoiceRejectTarget] = useState<{
+    collection: 'sale_invoices' | 'purchase_invoices';
+    recordId: string;
+    label: string;
+  }>();
   const [biddingRecords, setBiddingRecords] = useState<BiddingRecord[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(7.25);
   const { fetchPendingCount } = useManagerPendingStore();
@@ -319,11 +325,12 @@ const ContractDetailPage: React.FC = () => {
     collection: ManagerConfirmableCollection,
     recordId: string,
     decision: ManagerConfirmationDecision,
+    reason?: string,
   ) => {
     const key = `${collection}:${recordId}`;
     setConfirmationUpdating({ key, decision });
     try {
-      await ManagerConfirmationAPI.submit(collection, recordId, decision);
+      await ManagerConfirmationAPI.submit(collection, recordId, decision, reason);
       if (id) {
         const data = isStandalonePurchase
           ? await ComparisonAPI.getPurchaseContractDetail(id)
@@ -332,8 +339,10 @@ const ContractDetailPage: React.FC = () => {
       }
       await fetchPendingCount();
       message.success(decision === 'approved' ? '确认成功' : '已驳回');
+      return true;
     } catch (error) {
       message.error(getPbErrorMessage(error, decision === 'approved' ? '确认失败，请重试' : '驳回失败，请重试'));
+      return false;
     } finally {
       setConfirmationUpdating(undefined);
     }
@@ -344,7 +353,7 @@ const ContractDetailPage: React.FC = () => {
     dataIndex: 'manager_confirmed',
     key: 'manager_confirmed',
     width: 220,
-    render: (status: string, record: { id: string }) => {
+    render: (status: string, record: { id: string; no?: string; product_name?: string }) => {
       if (status !== 'pending') return <StatusTag status={status} />;
 
       const key = `${collection}:${record.id}`;
@@ -369,24 +378,41 @@ const ContractDetailPage: React.FC = () => {
               确认
             </Button>
           </Popconfirm>
-          <Popconfirm
-            title="驳回这条记录？"
-            description="员工可根据反馈修改后重新提交。"
-            okText="驳回"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleManagerDecision(collection, record.id, 'rejected')}
-          >
+          {collection === 'sale_invoices' || collection === 'purchase_invoices' ? (
             <Button
               danger
               size="small"
               icon={<CloseOutlined />}
               loading={updatingThisRecord && confirmationUpdating?.decision === 'rejected'}
               disabled={updatingThisRecord}
+              onClick={() => setInvoiceRejectTarget({
+                collection,
+                recordId: record.id,
+                label: record.no ? `发票 ${record.no}` : record.product_name || '这张发票',
+              })}
             >
               驳回
             </Button>
-          </Popconfirm>
+          ) : (
+            <Popconfirm
+              title="驳回这条记录？"
+              description="提交后会写入管理确认日志。"
+              okText="驳回"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleManagerDecision(collection, record.id, 'rejected')}
+            >
+              <Button
+                danger
+                size="small"
+                icon={<CloseOutlined />}
+                loading={updatingThisRecord && confirmationUpdating?.decision === 'rejected'}
+                disabled={updatingThisRecord}
+              >
+                驳回
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       );
     },
@@ -443,6 +469,7 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
     managerConfirmationColumn('sale_invoices'),
+    { title: '最近驳回原因', dataIndex: 'rejection_reason', key: 'rejection_reason', width: 220, render: (v: string) => v || '-' },
     invoiceVerificationColumn('sale_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
@@ -520,6 +547,7 @@ const ContractDetailPage: React.FC = () => {
     } },
     { title: '收票日期', dataIndex: 'receive_date', key: 'receive_date', render: (v: string) => formatDate(v) },
     managerConfirmationColumn('purchase_invoices'),
+    { title: '最近驳回原因', dataIndex: 'rejection_reason', key: 'rejection_reason', width: 220, render: (v: string) => v || '-' },
     invoiceVerificationColumn('purchase_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
@@ -1110,6 +1138,22 @@ const ContractDetailPage: React.FC = () => {
         />
         {renderProfitAnalysis()}
       </Card>
+      <InvoiceRejectModal
+        open={Boolean(invoiceRejectTarget)}
+        invoiceLabel={invoiceRejectTarget?.label}
+        submitting={confirmationUpdating?.decision === 'rejected'}
+        onCancel={() => setInvoiceRejectTarget(undefined)}
+        onSubmit={async (reason) => {
+          if (!invoiceRejectTarget) return;
+          const succeeded = await handleManagerDecision(
+            invoiceRejectTarget.collection,
+            invoiceRejectTarget.recordId,
+            'rejected',
+            reason,
+          );
+          if (succeeded) setInvoiceRejectTarget(undefined);
+        }}
+      />
     </div>
   );
 };

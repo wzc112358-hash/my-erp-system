@@ -19,6 +19,8 @@ var (
 	errInvalidConfirmationDecision       = errors.New("invalid confirmation decision")
 	errConfirmationRecordNotFound        = errors.New("confirmation record not found")
 	errConfirmationAlreadyResolved       = errors.New("confirmation already resolved")
+	errRejectionReasonRequired           = errors.New("rejection reason required")
+	errRejectionReasonTooLong            = errors.New("rejection reason too long")
 )
 
 var managerConfirmableCollections = map[string]struct{}{
@@ -44,13 +46,14 @@ func RegisterManagerConfirmationRoutes(app core.App) {
 					Collection string `json:"collection"`
 					RecordID   string `json:"recordId"`
 					Decision   string `json:"decision"`
+					Reason     string `json:"reason"`
 				}{}
 				if err := request.BindBody(&body); err != nil {
 					return router.NewBadRequestError("确认参数不正确", err)
 				}
 
 				operatorID, operatorName, operatorRole := auditOperator(request.Auth)
-				result, err := confirmBusinessRecord(
+				result, err := confirmBusinessRecordWithReason(
 					request.App,
 					body.Collection,
 					body.RecordID,
@@ -58,10 +61,14 @@ func RegisterManagerConfirmationRoutes(app core.App) {
 					operatorID,
 					operatorName,
 					operatorRole,
+					body.Reason,
 				)
 				if err != nil {
 					switch {
-					case errors.Is(err, errUnsupportedConfirmationCollection), errors.Is(err, errInvalidConfirmationDecision):
+					case errors.Is(err, errUnsupportedConfirmationCollection),
+						errors.Is(err, errInvalidConfirmationDecision),
+						errors.Is(err, errRejectionReasonRequired),
+						errors.Is(err, errRejectionReasonTooLong):
 						return router.NewBadRequestError("确认参数不正确", err)
 					case errors.Is(err, errConfirmationRecordNotFound):
 						return router.NewNotFoundError("待确认记录不存在或已进入回收站", err)
@@ -88,15 +95,37 @@ func confirmBusinessRecord(
 	operatorName string,
 	operatorRole string,
 ) (*managerConfirmationResult, error) {
+	return confirmBusinessRecordWithReason(app, collectionName, recordID, decision, operatorID, operatorName, operatorRole, "")
+}
+
+func confirmBusinessRecordWithReason(
+	app core.App,
+	collectionName string,
+	recordID string,
+	decision string,
+	operatorID string,
+	operatorName string,
+	operatorRole string,
+	reason string,
+) (*managerConfirmationResult, error) {
 	collectionName = strings.TrimSpace(collectionName)
 	recordID = strings.TrimSpace(recordID)
 	decision = strings.TrimSpace(decision)
+	reason = strings.TrimSpace(reason)
 
 	if _, ok := managerConfirmableCollections[collectionName]; !ok {
 		return nil, errUnsupportedConfirmationCollection
 	}
 	if decision != "approved" && decision != "rejected" {
 		return nil, errInvalidConfirmationDecision
+	}
+	if decision == "rejected" && isInvoiceReviewCollection(collectionName) {
+		if reason == "" {
+			return nil, errRejectionReasonRequired
+		}
+		if len([]rune(reason)) > 500 {
+			return nil, errRejectionReasonTooLong
+		}
 	}
 	config, ok := auditConfigForCollection(collectionName)
 	if !ok {
@@ -119,18 +148,31 @@ func confirmBusinessRecord(
 		currentStatus := record.GetString("manager_confirmed")
 		previousStatus = currentStatus
 		if currentStatus == decision {
-			return saveManagerConfirmationLog(txApp, config, record, decision, currentStatus, "success", "", operatorID, operatorName, operatorRole, true)
+			return saveManagerConfirmationLog(txApp, config, record, decision, currentStatus, reason, "success", "", operatorID, operatorName, operatorRole, true)
 		}
 		if currentStatus != "pending" {
 			return fmt.Errorf("%w: current status %q", errConfirmationAlreadyResolved, currentStatus)
 		}
 
 		record.Set("manager_confirmed", decision)
+		if isInvoiceReviewCollection(collectionName) {
+			if decision == "rejected" {
+				record.Set("rejection_reason", reason)
+				record.Set("is_verified", "no")
+			} else {
+				record.Set("rejection_reason", "")
+			}
+		}
 		if saveErr := txApp.Save(record); saveErr != nil {
 			return saveErr
 		}
+		if decision == "rejected" && isInvoiceReviewCollection(collectionName) {
+			if notifyErr := createInvoiceRejectionNotification(txApp, collectionName, record, reason); notifyErr != nil {
+				return notifyErr
+			}
+		}
 		result.Changed = true
-		return saveManagerConfirmationLog(txApp, config, record, decision, currentStatus, "success", "", operatorID, operatorName, operatorRole, false)
+		return saveManagerConfirmationLog(txApp, config, record, decision, currentStatus, reason, "success", "", operatorID, operatorName, operatorRole, false)
 	})
 	if err == nil {
 		return result, nil
@@ -140,7 +182,7 @@ func confirmBusinessRecord(
 		if persistedRecord, findErr := app.FindRecordById(collectionName, recordID); findErr == nil {
 			failedRecord = persistedRecord
 		}
-		if logErr := saveManagerConfirmationLog(app, config, failedRecord, decision, previousStatus, "failed", err.Error(), operatorID, operatorName, operatorRole, false); logErr != nil {
+		if logErr := saveManagerConfirmationLog(app, config, failedRecord, decision, previousStatus, reason, "failed", err.Error(), operatorID, operatorName, operatorRole, false); logErr != nil {
 			log.Printf("[ManagerConfirmation] failed to log %s/%s error: %v", collectionName, recordID, logErr)
 		}
 	}
@@ -153,6 +195,7 @@ func saveManagerConfirmationLog(
 	record *core.Record,
 	decision string,
 	previousStatus string,
+	reason string,
 	result string,
 	errorMessage string,
 	operatorID string,
@@ -174,6 +217,7 @@ func saveManagerConfirmationLog(
 	details, _ := json.Marshal(map[string]any{
 		"decision":       decision,
 		"previousStatus": previousStatus,
+		"reason":         reason,
 		"idempotent":     idempotent,
 	})
 	snapshot, _ := recordSnapshotJSON(record)

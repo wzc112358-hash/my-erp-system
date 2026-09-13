@@ -130,6 +130,7 @@ export interface SaleInvoice {
   no: string;
   amount: number;
   invoice_date: string;
+  rejection_reason?: string;
 }
 
 export interface PurchaseInvoice {
@@ -138,6 +139,7 @@ export interface PurchaseInvoice {
   no: string;
   amount: number;
   invoice_date: string;
+  rejection_reason?: string;
 }
 
 export interface SaleReceipt {
@@ -276,6 +278,7 @@ export interface SaleInvoiceRecord {
   uninvoiced_percent: number;
   manager_confirmed: string;
   is_verified: string;
+  rejection_reason?: string;
   remark: string;
   attachments: string[];
   created: string;
@@ -345,6 +348,7 @@ export interface PurchaseInvoiceRecord {
   unreceived_percent: number;
   manager_confirmed: string;
   is_verified: string;
+  rejection_reason?: string;
   remark: string;
   attachments: string[];
   created: string;

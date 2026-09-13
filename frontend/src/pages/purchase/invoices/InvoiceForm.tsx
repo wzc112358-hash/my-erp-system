@@ -20,12 +20,16 @@ interface InvoiceFormProps {
   initialValues?: Partial<PurchaseInvoiceFormData> & Record<string, unknown>;
   onFinish: (values: Record<string, unknown>) => void | Promise<void>;
   onCancel: () => void;
+  isResubmission?: boolean;
+  rejectionReason?: string;
 }
 
 export const InvoiceForm: React.FC<InvoiceFormProps> = ({
   initialValues,
   onFinish,
   onCancel,
+  isResubmission = false,
+  rejectionReason,
 }) => {
   const [form] = Form.useForm();
   const { message } = App.useApp();
@@ -104,8 +108,12 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       return Promise.resolve();
     }
     if (selectedContract && selectedContract.uninvoiced_amount !== undefined) {
-      if (value > selectedContract.uninvoiced_amount) {
-        return Promise.reject(new Error(`发票金额不能超过合同剩余未收票金额 ${selectedContract.uninvoiced_amount.toFixed(6)}`));
+      const originalAmount = initialValues?.purchase_contract === selectedContract.value
+        ? Number(initialValues.amount) || 0
+        : 0;
+      const editableLimit = selectedContract.uninvoiced_amount + originalAmount;
+      if (value > editableLimit) {
+        return Promise.reject(new Error(`发票金额不能超过可编辑金额 ${editableLimit.toFixed(6)}`));
       }
     }
     return Promise.resolve();
@@ -142,6 +150,20 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
       }}
       onFinish={handleFinish}
     >
+      {isResubmission && rejectionReason && (
+        <Alert
+          type="error"
+          showIcon
+          title="经理驳回原因"
+          description={(
+            <div>
+              <div>{rejectionReason}</div>
+              <div style={{ marginTop: 4 }}>请修改资料或重新上传附件，保存后将自动重新进入经理待确认事项。</div>
+            </div>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <Row gutter={16}>
         <Col xs={24} md={12}>
           <Form.Item
@@ -297,7 +319,7 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({
         <Space>
           <Button onClick={onCancel}>取消</Button>
           <Button type="primary" htmlType="submit" loading={submitting}>
-            提交
+            {isResubmission ? '保存并重新提交审核' : '提交'}
           </Button>
         </Space>
       </Form.Item>

@@ -6,6 +6,9 @@ export interface SalesNotification {
   message: string;
   is_read: boolean;
   recipient: string;
+  record_collection?: string;
+  record_id?: string;
+  rejection_reason?: string;
   created: string;
   updated: string;
   expand?: {

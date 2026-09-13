@@ -131,6 +131,7 @@ export interface SaleInvoice {
   updated?: string;
   manager_confirmed?: string;
   is_verified?: string;
+  rejection_reason?: string;
   expand?: {
     sales_contract?: {
       id: string;

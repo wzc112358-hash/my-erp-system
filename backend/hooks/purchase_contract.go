@@ -87,7 +87,7 @@ func RegisterPurchaseContractHooks(app *pocketbase.PocketBase) {
 				return e.Next()
 			}
 
-			err = CreateNotification02(app, "purchase_contract_reminder", title, message, "sales", e.Record.Id)
+			err = CreateSalesNotification(app, "purchase_contract_reminder", title, message, "sales", e.Record.Id)
 			if err != nil {
 				log.Printf("[PurchaseContract] Failed to create notification: %v\n", err)
 			}

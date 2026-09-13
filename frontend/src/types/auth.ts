@@ -14,8 +14,10 @@ export interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  isAuthChecked: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  selectSystem: (system: 'beijing' | 'lanzhou') => void;
   setAuth: (user: User, token: string) => void;
   checkAuth: () => Promise<void>;
 }

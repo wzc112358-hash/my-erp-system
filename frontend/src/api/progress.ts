@@ -10,10 +10,10 @@ export const ProgressAPI = {
 
     const filters: string[] = [];
     if (status) {
-      filters.push(`status="${status}"`);
+      filters.push(pb.filter('status = {:status}', { status }));
     }
     if (keyword) {
-      filters.push(`(no ?~ "${keyword}" || product_name ?~ "${keyword}")`);
+      filters.push(pb.filter('(no ?~ {:keyword} || product_name ?~ {:keyword})', { keyword }));
     }
 
     return pb.collection('sales_contracts').getList<SalesContract>(page, per_page, {
@@ -28,10 +28,10 @@ export const ProgressAPI = {
 
     const filters: string[] = [];
     if (status) {
-      filters.push(`status="${status}"`);
+      filters.push(pb.filter('status = {:status}', { status }));
     }
     if (keyword) {
-      filters.push(`(no ?~ "${keyword}" || product_name ?~ "${keyword}")`);
+      filters.push(pb.filter('(no ?~ {:keyword} || product_name ?~ {:keyword})', { keyword }));
     }
 
     return pb.collection('purchase_contracts').getList<PurchaseContract>(page, per_page, {
@@ -46,22 +46,22 @@ export const ProgressAPI = {
       pb.collection('sales_contracts').getOne<SalesContract>(id, {
         expand: 'customer,creator',
       }),
-      pb.collection('sales_shipments').getList<SalesShipment>(1, 100, {
-        filter: `sales_contract="${id}"`,
+      pb.collection('sales_shipments').getFullList<SalesShipment>({
+        filter: pb.filter('sales_contract = {:id}', { id }),
       }),
-      pb.collection('sale_invoices').getList<SaleInvoice>(1, 100, {
-        filter: `sales_contract="${id}"`,
+      pb.collection('sale_invoices').getFullList<SaleInvoice>({
+        filter: pb.filter('sales_contract = {:id}', { id }),
       }),
-      pb.collection('sale_receipts').getList<SaleReceipt>(1, 100, {
-        filter: `sales_contract="${id}"`,
+      pb.collection('sale_receipts').getFullList<SaleReceipt>({
+        filter: pb.filter('sales_contract = {:id}', { id }),
       }),
     ]);
 
     return {
       contract,
-      shipments: shipments.items,
-      invoices: invoices.items,
-      receipts: receipts.items,
+      shipments,
+      invoices,
+      receipts,
     };
   },
 
@@ -70,22 +70,22 @@ export const ProgressAPI = {
       pb.collection('purchase_contracts').getOne<PurchaseContract>(id, {
         expand: 'supplier,sales_contract,creator',
       }),
-      pb.collection('purchase_arrivals').getList<PurchaseArrival>(1, 100, {
-        filter: `purchase_contract="${id}"`,
+      pb.collection('purchase_arrivals').getFullList<PurchaseArrival>({
+        filter: pb.filter('purchase_contract = {:id}', { id }),
       }),
-      pb.collection('purchase_invoices').getList<PurchaseInvoice>(1, 100, {
-        filter: `purchase_contract="${id}"`,
+      pb.collection('purchase_invoices').getFullList<PurchaseInvoice>({
+        filter: pb.filter('purchase_contract = {:id}', { id }),
       }),
-      pb.collection('purchase_payments').getList<PurchasePayment>(1, 100, {
-        filter: `purchase_contract="${id}"`,
+      pb.collection('purchase_payments').getFullList<PurchasePayment>({
+        filter: pb.filter('purchase_contract = {:id}', { id }),
       }),
     ]);
 
     return {
       contract,
-      arrivals: arrivals.items,
-      invoices: invoices.items,
-      payments: payments.items,
+      arrivals,
+      invoices,
+      payments,
     };
   },
 };

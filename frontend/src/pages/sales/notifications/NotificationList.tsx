@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
+import { Alert, Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
 import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -9,11 +9,13 @@ import { PurchaseContractAPI } from '@/api/purchase-contract';
 import { useNotificationStore } from '@/stores/notification';
 import type { SalesNotification } from '@/types/sales-notification';
 import type { PurchaseContract } from '@/types/purchase-contract';
+import { invoiceReviewEditPath } from '@/lib/invoice-review';
 
 const typeMap: Record<string, { text: string; color: string }> = {
   purchase_contract_created: { text: '采购合同创建', color: 'blue' },
   purchase_contract_reminder: { text: '采购合同提醒', color: 'blue' },
   exchange_rate_changed: { text: '汇率变更', color: 'orange' },
+  manager_rejected: { text: '经理驳回', color: 'red' },
 };
 
 export const NotificationList: React.FC = () => {
@@ -109,6 +111,15 @@ export const NotificationList: React.FC = () => {
     } finally {
       setContractLoading(false);
     }
+  };
+
+  const handleOpenRejectedInvoice = (recordCollection?: string, recordId?: string) => {
+    if (!recordId || recordCollection !== 'sale_invoices') {
+      message.error('通知缺少发票定位信息，请从开票列表进入');
+      return;
+    }
+    setDetailVisible(false);
+    navigate(invoiceReviewEditPath('sale_invoices', recordId));
   };
 
   const columns = [
@@ -215,6 +226,17 @@ export const NotificationList: React.FC = () => {
           <Button key="close" onClick={() => setDetailVisible(false)}>
             关闭
           </Button>,
+          selectedNotification?.type === 'manager_rejected'
+            && selectedNotification.record_id
+            && selectedNotification.record_collection === 'sale_invoices' && (
+              <Button
+                key="resubmit"
+                type="primary"
+                onClick={() => handleOpenRejectedInvoice(selectedNotification.record_collection, selectedNotification.record_id)}
+              >
+                修改并重新提交
+              </Button>
+            ),
           selectedNotification?.purchase_contract && (
             <Button
               key="contract"
@@ -259,6 +281,15 @@ export const NotificationList: React.FC = () => {
             <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 4 }}>
               {selectedNotification.message}
             </div>
+            {selectedNotification.type === 'manager_rejected' && selectedNotification.rejection_reason && (
+              <Alert
+                type="error"
+                showIcon
+                title="经理驳回原因"
+                description={selectedNotification.rejection_reason}
+                style={{ marginTop: 16 }}
+              />
+            )}
             {selectedNotification.expand?.purchase_contract && (
               <div style={{ marginTop: 16 }}>
                 <strong>关联采购合同：</strong>

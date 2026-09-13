@@ -185,7 +185,7 @@ func RegisterSaleReceiptHooks(app core.App) {
 				message := fmt.Sprintf("管理已确认您的销售收款登记，收款金额：%.2f", amount)
 
 				log.Printf("[SaleReceipt] Sending notification to %s: %s\n", creatorId, title)
-				if err := CreateNotification02(app, "manager_confirm", title, message, creatorId, ""); err != nil {
+				if err := CreateSalesNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {
 					log.Printf("[SaleReceipt] Failed to send notification: %v\n", err)
 				}
 			}

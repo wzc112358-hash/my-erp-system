@@ -27,6 +27,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	RegisterBusinessDealRoutes(app)
 	RegisterRecycleBinRoutes(app)
 	RegisterManagerConfirmationRoutes(app)
+	RegisterInvoiceResubmissionRoutes(app)
 	RegisterBusinessRecordAuditHooks(app)
 
 	log.Println("Hooks registered successfully")
@@ -45,16 +46,16 @@ func GetUsersByType(app *pocketbase.PocketBase, userType string) ([]*core.Record
 	return records, nil
 }
 
-func GetNotificationCollection(app core.App) (*core.Collection, error) {
-	return app.FindCollectionByNameOrId("notifications")
+func GetPurchasingNotificationCollection(app core.App) (*core.Collection, error) {
+	return app.FindCollectionByNameOrId(purchasingNotificationsCollection)
 }
 
-func GetNotification02Collection(app core.App) (*core.Collection, error) {
-	return app.FindCollectionByNameOrId("notifications_02")
+func GetSalesNotificationCollection(app core.App) (*core.Collection, error) {
+	return app.FindCollectionByNameOrId(salesNotificationsCollection)
 }
 
-func CreateNotification02(app core.App, notificationType, title, message, recipientId, purchaseContractId string) error {
-	collection, err := GetNotification02Collection(app)
+func CreateSalesNotification(app core.App, notificationType, title, message, recipientId, purchaseContractId string) error {
+	collection, err := GetSalesNotificationCollection(app)
 	if err != nil {
 		return err
 	}
@@ -72,8 +73,8 @@ func CreateNotification02(app core.App, notificationType, title, message, recipi
 	return app.Save(notification)
 }
 
-func CreateNotification(app core.App, notificationType, title, message, recipientId, salesContractId string) error {
-	collection, err := GetNotificationCollection(app)
+func CreatePurchasingNotification(app core.App, notificationType, title, message, recipientId, salesContractId string) error {
+	collection, err := GetPurchasingNotificationCollection(app)
 	if err != nil {
 		return err
 	}

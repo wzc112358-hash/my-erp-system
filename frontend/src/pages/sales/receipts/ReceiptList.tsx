@@ -60,25 +60,14 @@ export const ReceiptList: React.FC = () => {
     setLoading(true);
     try {
       const result = await ReceiptAPI.list({
-        page: 1,
-        per_page: 100,
+        page,
+        per_page: pageSize,
         sales_contract: contractId,
+        search: search || undefined,
       });
-      
-      let filteredData = result.items;
-      if (search) {
-        const searchLower = search.toLowerCase();
-        filteredData = filteredData.filter(item => 
-          item.product_name.toLowerCase().includes(searchLower) ||
-          item.expand?.sales_contract?.no?.toLowerCase().includes(searchLower)
-        );
-      }
-      
-      const start = (page - 1) * pageSize;
-      const pagedData = filteredData.slice(start, start + pageSize);
-      
-      setData(pagedData);
-      setTotal(filteredData.length);
+
+      setData(result.items);
+      setTotal(result.totalItems);
     } catch (err) {
       const error = err as { name?: string; message?: string; cause?: { name?: string } };
       const isAborted =

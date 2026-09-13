@@ -9,7 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 )
 
-func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
+func newContractOperationsTestApp(t testing.TB) *tests.TestApp {
 	t.Helper()
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -135,7 +135,16 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 	}
 	addSalesChild("sales_shipments", &core.NumberField{Name: "quantity"})
 	addSalesChild("sale_receipts", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
-	addSalesChild("sale_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"}, &core.TextField{Name: "is_verified"})
+	addSalesChild(
+		"sale_invoices",
+		&core.TextField{Name: "no"},
+		&core.TextField{Name: "product_name"},
+		&core.TextField{Name: "creator_user"},
+		&core.TextField{Name: "rejection_reason"},
+		&core.NumberField{Name: "product_amount"},
+		&core.NumberField{Name: "amount"},
+		&core.TextField{Name: "is_verified"},
+	)
 	addSalesChild("bidding_records", &core.TextField{Name: "title"})
 	saleInvoices, _ := app.FindCollectionByNameOrId("sale_invoices")
 	saleInvoices.Fields.Add(&core.RelationField{Name: "purchase_contract", CollectionId: purchases.Id, MaxSelect: 1})
@@ -157,7 +166,16 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		}
 	}
 	addPurchaseChild("purchase_arrivals", &core.NumberField{Name: "quantity"})
-	addPurchaseChild("purchase_invoices", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"}, &core.TextField{Name: "is_verified"})
+	addPurchaseChild(
+		"purchase_invoices",
+		&core.TextField{Name: "no"},
+		&core.TextField{Name: "product_name"},
+		&core.TextField{Name: "creator_user"},
+		&core.TextField{Name: "rejection_reason"},
+		&core.NumberField{Name: "product_amount"},
+		&core.NumberField{Name: "amount"},
+		&core.TextField{Name: "is_verified"},
+	)
 	addPurchaseChild("purchase_payments", &core.NumberField{Name: "product_amount"}, &core.NumberField{Name: "amount"})
 
 	auditLogs := core.NewBaseCollection("contract_operation_logs")
@@ -184,6 +202,27 @@ func newContractOperationsTestApp(t *testing.T) *tests.TestApp {
 		t.Fatal(err)
 	}
 
+	addNotificationCollection := func(name, relationName string, relationCollection *core.Collection) {
+		collection := core.NewBaseCollection(name)
+		collection.Fields.Add(
+			&core.TextField{Name: "type"},
+			&core.TextField{Name: "title"},
+			&core.TextField{Name: "message"},
+			&core.BoolField{Name: "is_read"},
+			&core.TextField{Name: "recipient"},
+			&core.RelationField{Name: relationName, CollectionId: relationCollection.Id, MaxSelect: 1},
+			&core.TextField{Name: "record_collection"},
+			&core.TextField{Name: "record_id"},
+			&core.TextField{Name: "rejection_reason"},
+		)
+		if err := app.Save(collection); err != nil {
+			app.Cleanup()
+			t.Fatal(err)
+		}
+	}
+	addNotificationCollection("notifications", "sales_contract", sales)
+	addNotificationCollection("notifications_02", "purchase_contract", purchases)
+
 	return app
 }
 
@@ -191,7 +230,7 @@ func floatPointer(value float64) *float64 {
 	return &value
 }
 
-func newDuplicateSalesContract(t *testing.T, app core.App, attachmentName string) *core.Record {
+func newDuplicateSalesContract(t testing.TB, app core.App, attachmentName string) *core.Record {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId("sales_contracts")
 	if err != nil {
@@ -218,7 +257,7 @@ func newDuplicateSalesContract(t *testing.T, app core.App, attachmentName string
 	return record
 }
 
-func newSalesChild(t *testing.T, app core.App, collectionName, contractID string, values map[string]any) *core.Record {
+func newSalesChild(t testing.TB, app core.App, collectionName, contractID string, values map[string]any) *core.Record {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId(collectionName)
 	if err != nil {
@@ -235,7 +274,7 @@ func newSalesChild(t *testing.T, app core.App, collectionName, contractID string
 	return record
 }
 
-func newPurchaseChild(t *testing.T, app core.App, collectionName, contractID string, values map[string]any) *core.Record {
+func newPurchaseChild(t testing.TB, app core.App, collectionName, contractID string, values map[string]any) *core.Record {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId(collectionName)
 	if err != nil {

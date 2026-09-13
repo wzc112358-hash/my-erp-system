@@ -39,6 +39,8 @@ backend/pb_migrations/*
 !backend/pb_migrations/202609050001_add_recycle_bin_and_audit.js
 !backend/pb_migrations/202609050002_expand_audit_logs.js
 !backend/pb_migrations/202609110001_create_business_deals.js
+!backend/pb_migrations/202609110002_add_sale_invoice_verification.js
+!backend/pb_migrations/202609120001_add_invoice_rejection_workflow.js
 
 # Backend binary
 backend/pocketbase

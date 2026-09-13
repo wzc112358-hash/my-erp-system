@@ -20,10 +20,12 @@ export const PurchaseContractAPI = {
     const filters: string[] = [];
 
     if (params.search) {
-      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
+      filters.push(pb.filter('(no ~ {:search} || product_name ~ {:search})', {
+        search: params.search,
+      }));
     }
     if (params.status) {
-      filters.push(`status = "${params.status}"`);
+      filters.push(pb.filter('status = {:status}', { status: params.status }));
     }
 
     const result = await pb.collection('purchase_contracts').getList<PurchaseContract>(
@@ -108,33 +110,24 @@ export const PurchaseContractAPI = {
   },
 
   getArrivals: async (contractId: string) => {
-    return pb.collection('purchase_arrivals').getList<PurchaseArrival>(
-      1,
-      100,
-      {
-        filter: `purchase_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('purchase_arrivals').getFullList<PurchaseArrival>({
+      filter: pb.filter('purchase_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 
   getInvoices: async (contractId: string) => {
-    return pb.collection('purchase_invoices').getList<PurchaseInvoice>(
-      1,
-      100,
-      {
-        filter: `purchase_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('purchase_invoices').getFullList<PurchaseInvoice>({
+      filter: pb.filter('purchase_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 
   getPayments: async (contractId: string) => {
-    return pb.collection('purchase_payments').getList<PurchasePayment>(
-      1,
-      100,
-      {
-        filter: `purchase_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('purchase_payments').getFullList<PurchasePayment>({
+      filter: pb.filter('purchase_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 };
 
@@ -142,15 +135,20 @@ export const PaymentAPI = {
   list: async (params: PurchasePaymentListParams = {}) => {
     const filters: string[] = [];
     if (params.purchase_contract) {
-      filters.push(`purchase_contract = "${params.purchase_contract}"`);
+      filters.push(pb.filter('purchase_contract = {:purchaseContract}', {
+        purchaseContract: params.purchase_contract,
+      }));
     }
     if (params.search) {
-      filters.push(`(product_name ~ "${params.search}" || purchase_contract.no ~ "${params.search}")`);
+      filters.push(pb.filter(
+        '(product_name ~ {:search} || purchase_contract.no ~ {:search})',
+        { search: params.search }
+      ));
     }
 
     const result = await pb.collection('purchase_payments').getList<PurchasePayment>(
-      1,
-      500,
+      params.page || 1,
+      params.per_page || 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',

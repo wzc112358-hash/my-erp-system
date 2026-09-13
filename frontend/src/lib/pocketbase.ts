@@ -1,7 +1,9 @@
 import PocketBase from 'pocketbase';
 
 const getCurrentSystem = (): string => {
-  return localStorage.getItem('erp_system') || 'beijing';
+  return typeof localStorage === 'undefined'
+    ? 'beijing'
+    : localStorage.getItem('erp_system') || 'beijing';
 };
 
 const getApiBaseUrl = (): string => {
@@ -25,7 +27,9 @@ const getApiBaseUrl = (): string => {
 export const pb = new PocketBase(getApiBaseUrl());
 pb.autoCancellation(false);
 
-export const switchSystem = (system: string) => {
+export const switchSystem = (system: 'beijing' | 'lanzhou') => {
+  pb.authStore.clear();
+  localStorage.removeItem('auth-storage');
   localStorage.setItem('erp_system', system);
   pb.baseUrl = getApiBaseUrl();
 };

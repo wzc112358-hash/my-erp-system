@@ -64,8 +64,9 @@ export const createNotificationApi = <T>(collectionName: string, expandRelation:
 
   getUnreadCount: async (): Promise<number> => {
     const userId = pb.authStore.record?.id;
+    const userType = (pb.authStore.record as Record<string, unknown> | null)?.type || '';
     const filter = userId
-      ? `is_read = false && recipient = "${userId}"`
+      ? `is_read = false && (recipient = "${userId}" || recipient = "${userType}")`
       : 'is_read = false';
     const result = await pb.collection(collectionName).getList<T>(
       1,
@@ -78,6 +79,6 @@ export const createNotificationApi = <T>(collectionName: string, expandRelation:
   },
 });
 
-// 采购侧通知（notifications 表，expand sales_contract）
-export const NotificationAPI = createNotificationApi<Notification>('notifications', 'sales_contract');
+// 物理表 notifications 专供采购人员；名称保持不变以兼容历史通知和访问规则。
+export const PurchasingNotificationAPI = createNotificationApi<Notification>('notifications', 'sales_contract');
 export type { Notification, NotificationListParams, NotificationListResult };

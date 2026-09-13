@@ -8,15 +8,18 @@ export const SaleInvoiceAPI = {
   list: async (params: SaleInvoiceListParams = {}) => {
     const filters: string[] = [];
     if (params.sales_contract) {
-      filters.push(`sales_contract = "${params.sales_contract}"`);
+      filters.push(pb.filter('sales_contract = {:salesContract}', { salesContract: params.sales_contract }));
     }
     if (params.search) {
-      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}" || sales_contract.no ~ "${params.search}")`);
+      filters.push(pb.filter(
+        '(no ~ {:search} || product_name ~ {:search} || sales_contract.no ~ {:search})',
+        { search: params.search }
+      ));
     }
 
     const result = await pb.collection('sale_invoices').getList<SaleInvoice>(
-      1,
-      500,
+      params.page || 1,
+      params.per_page || 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',

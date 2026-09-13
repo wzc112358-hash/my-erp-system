@@ -8,31 +8,28 @@ import { SalesContractAPI as SCAPI } from './sales-contract';
 export const SalesShipmentAPI = {
   list: async (params: SalesShipmentListParams = {}) => {
     const filters: string[] = [];
-    if (params.sales_contract) filters.push(`sales_contract = "${params.sales_contract}"`);
+    if (params.sales_contract) {
+      filters.push(pb.filter('sales_contract = {:salesContract}', { salesContract: params.sales_contract }));
+    }
     if (params.search) {
-      filters.push(`(tracking_contract_no ~ "${params.search}" || product_name ~ "${params.search}" || logistics_company ~ "${params.search}" || sales_contract.no ~ "${params.search}")`);
+      filters.push(pb.filter(
+        '(tracking_contract_no ~ {:search} || product_name ~ {:search} || logistics_company ~ {:search} || sales_contract.no ~ {:search})',
+        { search: params.search }
+      ));
+    }
+    if (params.contractNo) {
+      filters.push(pb.filter('sales_contract.no ~ {:contractNo}', { contractNo: params.contractNo }));
     }
 
     const result = await pb.collection('sales_shipments').getList<SalesShipment>(
-      1,
-      500,
+      params.page || 1,
+      params.per_page || 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
         expand: 'sales_contract',
       }
     );
-
-    if (params.contractNo) {
-      const filtered = result.items.filter(
-        (item) => item.expand?.sales_contract?.no?.includes(params.contractNo || '')
-      );
-      return {
-        ...result,
-        items: filtered,
-        totalItems: filtered.length,
-      };
-    }
 
     return result;
   },

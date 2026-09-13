@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from 'antd';
-import { switchSystem } from '@/lib/pocketbase';
+import { useAuthStore } from '@/stores/auth';
 import './SystemSelect.css';
 
 const SystemSelect = () => {
   const navigate = useNavigate();
+  const selectSystem = useAuthStore((state) => state.selectSystem);
 
   const handleSelectSystem = (system: 'beijing' | 'lanzhou') => {
-    switchSystem(system);
+    selectSystem(system);
     navigate('/login');
   };
 

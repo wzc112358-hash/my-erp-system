@@ -60,7 +60,11 @@ const LoadingFallback: React.FC = () => (
 
 // eslint-disable-next-line react-refresh/only-export-components
 const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles }) => {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, isAuthChecked, user } = useAuthStore();
+
+  if (!isAuthChecked) {
+    return <LoadingFallback />;
+  }
 
   const erpSystem = localStorage.getItem('erp_system');
   if (!erpSystem) {
@@ -90,7 +94,11 @@ const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles 
 
 // eslint-disable-next-line react-refresh/only-export-components
 const PublicRoute: React.FC = () => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isAuthChecked } = useAuthStore();
+
+  if (!isAuthChecked) {
+    return <LoadingFallback />;
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;

@@ -99,7 +99,7 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 				message := fmt.Sprintf("管理已确认您的采购发货信息，发货批次：%s", trackingNo)
 
 				log.Printf("[PurchaseArrival] Sending notification to %s: %s\n", creatorId, title)
-				if err := CreateNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {
+				if err := CreatePurchasingNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {
 					log.Printf("[PurchaseArrival] Failed to send notification: %v\n", err)
 				}
 			}

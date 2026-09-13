@@ -21,8 +21,9 @@ export const ManagerConfirmationAPI = {
     collection: ManagerConfirmableCollection,
     recordId: string,
     decision: ManagerConfirmationDecision,
+    reason?: string,
   ) => pb.send<ManagerConfirmationResult>('/api/erp/manager-confirmations', {
     method: 'POST',
-    body: { collection, recordId, decision },
+    body: { collection, recordId, decision, reason },
   }),
 };

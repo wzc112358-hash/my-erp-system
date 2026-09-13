@@ -93,7 +93,7 @@ func RegisterPurchasePaymentHooks(app core.App) {
 				message := fmt.Sprintf("管理已确认您的采购付款申请，付款金额：%.2f", amount)
 
 				log.Printf("[PurchasePayment] Sending notification to %s: %s\n", creatorId, title)
-				if err := CreateNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {
+				if err := CreatePurchasingNotification(app, "manager_confirm", title, message, creatorId, ""); err != nil {
 					log.Printf("[PurchasePayment] Failed to send notification: %v\n", err)
 				}
 			}

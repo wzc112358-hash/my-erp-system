@@ -139,6 +139,14 @@ type ErpIdentity = {
 
 const tokenCache = new Map<string, { expiresAt: number; identity: ErpIdentity }>();
 const TOKEN_CACHE_LIMIT = 500;
+const DEFAULT_ALLOWED_ORIGINS = 'https://erp.henghuacheng.cn';
+
+const allowedCorsOrigins = (env: Record<string, string | undefined>) => new Set(
+  String(env.ERP_ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS)
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
 
 const authenticateErpToken = async ({
   request,
@@ -207,8 +215,15 @@ export const createBidApiServer = ({
   });
   const localHelperAssessor = createDefaultBidAssessor({ env });
   const localHelperPairing = createLocalHelperPairing({ client });
+  const allowedOrigins = allowedCorsOrigins(env);
   const server = http.createServer(async (request, response) => {
-    response.setHeader('Access-Control-Allow-Origin', String(request.headers.origin || '*'));
+    const origin = String(request.headers.origin || '').trim();
+    response.setHeader('Vary', 'Origin');
+    if (origin && !allowedOrigins.has(origin)) {
+      json(response, 403, { error: 'origin not allowed' });
+      return;
+    }
+    if (origin) response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-ERP-Region');
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (request.method === 'OPTIONS') {
@@ -378,6 +393,11 @@ export const createBidApiServer = ({
       server.listen(port, host, resolve);
     }),
     stop: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
-    url: () => `http://${host}:${port}`,
+    url: () => {
+      const address = server.address();
+      const boundPort = typeof address === 'object' && address ? address.port : port;
+      const browserHost = host === '0.0.0.0' ? '127.0.0.1' : host;
+      return `http://${browserHost}:${boundPort}`;
+    },
   };
 };

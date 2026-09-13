@@ -18,10 +18,12 @@ export const SalesContractAPI = {
     const filters: string[] = [];
 
     if (params.search) {
-      filters.push(`(no ~ "${params.search}" || product_name ~ "${params.search}")`);
+      filters.push(pb.filter('(no ~ {:search} || product_name ~ {:search})', {
+        search: params.search,
+      }));
     }
     if (params.status) {
-      filters.push(`status = "${params.status}"`);
+      filters.push(pb.filter('status = {:status}', { status: params.status }));
     }
 
     const result = await pb.collection('sales_contracts').getList<SalesContract>(
@@ -105,32 +107,23 @@ export const SalesContractAPI = {
   },
 
   getShipments: async (contractId: string) => {
-    return pb.collection('sales_shipments').getList<SalesShipment>(
-      1,
-      100,
-      {
-        filter: `sales_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('sales_shipments').getFullList<SalesShipment>({
+      filter: pb.filter('sales_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 
   getInvoices: async (contractId: string) => {
-    return pb.collection('sale_invoices').getList<SaleInvoice>(
-      1,
-      100,
-      {
-        filter: `sales_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('sale_invoices').getFullList<SaleInvoice>({
+      filter: pb.filter('sales_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 
   getReceipts: async (contractId: string) => {
-    return pb.collection('sale_receipts').getList<SaleReceipt>(
-      1,
-      100,
-      {
-        filter: `sales_contract = "${contractId}"`,
-      }
-    );
+    const items = await pb.collection('sale_receipts').getFullList<SaleReceipt>({
+      filter: pb.filter('sales_contract = {:contractId}', { contractId }),
+    });
+    return { items };
   },
 };

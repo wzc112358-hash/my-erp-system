@@ -1,3 +1,9 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   frontend:
     build:
@@ -5,6 +11,13 @@ services:
       dockerfile: Dockerfile
     container_name: erp-frontend
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -28,6 +41,13 @@ services:
     volumes:
       - /root/my-erp-system/backend/pb_data_beijing:/pb_data_beijing
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -51,6 +71,13 @@ services:
     volumes:
       - /root/my-erp-system/backend/pb_data_lanzhou:/pb_data_lanzhou
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -79,6 +106,7 @@ services:
       - LOCAL_HELPER_LATEST_VERSION=${LOCAL_HELPER_LATEST_VERSION:-0.8.6}
       - ERP_BEIJING_API_URL=${ERP_BEIJING_API_URL:-https://api-beijing.henghuacheng.cn}
       - ERP_LANZHOU_API_URL=${ERP_LANZHOU_API_URL:-https://api-lanzhou.henghuacheng.cn}
+      - ERP_ALLOWED_ORIGINS=${ERP_ALLOWED_ORIGINS:-https://erp.henghuacheng.cn}
       - POCKETBASE_LANZHOU_URL=${POCKETBASE_LANZHOU_URL:-http://pocketbase-lanzhou:8090}
       - HCZ_LOCAL_AGENT_LLM_BASE_URL=${HCZ_LOCAL_AGENT_LLM_BASE_URL:-https://api.deepseek.com}
       - HCZ_LOCAL_AGENT_LLM_API_KEY=${HCZ_LOCAL_AGENT_LLM_API_KEY}
@@ -94,6 +122,13 @@ services:
     networks:
       - web
       - agent-internal
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8097/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.local-helper-agent.rule=Host(`agent.henghuacheng.cn`)"
@@ -116,6 +151,13 @@ services:
     networks:
       - web
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:

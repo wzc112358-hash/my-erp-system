@@ -122,6 +122,7 @@ export interface PurchaseInvoice {
   created: string;
   manager_confirmed?: string;
   is_verified?: string;
+  rejection_reason?: string;
   expand?: {
     purchase_contract?: {
       id: string;

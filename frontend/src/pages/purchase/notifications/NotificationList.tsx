@@ -1,19 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
+import { Alert, Table, Button, Space, App, Modal, Tag, Descriptions, Popconfirm } from 'antd';
 import { EyeOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
-import { NotificationAPI } from '@/api/notification';
+import { PurchasingNotificationAPI } from '@/api/notification';
 import { handleApiError } from '@/api/helpers';
 import { SalesContractAPI } from '@/api/sales-contract';
 import { useNotificationStore } from '@/stores/notification';
 import type { Notification } from '@/types/notification';
 import type { SalesContract } from '@/types/sales-contract';
+import { invoiceReviewEditPath } from '@/lib/invoice-review';
 
 const typeMap: Record<string, { text: string; color: string }> = {
   sales_contract_created: { text: '销售合同创建', color: 'blue' },
   sales_contract_reminder: { text: '销售合同提醒', color: 'blue' },
   exchange_rate_changed: { text: '汇率变更', color: 'orange' },
+  manager_rejected: { text: '经理驳回', color: 'red' },
 };
 
 export const NotificationList: React.FC = () => {
@@ -34,7 +36,7 @@ export const NotificationList: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await NotificationAPI.list({
+      const result = await PurchasingNotificationAPI.list({
         page,
         per_page: pageSize,
       });
@@ -55,12 +57,12 @@ export const NotificationList: React.FC = () => {
 
   const handleViewDetail = async (record: Notification) => {
     try {
-      const fullNotification = await NotificationAPI.getById(record.id);
+      const fullNotification = await PurchasingNotificationAPI.getById(record.id);
       setSelectedNotification(fullNotification);
       setDetailVisible(true);
       
       if (!record.is_read) {
-        await NotificationAPI.markAsRead(record.id);
+        await PurchasingNotificationAPI.markAsRead(record.id);
         decrementUnread();
         fetchData();
       }
@@ -72,7 +74,7 @@ export const NotificationList: React.FC = () => {
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await NotificationAPI.markAsRead(id);
+      await PurchasingNotificationAPI.markAsRead(id);
       message.success('标记已读成功');
       decrementUnread();
       fetchData();
@@ -85,7 +87,7 @@ export const NotificationList: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       const record = data.find(n => n.id === id);
-      await NotificationAPI.delete(id);
+      await PurchasingNotificationAPI.delete(id);
       if (record && !record.is_read) {
         decrementUnread();
       }
@@ -109,6 +111,15 @@ export const NotificationList: React.FC = () => {
     } finally {
       setContractLoading(false);
     }
+  };
+
+  const handleOpenRejectedInvoice = (recordCollection?: string, recordId?: string) => {
+    if (!recordId || recordCollection !== 'purchase_invoices') {
+      message.error('通知缺少发票定位信息，请从收票列表进入');
+      return;
+    }
+    setDetailVisible(false);
+    navigate(invoiceReviewEditPath('purchase_invoices', recordId));
   };
 
   const columns = [
@@ -209,6 +220,17 @@ export const NotificationList: React.FC = () => {
           <Button key="close" onClick={() => setDetailVisible(false)}>
             关闭
           </Button>,
+          selectedNotification?.type === 'manager_rejected'
+            && selectedNotification.record_id
+            && selectedNotification.record_collection === 'purchase_invoices' && (
+              <Button
+                key="resubmit"
+                type="primary"
+                onClick={() => handleOpenRejectedInvoice(selectedNotification.record_collection, selectedNotification.record_id)}
+              >
+                修改并重新提交
+              </Button>
+            ),
           selectedNotification?.sales_contract && (
             <Button
               key="contract"
@@ -253,6 +275,15 @@ export const NotificationList: React.FC = () => {
             <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 4 }}>
               {selectedNotification.message}
             </div>
+            {selectedNotification.type === 'manager_rejected' && selectedNotification.rejection_reason && (
+              <Alert
+                type="error"
+                showIcon
+                title="经理驳回原因"
+                description={selectedNotification.rejection_reason}
+                style={{ marginTop: 16 }}
+              />
+            )}
             {selectedNotification.expand?.sales_contract && (
               <div style={{ marginTop: 16 }}>
                 <strong>关联销售合同：</strong>
