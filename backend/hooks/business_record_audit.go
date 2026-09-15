@@ -42,7 +42,7 @@ func bindBusinessRecordCreateAudit(app core.App, config businessRecordAuditConfi
 		Func: func(e *core.RecordRequestEvent) error {
 			operatorID, operatorName, operatorRole := auditOperator(e.Auth)
 			if config.parentField == "" {
-				if duplicateErr := validateNewContractNumber(e.App, config, e.Record.GetString("no")); duplicateErr != nil {
+				if duplicateErr := validateNewContractNumber(e.App, config, e.Record.GetString("no"), e.Record.GetString("product_name")); duplicateErr != nil {
 					snapshot, _ := recordSnapshotJSON(e.Record)
 					if logErr := saveRecordOperationLog(e.App, config, e.Record, "create_failed", "failed", "", duplicateErr.Error(), operatorID, operatorName, operatorRole, string(snapshot)); logErr != nil {
 						log.Printf("[BusinessAudit] failed to log duplicate %s: %v", config.collection, logErr)
@@ -97,9 +97,10 @@ func bindBusinessRecordUpdateAudit(app core.App, config businessRecordAuditConfi
 	})
 }
 
-func validateNewContractNumber(app core.App, config businessRecordAuditConfig, contractNo string) error {
-	normalized := normalizeContractIdentity(contractNo)
-	if normalized == "" {
+func validateNewContractNumber(app core.App, config businessRecordAuditConfig, contractNo, productName string) error {
+	normalizedNo := normalizeContractIdentity(contractNo)
+	normalizedProduct := normalizeContractIdentity(productName)
+	if normalizedNo == "" || normalizedProduct == "" {
 		return nil
 	}
 	records, err := app.FindRecordsByFilter(config.collection, "id != ''", "", 0, 0)
@@ -107,11 +108,12 @@ func validateNewContractNumber(app core.App, config businessRecordAuditConfig, c
 		return err
 	}
 	for _, record := range records {
-		if normalizeContractIdentity(record.GetString("no")) == normalized {
+		if normalizeContractIdentity(record.GetString("no")) == normalizedNo &&
+			normalizeContractIdentity(record.GetString("product_name")) == normalizedProduct {
 			return validation.Errors{
 				"no": validation.NewError(
-					"duplicate_contract_no",
-					fmt.Sprintf("%s号 %s 已存在，请打开原合同补充数据，不要重复创建", config.label, contractNo),
+					"duplicate_contract_identity",
+					fmt.Sprintf("%s号 %s 与品名 %s 的组合已存在，请打开原合同补充数据，不要重复创建", config.label, contractNo, productName),
 				),
 			}
 		}

@@ -34,7 +34,7 @@ func TestAuditOperatorPrefersUserNameAndFallsBackToName(t *testing.T) {
 	}
 }
 
-func TestDuplicateContractNumberValidationDoesNotChangeExistingRecords(t *testing.T) {
+func TestDuplicateContractIdentityValidationDoesNotChangeExistingRecords(t *testing.T) {
 	app := newContractOperationsTestApp(t)
 	defer app.Cleanup()
 
@@ -44,10 +44,13 @@ func TestDuplicateContractNumberValidationDoesNotChangeExistingRecords(t *testin
 		t.Fatal("sales contract audit configuration missing")
 	}
 
-	if err := validateNewContractNumber(app, config, "  lzx 2507057  "); err == nil {
-		t.Fatal("normalized duplicate contract number was accepted")
+	if err := validateNewContractNumber(app, config, "  lzx 2507057  ", " 硫 酸 亚 铁 "); err == nil {
+		t.Fatal("normalized duplicate contract number and product were accepted")
 	}
-	if err := validateNewContractNumber(app, config, "LZX2507058"); err != nil {
+	if err := validateNewContractNumber(app, config, "LZX2507057", "其他产品"); err != nil {
+		t.Fatalf("same contract number with another product was rejected: %v", err)
+	}
+	if err := validateNewContractNumber(app, config, "LZX2507058", "硫酸亚铁"); err != nil {
 		t.Fatalf("unique contract number was rejected: %v", err)
 	}
 

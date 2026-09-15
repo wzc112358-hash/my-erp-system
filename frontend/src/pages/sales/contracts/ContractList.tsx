@@ -176,10 +176,10 @@ export const ContractList: React.FC = () => {
 
   const handleFormFinish = async (values: SalesContractFormData) => {
     if (!editingContract) {
-      const duplicate = findDuplicateContractNumber(data, values.no);
+      const duplicate = findDuplicateContractNumber(data, values.no, values.product_name);
       if (duplicate) {
         modal.warning({
-          title: '销售合同号已存在',
+          title: '销售合同号和品名已存在',
           content: `合同 ${duplicate.no}（${duplicate.product_name}）已经存在，请打开原合同补充数据，不要重复创建。`,
           okText: '知道了',
         });
@@ -220,7 +220,7 @@ export const ContractList: React.FC = () => {
     } catch (error) {
       const errorMessage = getPbErrorMessage(error, editingContract ? '更新失败' : '创建失败');
       if (!editingContract && errorMessage.includes('已存在')) {
-        modal.warning({ title: '销售合同号已存在', content: errorMessage, okText: '知道了' });
+        modal.warning({ title: '销售合同号和品名已存在', content: errorMessage, okText: '知道了' });
       } else {
         message.error(errorMessage);
       }
