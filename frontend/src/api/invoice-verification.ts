@@ -1,6 +1,6 @@
 import { pb } from '@/lib/pocketbase';
 
-export type InvoiceVerificationCollection = 'sale_invoices' | 'purchase_invoices';
+export type InvoiceVerificationCollection = 'purchase_invoices';
 export type InvoiceVerificationStatus = 'yes' | 'no';
 
 export interface InvoiceVerificationResult {

@@ -12,6 +12,12 @@ var (
 	errRelationManagerRequired = errors.New("manager role required")
 )
 
+const pendingContractRelationKey = "__pending_contract_relation"
+
+func contractRelationWasRequested(record *core.Record) bool {
+	return record != nil && record.GetString(pendingContractRelationKey) != ""
+}
+
 // RegisterContractRelationHooks treats the old single-value relation fields as
 // an input compatibility layer only. New relationships are persisted in
 // business_deals; the old fields remain frozen for rollback and reconciliation.
@@ -41,6 +47,7 @@ func bindContractRelationCreate(app core.App, collection, field string) {
 
 			// Do not persist a new legacy edge. The selected counterpart is added
 			// to the overall deal inside the same transaction as contract create.
+			e.Record.SetRaw(pendingContractRelationKey, counterpartID)
 			e.Record.Set(field, "")
 			return runRecordRequestTransaction(e, func(txApp core.App) error {
 				if err := e.Next(); err != nil {

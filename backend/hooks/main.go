@@ -1,9 +1,9 @@
 package hooks
 
 import (
-	"fmt"
 	"log"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -33,9 +33,15 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	log.Println("Hooks registered successfully")
 }
 
-func GetUsersByType(app *pocketbase.PocketBase, userType string) ([]*core.Record, error) {
-	filter := fmt.Sprintf("type = '%s'", userType)
-	records, err := GetRecordsByFilter(app, "users", filter)
+func GetUsersByType(app core.App, userType string) ([]*core.Record, error) {
+	records, err := app.FindRecordsByFilter(
+		"users",
+		"type = {:userType}",
+		"-created",
+		0,
+		0,
+		dbx.Params{"userType": userType},
+	)
 	if err != nil {
 		log.Printf("[GetUsersByType] Failed to get users: %v\n", err)
 		return nil, err
@@ -92,47 +98,23 @@ func CreatePurchasingNotification(app core.App, notificationType, title, message
 	return app.Save(notification)
 }
 
-func GetRecordsByFilter(app core.App, collectionName, filter string) ([]*core.Record, error) {
-	return app.FindRecordsByFilter(
-		collectionName,
-		filter,
-		"-created",
-		0,
-		0,
-	)
-}
-
-func CountRecords(app core.App, collectionName, filter string) (int, error) {
-	records, err := GetRecordsByFilter(app, collectionName, filter)
-	if err != nil {
-		return 0, err
-	}
-	return len(records), nil
-}
-
-func GetContractsByDatePrefix(app core.App, collectionName, prefix string) ([]*core.Record, error) {
-	filter := "no ~ '" + prefix + "%'"
-	return GetRecordsByFilter(app, collectionName, filter)
-}
-
 func GetRecordsByField(app core.App, collectionName, fieldName, fieldValue string) ([]*core.Record, error) {
-	filter := fieldName + " = '" + fieldValue + "'"
+	filter := fieldName + " = {:fieldValue}"
 	if collection, err := app.FindCollectionByNameOrId(collectionName); err == nil && collection.Fields.GetByName("deleted_at") != nil {
 		filter += " && deleted_at = ''"
 	}
-	return GetRecordsByFilter(app, collectionName, filter)
+	return app.FindRecordsByFilter(
+		collectionName,
+		filter,
+		"",
+		0,
+		0,
+		dbx.Params{"fieldValue": fieldValue},
+	)
 }
 
 func GetRecordById(app core.App, collectionName, id string) (*core.Record, error) {
 	return app.FindRecordById(collectionName, id)
-}
-
-func SaveRecord(app core.App, record *core.Record) error {
-	return app.Save(record)
-}
-
-func GetCollection(app core.App, collectionName string) (*core.Collection, error) {
-	return app.FindCollectionByNameOrId(collectionName)
 }
 
 func SumField(records []*core.Record, fieldName string) float64 {
@@ -141,30 +123,6 @@ func SumField(records []*core.Record, fieldName string) float64 {
 		total += r.GetFloat(fieldName)
 	}
 	return total
-}
-
-func HasField(record *core.Record, fieldName string) bool {
-	return record != nil && record.Get(fieldName) != nil
-}
-
-func GetStringField(record *core.Record, fieldName string) string {
-	if record == nil {
-		return ""
-	}
-	return record.GetString(fieldName)
-}
-
-func GetFloatField(record *core.Record, fieldName string) float64 {
-	if record == nil {
-		return 0
-	}
-	return record.GetFloat(fieldName)
-}
-
-func SetFields(record *core.Record, fields map[string]any) {
-	for k, v := range fields {
-		record.Set(k, v)
-	}
 }
 
 // finishPostCommit keeps a successfully persisted record from being reported as

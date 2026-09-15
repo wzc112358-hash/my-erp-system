@@ -158,7 +158,9 @@ func confirmBusinessRecordWithReason(
 		if isInvoiceReviewCollection(collectionName) {
 			if decision == "rejected" {
 				record.Set("rejection_reason", reason)
-				record.Set("is_verified", "no")
+				if collectionName == "purchase_invoices" {
+					record.Set("is_verified", "no")
+				}
 			} else {
 				record.Set("rejection_reason", "")
 			}

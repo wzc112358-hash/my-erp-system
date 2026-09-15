@@ -16,7 +16,6 @@ func TestRejectInvoiceRequiresReason(t *testing.T) {
 	invoice := newSalesChild(t, app, "sale_invoices", contract.Id, map[string]any{
 		"manager_confirmed": "pending",
 		"creator_user":      "sales-user",
-		"is_verified":       "yes",
 	})
 
 	_, err := confirmBusinessRecordWithReason(app, "sale_invoices", invoice.Id, "rejected", "manager-a", "经理甲", "manager", "  ")
@@ -72,7 +71,7 @@ func TestRejectInvoiceCreatesRoleSpecificNotification(t *testing.T) {
 			} else {
 				contract := newDuplicateSalesContract(t, app, "")
 				invoiceID = newSalesChild(t, app, test.collection, contract.Id, map[string]any{
-					"no": "SI-01", "manager_confirmed": "pending", "creator_user": test.creator, "is_verified": "yes",
+					"no": "SI-01", "manager_confirmed": "pending", "creator_user": test.creator,
 				}).Id
 			}
 
@@ -86,8 +85,14 @@ func TestRejectInvoiceCreatesRoleSpecificNotification(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if invoice.GetString("manager_confirmed") != "rejected" || invoice.GetString("rejection_reason") != reason || invoice.GetString("is_verified") != "no" {
-				t.Fatalf("unexpected rejected invoice: status=%q reason=%q verified=%q", invoice.GetString("manager_confirmed"), invoice.GetString("rejection_reason"), invoice.GetString("is_verified"))
+			if invoice.GetString("manager_confirmed") != "rejected" || invoice.GetString("rejection_reason") != reason {
+				t.Fatalf("unexpected rejected invoice: status=%q reason=%q", invoice.GetString("manager_confirmed"), invoice.GetString("rejection_reason"))
+			}
+			if test.purchase && invoice.GetString("is_verified") != "no" {
+				t.Fatalf("purchase invoice verification was not reset: got %q", invoice.GetString("is_verified"))
+			}
+			if !test.purchase && invoice.Collection().Fields.GetByName("is_verified") != nil {
+				t.Fatal("sales invoice unexpectedly exposes purchase-only verification field")
 			}
 
 			notifications, err := app.FindRecordsByFilter(test.notificationCollection, "record_id = {:id}", "", 0, 0, map[string]any{"id": invoiceID})
@@ -122,7 +127,6 @@ func TestResubmitRejectedInvoiceReturnsToPendingAndWritesAudit(t *testing.T) {
 		"manager_confirmed": "rejected",
 		"creator_user":      "sales-user",
 		"rejection_reason":  "附件模糊",
-		"is_verified":       "yes",
 	})
 
 	result, err := resubmitInvoice(app, "sale_invoices", invoice.Id, "sales-user", "销售甲", "sales")
@@ -134,8 +138,11 @@ func TestResubmitRejectedInvoiceReturnsToPendingAndWritesAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.GetString("manager_confirmed") != "pending" || updated.GetString("is_verified") != "no" || updated.GetString("rejection_reason") != "附件模糊" {
-		t.Fatalf("unexpected resubmitted invoice: status=%q verified=%q reason=%q", updated.GetString("manager_confirmed"), updated.GetString("is_verified"), updated.GetString("rejection_reason"))
+	if updated.GetString("manager_confirmed") != "pending" || updated.GetString("rejection_reason") != "附件模糊" {
+		t.Fatalf("unexpected resubmitted invoice: status=%q reason=%q", updated.GetString("manager_confirmed"), updated.GetString("rejection_reason"))
+	}
+	if updated.Collection().Fields.GetByName("is_verified") != nil {
+		t.Fatal("sales invoice unexpectedly exposes purchase-only verification field")
 	}
 
 	logs, err := app.FindRecordsByFilter("contract_operation_logs", "record_id = {:id} && operation = 'resubmit_record'", "", 0, 0, map[string]any{"id": invoice.Id})
@@ -156,5 +163,45 @@ func TestResubmitRejectedInvoiceReturnsToPendingAndWritesAudit(t *testing.T) {
 	}
 	if approved.GetString("manager_confirmed") != "approved" || approved.GetString("rejection_reason") != "" {
 		t.Fatalf("unexpected approved invoice: status=%q reason=%q", approved.GetString("manager_confirmed"), approved.GetString("rejection_reason"))
+	}
+}
+
+func TestResubmitRejectedPurchaseInvoiceResetsVerification(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+
+	contracts, err := app.FindCollectionByNameOrId("purchase_contracts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := core.NewRecord(contracts)
+	contract.Set("no", "CG-RESUBMIT-01")
+	contract.Set("product_name", "抗氧剂")
+	contract.Set("supplier", "supplier-a")
+	contract.Set("total_quantity", 2)
+	contract.Set("total_amount", 20000)
+	if err := app.Save(contract); err != nil {
+		t.Fatal(err)
+	}
+
+	invoice := newPurchaseChild(t, app, "purchase_invoices", contract.Id, map[string]any{
+		"no":                "PI-RESUBMIT-01",
+		"manager_confirmed": "rejected",
+		"creator_user":      "purchase-user",
+		"rejection_reason":  "附件模糊",
+		"is_verified":       "yes",
+	})
+
+	result, err := resubmitInvoice(app, "purchase_invoices", invoice.Id, "purchase-user", "采购甲", "purchasing")
+	if err != nil || !result.Changed || result.Status != "pending" {
+		t.Fatalf("resubmit purchase invoice: result=%#v err=%v", result, err)
+	}
+
+	updated, err := app.FindRecordById("purchase_invoices", invoice.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.GetString("manager_confirmed") != "pending" || updated.GetString("is_verified") != "no" {
+		t.Fatalf("unexpected purchase invoice state: status=%q verified=%q", updated.GetString("manager_confirmed"), updated.GetString("is_verified"))
 	}
 }

@@ -66,7 +66,7 @@ func TestSoftDeleteAndRestoreChildRecalculatesContract(t *testing.T) {
 
 	contract := newDuplicateSalesContract(t, app, "")
 	shipment := newSalesChild(t, app, "sales_shipments", contract.Id, map[string]any{"quantity": 3})
-	if err := recalculateMergedContract(app, "sales", contract); err != nil {
+	if err := recalculateContractProgress(app, "sales", contract); err != nil {
 		t.Fatal(err)
 	}
 

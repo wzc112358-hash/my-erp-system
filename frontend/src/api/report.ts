@@ -1,6 +1,6 @@
 import { fetchAllByFieldBatches } from '@/api/helpers';
 import { businessMonthKey } from '@/lib/business-month';
-import { calculateBusinessDealProfit } from '@/lib/contract-profit';
+import { calculateBusinessDealFinancials } from '@/lib/business-deal-financials';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { pb } from '@/lib/pocketbase';
 import type { BusinessDeal } from '@/types/comparison';
@@ -225,42 +225,15 @@ const buildReport = async (
     if (!sales.length || !purchases.length) return;
     const salesDetails = sales.map((contract) => ({ contract, fields: salesFields(contract, activity, rate) }));
     const purchaseDetails = purchases.map((contract) => ({ contract, ...purchaseFields(contract, activity, rate) }));
-    const salesAmounts = salesDetails.reduce((sum, row) => ({
-      incTax: sum.incTax + row.fields.salesTaxTotalAmount,
-      exTax: sum.exTax + row.fields.salesTotalAmount,
-    }), { incTax: 0, exTax: 0 });
-    const purchaseAmount = purchaseDetails.reduce((sum, row) => sum + row.fields.purchaseTaxTotalAmount, 0);
-    const costs = purchaseDetails.reduce((sum, row) => ({
-      freight: sum.freight + row.costs.freight,
-      miscellaneous: sum.miscellaneous + row.costs.miscellaneous,
-      tariff: sum.tariff + row.costs.tariff,
-      valueAddedTax: sum.valueAddedTax + row.costs.valueAddedTax,
-    }), { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 });
-    const profit = calculateBusinessDealProfit({
-      salesAmountIncTax: salesAmounts.incTax,
-      salesAmountExTax: salesAmounts.exTax,
-      purchaseAmountIncTax: purchaseAmount,
-      ...costs,
+    const financials = calculateBusinessDealFinancials({
+      salesContracts: sales,
+      purchaseContracts: purchases,
+      salesShipments: sales.flatMap((contract) => activity.shipmentsBySales.get(contract.id) || []),
+      purchaseArrivals: purchases.flatMap((contract) => activity.arrivalsByPurchase.get(contract.id) || []),
+      exchangeRate: rate,
       taxRate: deal.tax_rate,
     });
-    const realizedSales = salesDetails.reduce((sum, row) => {
-      const shipped = (activity.shipmentsBySales.get(row.contract.id) || []).reduce((total, shipment) => total + (Number(shipment.quantity) || 0), 0);
-      const amount = row.fields.salesUnitPrice * shipped;
-      sum.incTax += row.contract.is_price_excluding_tax ? amount * 1.13 : amount;
-      sum.exTax += row.contract.is_price_excluding_tax ? amount : amount / 1.13;
-      return sum;
-    }, { incTax: 0, exTax: 0 });
-    const realizedPurchase = purchaseDetails.reduce((sum, row) => {
-      const ratio = row.contract.total_quantity > 0 ? row.costs.quantity / row.contract.total_quantity : 0;
-      return sum + row.fields.purchaseTaxTotalAmount * ratio;
-    }, 0);
-    const realized = calculateBusinessDealProfit({
-      salesAmountIncTax: realizedSales.incTax,
-      salesAmountExTax: realizedSales.exTax,
-      purchaseAmountIncTax: realizedPurchase,
-      ...costs,
-      taxRate: deal.tax_rate,
-    });
+    const { profit, realizedProfit } = financials;
     const rowCount = Math.max(salesDetails.length, purchaseDetails.length);
     for (let index = 0; index < rowCount; index += 1) {
       const salesRow = salesDetails[index];
@@ -278,7 +251,7 @@ const buildReport = async (
         tax: index === 0 ? profit.taxAmount : 0,
         profit: index === 0 ? profit.operatingProfit : 0,
         netProfit: index === 0 ? profit.netProfit : 0,
-        realizedProfit: index === 0 ? realized.netProfit : 0,
+        realizedProfit: index === 0 ? realizedProfit.netProfit : 0,
         salesRowSpan: 1,
         purchaseRowSpan: 1,
         isSalesRow: Boolean(salesRow),

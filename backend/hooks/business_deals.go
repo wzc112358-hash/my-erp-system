@@ -201,22 +201,35 @@ func withoutContractID(ids []string, contractID string) []string {
 }
 
 func findBusinessDealForContract(app core.App, contractType, contractID string) (*businessDealMembership, error) {
-	deals, err := activeBusinessDeals(app)
+	field := "sales_contracts"
+	if contractType == "purchase" {
+		field = "purchase_contracts"
+	} else if contractType != "sales" {
+		return nil, fmt.Errorf("unsupported contract type %q", contractType)
+	}
+	deals, err := app.FindRecordsByFilter(
+		"business_deals",
+		"deleted_at = '' && "+field+".id ?= {:contractId}",
+		"created",
+		2,
+		0,
+		dbx.Params{"contractId": contractID},
+	)
 	if err != nil {
 		return nil, err
 	}
-	for _, deal := range deals {
-		sales := deal.GetStringSlice("sales_contracts")
-		purchases := deal.GetStringSlice("purchase_contracts")
-		ids := sales
-		if contractType == "purchase" {
-			ids = purchases
-		}
-		if containsContractID(ids, contractID) {
-			return &businessDealMembership{deal: deal, sales: sales, purchases: purchases}, nil
-		}
+	if len(deals) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+	if len(deals) > 1 {
+		return nil, fmt.Errorf("contract %s belongs to multiple active business deals", contractID)
+	}
+	deal := deals[0]
+	return &businessDealMembership{
+		deal:      deal,
+		sales:     deal.GetStringSlice("sales_contracts"),
+		purchases: deal.GetStringSlice("purchase_contracts"),
+	}, nil
 }
 
 func contractIsInBusinessDeal(app core.App, contractType, contractID string) bool {

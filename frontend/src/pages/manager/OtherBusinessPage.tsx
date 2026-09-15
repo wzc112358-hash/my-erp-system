@@ -18,46 +18,61 @@ const bidResultMap: Record<string, { label: string; color: string }> = {
 const fmtDate = (v?: string) => v?.split(' ')[0] || '';
 const fmtNum = (v?: number) => v != null ? v : '';
 
-const exportServiceOrders = (contract: ServiceContract, orders: ServiceOrder[]) => {
-  const rows = orders.map((o, i) => {
-    const base: Record<string, unknown> = {
-      '序号': i + 1,
-      '订单号': o.order_no,
-      '负责人': o.manager || '',
-      '单价': fmtNum(o.unit_price),
-      '数量': fmtNum(o.quantity),
-      '服务费比例(%)': fmtNum(o.service_fee_rate),
-    };
-    if (contract.is_cross_border) {
-      Object.assign(base, {
-        '收款金额(USD)': fmtNum(o.receipt_amount),
-        '收款时间': fmtDate(o.receipt_date),
-        '出港时间': fmtDate(o.departure_date),
-        '客户付款时间': fmtDate(o.customer_payment_date),
-        '银行收汇时间': fmtDate(o.bank_settlement_date),
-        '实际收款金额(USD)': fmtNum(o.actual_receipt_amount_usd),
-        '兑换人民币金额': fmtNum(o.receipt_amount_rmb),
-        '兑换日期': fmtDate(o.receipt_rmb_date),
-        '开票金额(RMB)': fmtNum(o.invoice_amount),
-        '佣金发票提供时间': fmtDate(o.invoice_date),
-        '报税金额(RMB)': fmtNum(o.tax_amount),
-        '报税时间': fmtDate(o.tax_date),
-      });
-    } else {
-      Object.assign(base, {
-        '总金额': fmtNum(o.total_amount),
-        '开票时间': fmtDate(o.invoice_time),
-        '收款时间': fmtDate(o.payment_date),
-        '收款金额': fmtNum(o.payment_amount),
-      });
-    }
-    base['备注'] = o.remark || '';
-    return base;
-  });
+const buildServiceOrderExportRow = (
+  contract: ServiceContract,
+  order: ServiceOrder,
+  index: number,
+  includeContract: boolean,
+): Record<string, unknown> => {
+  const row: Record<string, unknown> = {
+    ...(includeContract ? {
+      '合同编号': contract.no,
+      '客户': contract.expand?.customer?.name || '',
+    } : {}),
+    '序号': index + 1,
+    '订单号': order.order_no,
+    '负责人': order.manager || '',
+    '单价': fmtNum(order.unit_price),
+    '数量': fmtNum(order.quantity),
+    '服务费比例(%)': fmtNum(order.service_fee_rate),
+  };
+  if (contract.is_cross_border) {
+    Object.assign(row, {
+      '收款金额(USD)': fmtNum(order.receipt_amount),
+      '收款时间': fmtDate(order.receipt_date),
+      '出港时间': fmtDate(order.departure_date),
+      '客户付款时间': fmtDate(order.customer_payment_date),
+      '银行收汇时间': fmtDate(order.bank_settlement_date),
+      '实际收款金额(USD)': fmtNum(order.actual_receipt_amount_usd),
+      '兑换人民币金额': fmtNum(order.receipt_amount_rmb),
+      '兑换日期': fmtDate(order.receipt_rmb_date),
+      '开票金额(RMB)': fmtNum(order.invoice_amount),
+      '佣金发票提供时间': fmtDate(order.invoice_date),
+      '报税金额(RMB)': fmtNum(order.tax_amount),
+      '报税时间': fmtDate(order.tax_date),
+    });
+  } else {
+    Object.assign(row, {
+      '总金额': fmtNum(order.total_amount),
+      '开票时间': fmtDate(order.invoice_time),
+      '收款时间': fmtDate(order.payment_date),
+      '收款金额': fmtNum(order.payment_amount),
+    });
+  }
+  row['备注'] = order.remark || '';
+  return row;
+};
+
+const writeServiceOrders = (rows: Record<string, unknown>[], filename: string) => {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '佣金子订单');
-  XLSX.writeFile(wb, `${contract.no}_佣金子订单.xlsx`);
+  XLSX.writeFile(wb, filename);
+};
+
+const exportServiceOrders = (contract: ServiceContract, orders: ServiceOrder[]) => {
+  const rows = orders.map((order, index) => buildServiceOrderExportRow(contract, order, index, false));
+  writeServiceOrders(rows, `${contract.no}_佣金子订单.xlsx`);
 };
 
 const exportExpenses = (records: ExpenseRecord[]) => {
@@ -227,6 +242,12 @@ const OtherBusinessPage: React.FC = () => {
         if (servicesRes.status === 'fulfilled') setServiceContracts(servicesRes.value.items);
         if (expensesRes.status === 'fulfilled') setExpenseRecords(expensesRes.value.items);
         if (biddingsRes.status === 'fulfilled') setBiddingRecords(biddingsRes.value.items);
+        const failures = [servicesRes, expensesRes, biddingsRes]
+          .filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (failures.length > 0) {
+          console.error('Fetch other business partially failed:', failures.map((failure) => failure.reason));
+          message.error('部分业务数据加载失败，请重试');
+        }
       } catch (error) {
         console.error('Fetch other business error:', error);
         message.error('加载数据失败');
@@ -246,11 +267,33 @@ const OtherBusinessPage: React.FC = () => {
       try {
         const result = await ServiceContractAPI.getOrders(record.id);
         setServiceOrders(result.items);
-      } catch {
+      } catch (error) {
+        console.error('Fetch service orders error:', error);
         setServiceOrders([]);
+        message.error('子订单加载失败，请重试');
       } finally {
         setOrdersLoading(false);
       }
+    }
+  };
+
+  const handleExportAllServiceOrders = async () => {
+    try {
+      const results = await Promise.all(serviceContracts.map(async (contract) => ({
+        contract,
+        orders: (await ServiceContractAPI.getOrders(contract.id)).items,
+      })));
+      const rows = results.flatMap(({ contract, orders }) => (
+        orders.map((order, index) => buildServiceOrderExportRow(contract, order, index, true))
+      ));
+      if (rows.length === 0) {
+        message.warning('无数据可导出');
+        return;
+      }
+      writeServiceOrders(rows, '佣金合同全部子订单.xlsx');
+    } catch (error) {
+      console.error('Export all service orders error:', error);
+      message.error('导出失败，子订单未完整加载，请重试');
     }
   };
 
@@ -471,60 +514,7 @@ const OtherBusinessPage: React.FC = () => {
                 locale={{ emptyText: '暂无数据' }}
                 title={() => (
                   <Flex justify="flex-end">
-                    <Button size="small" icon={<DownloadOutlined />} onClick={() => {
-                      const allOrders: ServiceOrder[] = [];
-                      const contracts = serviceContracts;
-                      Promise.all(contracts.map(c => ServiceContractAPI.getOrders(c.id).then(r => r.items).catch(() => [])))
-                        .then(results => {
-                          results.forEach(items => allOrders.push(...items));
-                          if (allOrders.length === 0) { message.warning('无数据可导出'); return; }
-                          const rows: Record<string, unknown>[] = [];
-                          contracts.forEach(c => {
-                            const orders = allOrders.filter(o => o.service_contract === c.id);
-                            orders.forEach((o, i) => {
-                              const base: Record<string, unknown> = {
-                                '合同编号': c.no,
-                                '客户': c.expand?.customer?.name || '',
-                                '序号': i + 1,
-                                '订单号': o.order_no,
-                                '负责人': o.manager || '',
-                                '单价': fmtNum(o.unit_price),
-                                '数量': fmtNum(o.quantity),
-                                '服务费比例(%)': fmtNum(o.service_fee_rate),
-                              };
-                              if (c.is_cross_border) {
-                                Object.assign(base, {
-                                  '收款金额(USD)': fmtNum(o.receipt_amount),
-                                  '收款时间': fmtDate(o.receipt_date),
-                                  '出港时间': fmtDate(o.departure_date),
-                                  '客户付款时间': fmtDate(o.customer_payment_date),
-                                  '银行收汇时间': fmtDate(o.bank_settlement_date),
-                                  '实际收款金额(USD)': fmtNum(o.actual_receipt_amount_usd),
-                                  '兑换人民币金额': fmtNum(o.receipt_amount_rmb),
-                                  '兑换日期': fmtDate(o.receipt_rmb_date),
-                                  '开票金额(RMB)': fmtNum(o.invoice_amount),
-                                  '佣金发票提供时间': fmtDate(o.invoice_date),
-                                  '报税金额(RMB)': fmtNum(o.tax_amount),
-                                  '报税时间': fmtDate(o.tax_date),
-                                });
-                              } else {
-                                Object.assign(base, {
-                                  '总金额': fmtNum(o.total_amount),
-                                  '开票时间': fmtDate(o.invoice_time),
-                                  '收款时间': fmtDate(o.payment_date),
-                                  '收款金额': fmtNum(o.payment_amount),
-                                });
-                              }
-                              base['备注'] = o.remark || '';
-                              rows.push(base);
-                            });
-                          });
-                          const ws = XLSX.utils.json_to_sheet(rows);
-                          const wb = XLSX.utils.book_new();
-                          XLSX.utils.book_append_sheet(wb, ws, '佣金子订单');
-                          XLSX.writeFile(wb, '佣金合同全部子订单.xlsx');
-                        });
-                    }}>
+                    <Button size="small" icon={<DownloadOutlined />} onClick={handleExportAllServiceOrders}>
                       导出全部子订单
                     </Button>
                   </Flex>

@@ -156,7 +156,9 @@ func resubmitInvoice(
 		}
 
 		record.Set("manager_confirmed", "pending")
-		record.Set("is_verified", "no")
+		if collectionName == "purchase_invoices" {
+			record.Set("is_verified", "no")
+		}
 		if saveErr := txApp.Save(record); saveErr != nil {
 			return saveErr
 		}

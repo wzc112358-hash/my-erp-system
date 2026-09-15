@@ -304,7 +304,7 @@ func recalculateParentContract(app core.App, contractType, contractID string) er
 	if err != nil || contract.GetString("deleted_at") != "" {
 		return nil
 	}
-	return recalculateMergedContract(app, contractType, contract)
+	return recalculateContractProgress(app, contractType, contract)
 }
 
 func listRecycleBin(app core.App) ([]recycleBinItem, error) {

@@ -16,7 +16,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom', 'zustand'],
-          'data-vendor': ['pocketbase', 'axios'],
+          'data-vendor': ['pocketbase'],
         },
       },
     },

@@ -3,12 +3,11 @@ package hooks
 import (
 	"log"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
+func RegisterSalesShipmentHooks(app core.App) {
 	app.OnRecordCreate("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			contractId := e.Record.GetString("sales_contract")
@@ -20,13 +19,13 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			contract, err := GetRecordById(app, "sales_contracts", contractId)
 			if err != nil {
 				log.Printf("[SalesShipment] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			shipments, err := GetRecordsByField(app, "sales_shipments", "sales_contract", contractId)
 			if err != nil {
 				log.Printf("[SalesShipment] Failed to get shipments: %v\n", err)
-				shipments = []*core.Record{}
+				return err
 			}
 
 			newQuantity := e.Record.GetFloat("quantity")
@@ -44,6 +43,7 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdate("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			rememberChildContractBeforeUpdate(e, "sales_contract")
 			contractId := e.Record.GetString("sales_contract")
 			if contractId == "" {
 				log.Println("[SalesShipment] sales_contract is empty")
@@ -53,13 +53,13 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			contract, err := GetRecordById(app, "sales_contracts", contractId)
 			if err != nil {
 				log.Printf("[SalesShipment] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			shipments, err := GetRecordsByField(app, "sales_shipments", "sales_contract", contractId)
 			if err != nil {
 				log.Printf("[SalesShipment] Failed to get shipments: %v\n", err)
-				shipments = []*core.Record{}
+				return err
 			}
 
 			currentShipmentId := e.Record.Id
@@ -79,7 +79,7 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 	app.OnRecordAfterCreateSuccess("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			return finishPostCommit(e, "SalesShipment.AfterCreate", func() error {
-				return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -88,7 +88,7 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 	app.OnRecordAfterUpdateSuccess("sales_shipments").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
 			return finishPostCommit(e, "SalesShipment.AfterUpdate", func() error {
-				return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -99,65 +99,10 @@ func RegisterSalesShipmentHooks(app *pocketbase.PocketBase) {
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
-			return updateSalesContractExecution(app, e.Record.GetString("sales_contract"))
+			return finishPostCommit(e, "SalesShipment.AfterDelete", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
+			})
 		},
 		Priority: 0,
 	})
-}
-
-func updateSalesContractExecution(app *pocketbase.PocketBase, contractId string) error {
-	contract, err := GetRecordById(app, "sales_contracts", contractId)
-	if err != nil {
-		return err
-	}
-
-	shipments, err := GetRecordsByField(app, "sales_shipments", "sales_contract", contractId)
-	if err != nil {
-		shipments = []*core.Record{}
-	}
-
-	totalQuantity := SumField(shipments, "quantity")
-
-	totalContractQuantity := contract.GetFloat("total_quantity")
-
-	if totalContractQuantity > 0 {
-		executionPercent := ComputePercent(totalQuantity, totalContractQuantity)
-		contract.Set("executed_quantity", totalQuantity)
-		contract.Set("execution_percent", executionPercent)
-	}
-
-	unitPrice := contract.GetFloat("unit_price")
-	receiptedAmount := contract.GetFloat("receipted_amount")
-	receivableAmount := totalQuantity * unitPrice
-
-	var receiptPercent, debtAmount, debtPercent float64
-	if receivableAmount > 0 {
-		receiptPercent = ComputePercent(receiptedAmount, receivableAmount)
-		debtAmount = receivableAmount - receiptedAmount
-		debtPercent = 100 - receiptPercent
-	} else {
-		receiptPercent = 0
-		debtAmount = 0
-		debtPercent = 0
-	}
-	contract.Set("receipt_percent", receiptPercent)
-	contract.Set("debt_amount", debtAmount)
-	contract.Set("debt_percent", debtPercent)
-
-	return updateSalesContractStatus(app, contract)
-}
-
-func updateSalesContractStatus(app core.App, contract *core.Record) error {
-	executionPercent := contract.GetFloat("execution_percent")
-	receiptPercent := contract.GetFloat("receipt_percent")
-	invoicePercent := contract.GetFloat("invoice_percent")
-	currentStatus := contract.GetString("status")
-
-	if executionPercent >= 100 && receiptPercent >= 100 && invoicePercent >= 100 && currentStatus != "cancelled" {
-		contract.Set("status", "completed")
-	} else if currentStatus == "completed" {
-		contract.Set("status", "executing")
-	}
-
-	return SaveRecord(app, contract)
 }

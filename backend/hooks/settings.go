@@ -21,20 +21,20 @@ func RegisterSettingsHooks(app *pocketbase.PocketBase) {
 			title := "汇率变更通知"
 			message := fmt.Sprintf("美元兑人民币汇率已更新为 %.4f，请关注跨境合同金额变化。", newRate)
 
-			salesUsers, err := GetUsersByType(app, "sales")
+			salesUsers, err := GetUsersByType(e.App, "sales")
 			if err != nil {
 				log.Printf("[Settings] Failed to get sales users: %v\n", err)
 			} else if len(salesUsers) > 0 {
-				if err := CreateSalesNotification(app, "exchange_rate_changed", title, message, "sales", ""); err != nil {
+				if err := CreateSalesNotification(e.App, "exchange_rate_changed", title, message, "sales", ""); err != nil {
 					log.Printf("[Settings] Failed to create notification for sales: %v\n", err)
 				}
 			}
 
-			purchaseUsers, err := GetUsersByType(app, "purchasing")
+			purchaseUsers, err := GetUsersByType(e.App, "purchasing")
 			if err != nil {
 				log.Printf("[Settings] Failed to get purchasing users: %v\n", err)
 			} else if len(purchaseUsers) > 0 {
-				if err := CreatePurchasingNotification(app, "exchange_rate_changed", title, message, "purchasing", ""); err != nil {
+				if err := CreatePurchasingNotification(e.App, "exchange_rate_changed", title, message, "purchasing", ""); err != nil {
 					log.Printf("[Settings] Failed to create notification for purchasing: %v\n", err)
 				}
 			}

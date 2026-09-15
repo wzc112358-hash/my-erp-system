@@ -14,7 +14,7 @@ import { pb } from '@/lib/pocketbase';
 import { RecycleBinAPI } from '@/api/recycle-bin';
 import type { RecycleCollection } from '@/api/recycle-bin';
 import { getUsdToCnyRate, formatCrossBorderAmount, formatFreightAmount } from '@/lib/exchange-rate';
-import { calculateBusinessDealProfit, DEFAULT_PROFIT_TAX_RATE } from '@/lib/contract-profit';
+import { DEFAULT_PROFIT_TAX_RATE } from '@/lib/contract-profit';
 import type { ContractDetailData, PurchaseArrivalRecord, PurchaseInvoiceRecord, PurchasePaymentRecord, SaleInvoiceRecord } from '@/types/comparison';
 import type { BiddingRecord } from '@/types/bidding-record';
 import { useManagerPendingStore } from '@/stores/manager-pending';
@@ -26,6 +26,19 @@ const formatUSD = (value: number) => `$${(value ?? 0).toFixed(6)}`;
 const formatDate = (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-';
 const percentFormat = (value: number) => `${value.toFixed(2)}%`;
 const responsiveDescriptionColumns = { xs: 1, sm: 2, lg: 4 } as const;
+
+const ProfitFormulaNote: React.FC<{
+  taxRateLabel: string;
+  exchangeRate?: number;
+}> = ({ taxRateLabel, exchangeRate }) => (
+  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+    <div>营业利润 = 销售不含税 - 采购不含税 - 运费 - 杂费 - 关税 - 增值税</div>
+    <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
+    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
+    <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
+    {exchangeRate !== undefined && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
+  </div>
+);
 
 interface ProfitCalc {
   operatingProfit: number;
@@ -40,12 +53,6 @@ interface ProfitCalc {
   quantityMatched: boolean;
   salesReceivableAmount: number;
   purchasePaidAmount: number;
-  currentProfit: number;
-  currentProfitTax: number;
-  currentProfitNet: number;
-  minQty: number;
-  salesQty: number;
-  purchaseQty: number;
   // 已执行利润（按各自实际执行量）
   realizedSalesQty: number;
   realizedPurchaseQty: number;
@@ -91,65 +98,29 @@ const readRealizedUSD = (data: ContractDetailData, rate: number) => {
   };
 };
 
-const calcProfitCNY = (data: ContractDetailData, rate: number): ProfitCalc => {
-  const salesContracts = data.sales_contracts?.length
-    ? data.sales_contracts
-    : (data.sales_contract ? [data.sales_contract] : []);
-  const salesReceivableAmount = salesContracts.reduce((sum, contract) => (
-    sum + contract.executed_quantity * contract.unit_price * (contract.is_cross_border ? rate : 1)
-  ), 0);
-  const paidAmount = (data.purchase_payments || []).reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
-  const salesQty = salesContracts.reduce((sum, contract) => sum + contract.total_quantity, 0);
-  const purchaseQty = data.purchase_contracts.reduce((sum, pc) => sum + pc.total_quantity, 0);
-  const minQty = Math.min(salesQty, purchaseQty);
+const calcProfitCNY = (data: ContractDetailData): ProfitCalc => {
+  const p = data.profit;
   const realized = readRealizedCNY(data);
-  const salesAmounts = salesContracts.reduce((totals, contract) => {
-    const amount = contract.total_amount * (contract.is_cross_border ? rate : 1);
-    totals.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
-    totals.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
-    return totals;
-  }, { incTax: 0, exTax: 0 });
-  const purchaseTotalAmountCny = data.purchase_contracts.reduce((sum, pc) => {
-    const amountCny = pc.is_cross_border ? pc.total_amount * rate : pc.total_amount;
-    return sum + amountCny;
-  }, 0);
-  const freightCny = data.profit.total_freight;
-  const miscCny = data.profit.total_miscellaneous;
-  const totalTariff = data.profit.total_tariff ?? data.purchase_arrivals.reduce((sum, arrival) => sum + (arrival.tariff || 0), 0);
-  const totalVAT = data.profit.total_value_added_tax ?? data.purchase_arrivals.reduce((sum, arrival) => sum + (arrival.value_added_tax || 0), 0);
-  const profit = calculateBusinessDealProfit({
-    salesAmountIncTax: salesAmounts.incTax,
-    salesAmountExTax: salesAmounts.exTax,
-    purchaseAmountIncTax: purchaseTotalAmountCny,
-    freight: freightCny,
-    miscellaneous: miscCny,
-    tariff: totalTariff,
-    valueAddedTax: totalVAT,
-    taxRate: data.profit.tax_rate ?? DEFAULT_PROFIT_TAX_RATE,
-  });
-  const currentProfit = realized.realizedNetProfit;
 
   return {
-    operatingProfit: profit.operatingProfit,
-    taxAmount: profit.taxAmount,
-    netProfit: profit.netProfit,
-    salesAmountIncTax: profit.salesAmountIncTax,
-    purchaseAmountIncTax: profit.purchaseAmountIncTax,
-    salesAmountExTax: profit.salesAmountExTax,
-    purchaseAmountExTax: profit.purchaseAmountExTax,
-    totalFreight: freightCny,
-    totalMiscellaneous: miscCny,
-    quantityMatched: data.profit.is_quantity_matched,
-    salesReceivableAmount,
-    purchasePaidAmount: paidAmount,
-    currentProfit, currentProfitTax: 0, currentProfitNet: 0,
-    minQty, salesQty, purchaseQty,
+    operatingProfit: p.total_profit,
+    taxAmount: p.tax_amount ?? 0,
+    netProfit: p.after_tax_profit ?? 0,
+    salesAmountIncTax: p.sales_amount,
+    purchaseAmountIncTax: p.purchase_amount,
+    salesAmountExTax: p.sales_amount_ex_tax ?? 0,
+    purchaseAmountExTax: p.purchase_amount_ex_tax ?? 0,
+    totalFreight: p.total_freight,
+    totalMiscellaneous: p.total_miscellaneous,
+    quantityMatched: p.is_quantity_matched,
+    salesReceivableAmount: p.sales_receivable_amount ?? 0,
+    purchasePaidAmount: p.purchase_paid_amount ?? 0,
     ...realized,
   };
 };
 
 const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
-  const cny = calcProfitCNY(data, rate);
+  const cny = calcProfitCNY(data);
   const divisor = rate > 0 ? rate : 1;
   return {
     ...cny,
@@ -164,7 +135,6 @@ const calcProfitUSD = (data: ContractDetailData, rate: number): ProfitCalc => {
     totalMiscellaneous: cny.totalMiscellaneous / divisor,
     salesReceivableAmount: cny.salesReceivableAmount / divisor,
     purchasePaidAmount: cny.purchasePaidAmount / divisor,
-    currentProfit: cny.currentProfit / divisor,
     ...readRealizedUSD(data, divisor),
   };
 };
@@ -470,7 +440,6 @@ const ContractDetailPage: React.FC = () => {
     { title: '开票日期', dataIndex: 'issue_date', key: 'issue_date', render: (v: string) => formatDate(v) },
     managerConfirmationColumn('sale_invoices'),
     { title: '最近驳回原因', dataIndex: 'rejection_reason', key: 'rejection_reason', width: 220, render: (v: string) => v || '-' },
-    invoiceVerificationColumn('sale_invoices'),
     { title: '备注', dataIndex: 'remark', key: 'remark' },
     { title: '创建时间', dataIndex: 'created', key: 'created', render: (v: string) => formatDate(v) },
   ];
@@ -610,10 +579,10 @@ const ContractDetailPage: React.FC = () => {
                 <Descriptions.Item label="已执行数量">{sc.executed_quantity} 吨</Descriptions.Item>
                 <Descriptions.Item label="执行比例">{sc.execution_percent ? percentFormat(sc.execution_percent) : '-'}</Descriptions.Item>
                 <Descriptions.Item label="应收金额">{formatCrossBorderAmount(sc.executed_quantity * sc.unit_price, isCrossBorder, exchangeRate)}</Descriptions.Item>
-                <Descriptions.Item label="已收金额">{formatCurrency(sc.receipted_amount)}</Descriptions.Item>
+                <Descriptions.Item label="已收金额">{formatCrossBorderAmount(sc.receipted_amount, isCrossBorder, exchangeRate)}</Descriptions.Item>
                 <Descriptions.Item label="收款比例">{sc.receipt_percent ? percentFormat(sc.receipt_percent) : '-'}</Descriptions.Item>
-                <Descriptions.Item label="欠款金额">{formatCurrency(sc.debt_amount)}</Descriptions.Item>
-                <Descriptions.Item label="已开票金额">{formatCurrency(sc.invoiced_amount)}</Descriptions.Item>
+                <Descriptions.Item label="欠款金额">{formatCrossBorderAmount(sc.debt_amount, isCrossBorder, exchangeRate)}</Descriptions.Item>
+                <Descriptions.Item label="已开票金额">{formatCrossBorderAmount(sc.invoiced_amount, isCrossBorder, exchangeRate)}</Descriptions.Item>
                 <Descriptions.Item label="签约日期">{formatDate(sc.sign_date)}</Descriptions.Item>
                 <Descriptions.Item label="状态"><Tag color={sc.status === 'executing' ? 'blue' : sc.status === 'completed' ? 'green' : 'red'}>{sc.status === 'executing' ? '执行中' : sc.status === 'completed' ? '已完成' : sc.status}</Tag></Descriptions.Item>
                 <Descriptions.Item label="备注">{sc.remark || '-'}</Descriptions.Item>
@@ -657,8 +626,8 @@ const ContractDetailPage: React.FC = () => {
                 <Descriptions.Item label={unitPriceLabel}>{unitPriceDisplay}</Descriptions.Item>
                 <Descriptions.Item label="总数量">{pc.total_quantity} 吨</Descriptions.Item>
                 <Descriptions.Item label="已执行数量">{pc.executed_quantity} 吨</Descriptions.Item>
-                <Descriptions.Item label="已付金额">{formatCurrency(pc.paid_amount)}</Descriptions.Item>
-                <Descriptions.Item label="已开票金额">{formatCurrency(pc.invoiced_amount)}</Descriptions.Item>
+                <Descriptions.Item label="已付金额">{formatCrossBorderAmount(pc.paid_amount, isCrossBorder, exchangeRate)}</Descriptions.Item>
+                <Descriptions.Item label="已开票金额">{formatCrossBorderAmount(pc.invoiced_amount, isCrossBorder, exchangeRate)}</Descriptions.Item>
                 <Descriptions.Item label="签约日期">{formatDate(pc.sign_date || '')}</Descriptions.Item>
                 <Descriptions.Item label="状态">
                   <Tag color={pc.status === 'executing' ? 'blue' : pc.status === 'completed' ? 'green' : 'red'}>
@@ -707,7 +676,7 @@ const ContractDetailPage: React.FC = () => {
     const taxRate = detailData.profit.tax_rate ?? DEFAULT_PROFIT_TAX_RATE;
     const taxRateLabel = `${(taxRate * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`;
 
-    const cnyCalc = calcProfitCNY(detailData, exchangeRate);
+    const cnyCalc = calcProfitCNY(detailData);
     const usdCalc = bothCrossBorder ? calcProfitUSD(detailData, exchangeRate) : null;
 
     return (
@@ -758,13 +727,7 @@ const ContractDetailPage: React.FC = () => {
                     </Descriptions.Item>
                     {renderRealizedProfitItems(cnyCalc, formatCurrency)}
                   </Descriptions>
-                  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
-                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
-                    <div>汇率: 1 USD = {exchangeRate} CNY</div>
-                  </div>
+                  <ProfitFormulaNote taxRateLabel={taxRateLabel} exchangeRate={exchangeRate} />
                 </>
               ),
             },
@@ -793,12 +756,7 @@ const ContractDetailPage: React.FC = () => {
                     </Descriptions.Item>
                     {renderRealizedProfitItems(usdCalc!, formatUSD)}
                   </Descriptions>
-                  <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-                    <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
-                    <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
-                    <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
-                  </div>
+                  <ProfitFormulaNote taxRateLabel={taxRateLabel} />
                 </>
               ),
             },
@@ -825,13 +783,10 @@ const ContractDetailPage: React.FC = () => {
               </Descriptions.Item>
               {renderRealizedProfitItems(cnyCalc, formatCurrency)}
             </Descriptions>
-            <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
-              <div>营业利润 = 销售含税 - 采购含税 - 运费 - 杂费 - 关税 - 增值税</div>
-              <div>税额 = (销售含税 - 采购含税) × {taxRateLabel}（本交易税率快照）</div>
-              <div>净利润 = 销售含税 - 采购含税 - 税额 - 运费 - 杂费 - 关税 - 增值税</div>
-              <div>已执行利润 = 按销售已发货量 / 采购已到货量核算，未执行部分暂不计入</div>
-              {hasCrossBorder && <div>汇率: 1 USD = {exchangeRate} CNY</div>}
-            </div>
+            <ProfitFormulaNote
+              taxRateLabel={taxRateLabel}
+              exchangeRate={hasCrossBorder ? exchangeRate : undefined}
+            />
           </>
         )}
       </Card>

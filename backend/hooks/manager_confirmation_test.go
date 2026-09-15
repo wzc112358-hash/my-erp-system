@@ -34,9 +34,17 @@ func TestConfirmBusinessRecordCompletesWithRegisteredUpdateHooks(t *testing.T) {
 	}
 }
 
-func TestSaleInvoiceDefaultsToUnverified(t *testing.T) {
+func TestSaleInvoiceDoesNotUseVerification(t *testing.T) {
 	app := newContractOperationsTestApp(t)
 	defer app.Cleanup()
+
+	collection, err := app.FindCollectionByNameOrId("sale_invoices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collection.Fields.GetByName("is_verified") != nil {
+		t.Fatal("sales invoice unexpectedly exposes purchase-only verification field")
+	}
 
 	contract := newDuplicateSalesContract(t, app, "")
 	RegisterSaleInvoiceHooks(app)
@@ -45,8 +53,8 @@ func TestSaleInvoiceDefaultsToUnverified(t *testing.T) {
 		"product_amount": 1,
 	})
 
-	if got := invoice.GetString("is_verified"); got != "no" {
-		t.Fatalf("default verification status: want no, got %q", got)
+	if invoice.Collection().Fields.GetByName("is_verified") != nil {
+		t.Fatal("sales invoice hook reintroduced purchase-only verification field")
 	}
 }
 

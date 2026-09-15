@@ -184,7 +184,6 @@ function buildFlowGraph(data: ContractDetailData): { nodes: Node[]; edges: Edge[
         sublabel: formatCurrency(si.amount),
         date: formatDate(si.issue_date),
         managerConfirmed: si.manager_confirmed,
-        verificationStatus: si.is_verified || 'no',
         collectionName: 'sale_invoices', recordId: si.id,
         record: si as unknown as Record<string, unknown>,
         attachments: si.attachments,
@@ -411,7 +410,6 @@ const renderModalDetail = (data: FlowNodeData, exchangeRate: number) => {
           <Descriptions.Item label="发票金额">{formatCurrency(r.amount as number)}</Descriptions.Item>
           <Descriptions.Item label="开票日期">{formatDate(r.issue_date as string)}</Descriptions.Item>
           <Descriptions.Item label="管理确认状态">{getStatusTag(r.manager_confirmed as string)}</Descriptions.Item>
-          <Descriptions.Item label="是否验票">{r.is_verified === 'yes' ? <Tag color="green">已验票</Tag> : <Tag color="orange">未验票</Tag>}</Descriptions.Item>
           {Boolean(r.rejection_reason) && <Descriptions.Item label="最近驳回原因" span={2}>{r.rejection_reason as string}</Descriptions.Item>}
           <Descriptions.Item label="备注">{(r.remark as string) || '-'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{formatDate(r.created as string)}</Descriptions.Item>
@@ -653,9 +651,9 @@ export const ProgressFlowPage: React.FC = () => {
   }, [modalData, selectedContract, selectedType, message, refreshOptions]);
 
   const handleVerificationChange = useCallback(async (status: InvoiceVerificationStatus) => {
-    if (!modalData || (modalData.flowType !== 'sale_invoice' && modalData.flowType !== 'purchase_invoice')) return;
-    const collection = modalData.collectionName as InvoiceVerificationCollection;
-    const nodeId = `${modalData.flowType === 'sale_invoice' ? 'si' : 'pi'}-${modalData.recordId}`;
+    if (!modalData || modalData.flowType !== 'purchase_invoice') return;
+    const collection: InvoiceVerificationCollection = 'purchase_invoices';
+    const nodeId = `pi-${modalData.recordId}`;
     setVerificationUpdating(true);
     try {
       await InvoiceVerificationAPI.update(collection, modalData.recordId, status);
@@ -689,6 +687,7 @@ export const ProgressFlowPage: React.FC = () => {
   const getModalFooter = useCallback(() => {
     if (!modalData) return null;
     const isInvoice = modalData.flowType === 'sale_invoice' || modalData.flowType === 'purchase_invoice';
+    const needsVerification = modalData.flowType === 'purchase_invoice';
     const needsConfirm = modalData.flowType !== 'sales_contract'
       && modalData.flowType !== 'purchase_contract'
       && modalData.flowType !== 'sales_shipment';
@@ -696,7 +695,7 @@ export const ProgressFlowPage: React.FC = () => {
 
     return (
       <div className="manager-invoice-action-bar">
-        {isInvoice && (
+        {needsVerification && (
           <div className="manager-invoice-verification">
             <span>验票状态</span>
             <Select

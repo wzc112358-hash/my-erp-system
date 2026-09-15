@@ -65,6 +65,9 @@ export interface OverviewContract {
   associatedSalesIds?: string[];
   purchaseSummary?: PurchaseSummary;
   pendingCount?: number;
+  outstandingAmount?: number;
+  unverifiedInvoiceCount?: number;
+  unverifiedInvoiceAmount?: number;
   businessDealId?: string;
   businessDealDate?: string;
 }
@@ -223,6 +226,8 @@ export interface ProfitAnalysis {
   total_profit: number;
   sales_amount: number;
   purchase_amount: number;
+  sales_amount_ex_tax?: number;
+  purchase_amount_ex_tax?: number;
   sales_quantity: number;
   purchase_quantity: number;
   total_freight: number;
@@ -231,7 +236,10 @@ export interface ProfitAnalysis {
   total_value_added_tax?: number;
   is_quantity_matched: boolean;
   tax_rate?: number;
+  tax_amount?: number;
   after_tax_profit?: number;
+  sales_receivable_amount?: number;
+  purchase_paid_amount?: number;
   // 已执行利润（按各自实际执行量核算：销售按已发货量、采购按已到货量）
   realized_sales_quantity?: number;
   realized_purchase_quantity?: number;
@@ -277,7 +285,6 @@ export interface SaleInvoiceRecord {
   uninvoiced_amount: number;
   uninvoiced_percent: number;
   manager_confirmed: string;
-  is_verified: string;
   rejection_reason?: string;
   remark: string;
   attachments: string[];

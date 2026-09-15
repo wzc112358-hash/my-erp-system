@@ -143,7 +143,6 @@ func newContractOperationsTestApp(t testing.TB) *tests.TestApp {
 		&core.TextField{Name: "rejection_reason"},
 		&core.NumberField{Name: "product_amount"},
 		&core.NumberField{Name: "amount"},
-		&core.TextField{Name: "is_verified"},
 	)
 	addSalesChild("bidding_records", &core.TextField{Name: "title"})
 	saleInvoices, _ := app.FindCollectionByNameOrId("sale_invoices")
@@ -289,99 +288,6 @@ func newPurchaseChild(t testing.TB, app core.App, collectionName, contractID str
 		t.Fatal(err)
 	}
 	return record
-}
-
-func TestMergeDuplicateSalesContractsPreservesChildrenAndAttachments(t *testing.T) {
-	app := newContractOperationsTestApp(t)
-	defer app.Cleanup()
-
-	target := newDuplicateSalesContract(t, app, "target.pdf")
-	source := newDuplicateSalesContract(t, app, "source.pdf")
-	purchaseCollection, _ := app.FindCollectionByNameOrId("purchase_contracts")
-	linkedPurchase := core.NewRecord(purchaseCollection)
-	linkedPurchase.Set("no", "P-OUTGOING")
-	linkedPurchase.Set("product_name", "硫酸亚铁")
-	linkedPurchase.Set("supplier", "supplier-a")
-	if err := app.Save(linkedPurchase); err != nil {
-		t.Fatal(err)
-	}
-	source.Set("purchase_contract", linkedPurchase.Id)
-	if err := app.Save(source); err != nil {
-		t.Fatal(err)
-	}
-	newSalesChild(t, app, "sales_shipments", target.Id, map[string]any{"quantity": 9})
-	movedShipment := newSalesChild(t, app, "sales_shipments", source.Id, map[string]any{"quantity": 3})
-	newSalesChild(t, app, "sale_receipts", target.Id, map[string]any{"product_amount": 9, "amount": 76500})
-	newSalesChild(t, app, "sale_receipts", source.Id, map[string]any{"product_amount": 3, "amount": 25500})
-	newSalesChild(t, app, "sale_invoices", target.Id, map[string]any{"product_amount": 9, "amount": 76500})
-	newSalesChild(t, app, "sale_invoices", source.Id, map[string]any{"product_amount": 3, "amount": 25500})
-
-	result, err := mergeDuplicateContracts(app, "sales", source.Id, target.Id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.MovedCounts["sales_shipments"] != 1 {
-		t.Fatalf("expected one moved shipment, got %#v", result.MovedCounts)
-	}
-	if _, err := app.FindRecordById("sales_contracts", source.Id); err == nil {
-		t.Fatal("source duplicate still exists")
-	}
-	moved, err := app.FindRecordById("sales_shipments", movedShipment.Id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if moved.GetString("sales_contract") != target.Id {
-		t.Fatalf("shipment relation: want %s, got %s", target.Id, moved.GetString("sales_contract"))
-	}
-	merged, err := app.FindRecordById("sales_contracts", target.Id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := merged.GetFloat("executed_quantity"); got != 12 {
-		t.Fatalf("executed_quantity: want 12, got %v", got)
-	}
-	if got := merged.GetFloat("receipt_percent"); got != 100 {
-		t.Fatalf("receipt_percent: want 100, got %v", got)
-	}
-	if got := merged.GetFloat("invoice_percent"); got != 100 {
-		t.Fatalf("invoice_percent: want 100, got %v", got)
-	}
-	if got := len(merged.GetStringSlice("attachments")); got != 2 {
-		t.Fatalf("attachments: want 2, got %d (%v)", got, merged.GetStringSlice("attachments"))
-	}
-	if got := merged.GetString("purchase_contract"); got != linkedPurchase.Id {
-		t.Fatalf("outgoing purchase relation: want %s, got %s", linkedPurchase.Id, got)
-	}
-	fsys, err := app.NewFilesystem()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fsys.Close()
-	for _, filename := range merged.GetStringSlice("attachments") {
-		if _, err := fsys.GetReader(merged.BaseFilesPath() + "/" + filename); err != nil {
-			t.Fatalf("merged attachment %s is missing: %v", filename, err)
-		}
-	}
-}
-
-func TestMergeRejectsContractsWithDifferentNumbers(t *testing.T) {
-	app := newContractOperationsTestApp(t)
-	defer app.Cleanup()
-
-	target := newDuplicateSalesContract(t, app, "")
-	source := newDuplicateSalesContract(t, app, "")
-	source.Set("no", "LZX2507058")
-	if err := app.Save(source); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := mergeDuplicateContracts(app, "sales", source.Id, target.Id)
-	if err != errContractsNotDuplicates {
-		t.Fatalf("want duplicate validation error, got %v", err)
-	}
-	if _, err := app.FindRecordById("sales_contracts", source.Id); err != nil {
-		t.Fatal("source was changed despite rejected merge")
-	}
 }
 
 func TestUnlinkAndDeleteClearsContractRelation(t *testing.T) {

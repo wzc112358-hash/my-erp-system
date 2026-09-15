@@ -32,13 +32,13 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 			contract, err := GetRecordById(app, "purchase_contracts", contractId)
 			if err != nil {
 				log.Printf("[PurchaseArrival] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			arrivals, err := GetRecordsByField(app, "purchase_arrivals", "purchase_contract", contractId)
 			if err != nil {
 				log.Printf("[PurchaseArrival] Failed to get arrivals: %v\n", err)
-				arrivals = []*core.Record{}
+				return err
 			}
 
 			newQuantity := e.Record.GetFloat("quantity")
@@ -56,6 +56,7 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 
 	app.OnRecordUpdate("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			rememberChildContractBeforeUpdate(e, "purchase_contract")
 			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
@@ -66,13 +67,13 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 			contract, err := GetRecordById(app, "purchase_contracts", contractId)
 			if err != nil {
 				log.Printf("[PurchaseArrival] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			arrivals, err := GetRecordsByField(app, "purchase_arrivals", "purchase_contract", contractId)
 			if err != nil {
 				log.Printf("[PurchaseArrival] Failed to get arrivals: %v\n", err)
-				arrivals = []*core.Record{}
+				return err
 			}
 
 			currentArrivalId := e.Record.Id
@@ -120,9 +121,8 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 
 	app.OnRecordAfterCreateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
 			return finishPostCommit(e, "PurchaseArrival.AfterCreate", func() error {
-				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -130,9 +130,8 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 
 	app.OnRecordAfterUpdateSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
 			return finishPostCommit(e, "PurchaseArrival.AfterUpdate", func() error {
-				return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -140,51 +139,13 @@ func RegisterPurchaseArrivalHooks(app core.App) {
 
 	app.OnRecordAfterDeleteSuccess("purchase_arrivals").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
-			return updatePurchaseContractExecution(app, e.Record.GetString("purchase_contract"))
+			return finishPostCommit(e, "PurchaseArrival.AfterDelete", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
+			})
 		},
 		Priority: 0,
 	})
-}
-
-func updatePurchaseContractExecution(app core.App, contractId string) error {
-	contract, err := GetRecordById(app, "purchase_contracts", contractId)
-	if err != nil {
-		return err
-	}
-
-	arrivals, err := GetRecordsByField(app, "purchase_arrivals", "purchase_contract", contractId)
-	if err != nil {
-		arrivals = []*core.Record{}
-	}
-
-	totalQuantity := SumField(arrivals, "quantity")
-
-	totalContractQuantity := contract.GetFloat("total_quantity")
-
-	if totalContractQuantity > 0 {
-		executionPercent := ComputePercent(totalQuantity, totalContractQuantity)
-		contract.Set("executed_quantity", totalQuantity)
-		contract.Set("execution_percent", executionPercent)
-	}
-
-	return updatePurchaseContractStatus(app, contract)
-}
-
-func updatePurchaseContractStatus(app core.App, contract *core.Record) error {
-	executionPercent := contract.GetFloat("execution_percent")
-	invoicedPercent := contract.GetFloat("invoiced_percent")
-	paidPercent := contract.GetFloat("paid_percent")
-	currentStatus := contract.GetString("status")
-
-	if executionPercent >= 100 && invoicedPercent >= 100 && paidPercent >= 100 && currentStatus != "cancelled" {
-		contract.Set("status", "completed")
-	} else if currentStatus == "completed" {
-		contract.Set("status", "executing")
-	}
-
-	return SaveRecord(app, contract)
 }

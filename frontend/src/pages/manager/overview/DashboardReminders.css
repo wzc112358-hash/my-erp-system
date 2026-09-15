@@ -1,0 +1,203 @@
+.dashboard-reminders {
+  margin-bottom: 28px;
+  color: #202124;
+}
+
+.dashboard-reminders__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.dashboard-reminders__heading h2.ant-typography {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+.dashboard-reminders__summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dashboard-reminders__summary > span {
+  padding: 7px 10px;
+  border: 1px solid #e6e8eb;
+  border-radius: 8px;
+  background: #fafbfc;
+  color: #52606d;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.dashboard-reminders__summary strong {
+  color: #b45309;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-reminders__collapse.ant-collapse {
+  overflow: hidden;
+  border-color: #dfe3e8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.05);
+}
+
+.dashboard-reminders__collapse .ant-collapse-header {
+  align-items: center !important;
+  min-height: 54px;
+  background: #f7f9fc;
+}
+
+.dashboard-reminders__collapse .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
+.dashboard-reminder-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-reminder-panel-title > .anticon {
+  color: #b45309;
+  font-size: 1rem;
+}
+
+.dashboard-reminder-panel-title .ant-tag {
+  margin-inline-end: 0;
+}
+
+.dashboard-reminder-list {
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dashboard-reminder-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(190px, auto) 16px;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 70px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid #edf0f2;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 180ms ease-out;
+}
+
+.dashboard-reminder-row:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-reminder-row:hover {
+  background: #fafbfc;
+}
+
+.dashboard-reminder-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #1677ff;
+  outline-offset: -2px;
+}
+
+.dashboard-reminder-row__identity,
+.dashboard-reminder-row__status {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dashboard-reminder-row__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboard-reminder-row__title .ant-tag {
+  flex: none;
+  margin-inline-end: 4px;
+}
+
+.dashboard-reminder-row__title strong,
+.dashboard-reminder-row__identity small,
+.dashboard-reminder-row__status strong,
+.dashboard-reminder-row__status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-reminder-row__identity small,
+.dashboard-reminder-row__status small {
+  color: #667085;
+  font-size: 0.8125rem;
+}
+
+.dashboard-reminder-row__status {
+  text-align: right;
+}
+
+.dashboard-reminder-row__status strong {
+  color: #9a6700;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-reminder-row > .anticon {
+  color: #667085;
+}
+
+.dashboard-reminders__collapse .ant-empty {
+  margin: 28px 0;
+}
+
+@media (max-width: 767px) {
+  .dashboard-reminders {
+    margin-bottom: 20px;
+  }
+
+  .dashboard-reminders__heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dashboard-reminders__summary {
+    justify-content: flex-start;
+  }
+
+  .dashboard-reminder-row {
+    grid-template-columns: minmax(0, 1fr) 16px;
+  }
+
+  .dashboard-reminder-row__status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .dashboard-reminder-row > .anticon {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-reminder-row {
+    transition: none;
+  }
+}

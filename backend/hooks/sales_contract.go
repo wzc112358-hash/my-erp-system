@@ -43,14 +43,8 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordAfterCreateSuccess("sales_contracts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			purchaseContractId := e.Record.GetString("purchase_contract")
-			if purchaseContractId != "" || contractIsInBusinessDeal(app, "sales", e.Record.Id) {
+			if contractRelationWasRequested(e.Record) || contractIsInBusinessDeal(e.App, "sales", e.Record.Id) {
 				log.Println("[SalesContract] Sales contract has linked purchase contract, skip creating notification")
-				if purchaseContractId != "" {
-					return finishPostCommit(e, "SalesContract.AfterCreate", func() error {
-						return updatePurchaseContractSalesContract(app, purchaseContractId, e.Record.Id)
-					})
-				}
 				return e.Next()
 			}
 
@@ -60,7 +54,7 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 				return e.Next()
 			}
 
-			customer, err := GetRecordById(app, "customers", customerId)
+			customer, err := GetRecordById(e.App, "customers", customerId)
 			if err != nil {
 				log.Printf("[SalesContract] Failed to get customer: %v\n", err)
 				return e.Next()
@@ -86,7 +80,7 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 					e.Record.GetFloat("total_amount"))
 			}
 
-			purchasingUsers, err := GetUsersByType(app, "purchasing")
+			purchasingUsers, err := GetUsersByType(e.App, "purchasing")
 			if err != nil {
 				log.Printf("[SalesContract] Failed to get purchasing users: %v\n", err)
 				return e.Next()
@@ -97,7 +91,7 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 				return e.Next()
 			}
 
-			err = CreatePurchasingNotification(app, "sales_contract_reminder", title, message, "purchasing", e.Record.Id)
+			err = CreatePurchasingNotification(e.App, "sales_contract_reminder", title, message, "purchasing", e.Record.Id)
 			if err != nil {
 				log.Printf("[SalesContract] Failed to create notification: %v\n", err)
 			}
@@ -118,66 +112,15 @@ func RegisterSalesContractHooks(app *pocketbase.PocketBase) {
 		Func: func(e *core.RecordEvent) error {
 			unitPrice := e.Record.GetFloat("unit_price")
 			totalQuantity := e.Record.GetFloat("total_quantity")
-			newTotalAmount := unitPrice * totalQuantity
-
-			oldTotalAmount := e.Record.GetFloat("total_amount")
-
-			if newTotalAmount == oldTotalAmount {
+			e.Record.Set("total_amount", unitPrice*totalQuantity)
+			if isContractProgressRefresh(e.Context) {
 				return e.Next()
 			}
-
-			e.Record.Set("total_amount", newTotalAmount)
-
-			currentReceiptedAmount := e.Record.GetFloat("receipted_amount")
-			currentInvoicedAmount := e.Record.GetFloat("invoiced_amount")
-
-			var receiptedAmount, invoicedAmount float64
-			if newTotalAmount > 0 && oldTotalAmount > 0 {
-				receiptedAmount = currentReceiptedAmount * newTotalAmount / oldTotalAmount
-				invoicedAmount = currentInvoicedAmount * newTotalAmount / oldTotalAmount
-			} else {
-				receiptedAmount = currentReceiptedAmount
-				invoicedAmount = currentInvoicedAmount
+			if err := refreshContractProgressFields(e.App, "sales", e.Record); err != nil {
+				return fmt.Errorf("recalculate sales contract progress: %w", err)
 			}
-
-			e.Record.Set("receipted_amount", receiptedAmount)
-
-			executedQuantity := e.Record.GetFloat("executed_quantity")
-			receivableAmount := executedQuantity * unitPrice
-
-			var receiptPercent, debtAmount, debtPercent float64
-			if receivableAmount > 0 {
-				receiptPercent = ComputePercent(receiptedAmount, receivableAmount)
-				debtAmount = receivableAmount - receiptedAmount
-				debtPercent = 100 - receiptPercent
-			} else {
-				receiptPercent = 0
-				debtAmount = 0
-				debtPercent = 0
-			}
-
-			e.Record.Set("receipt_percent", receiptPercent)
-			e.Record.Set("debt_amount", debtAmount)
-			e.Record.Set("debt_percent", debtPercent)
-
-			e.Record.Set("invoiced_amount", invoicedAmount)
-			e.Record.Set("invoice_percent", ComputePercent(invoicedAmount, newTotalAmount))
-			e.Record.Set("uninvoiced_amount", newTotalAmount-invoicedAmount)
-			e.Record.Set("uninvoiced_percent", ComputePercent(newTotalAmount-invoicedAmount, newTotalAmount))
-
 			return e.Next()
 		},
 		Priority: 0,
 	})
-}
-
-func updatePurchaseContractSalesContract(app *pocketbase.PocketBase, purchaseContractId, salesContractId string) error {
-	contract, err := GetRecordById(app, "purchase_contracts", purchaseContractId)
-	if err != nil {
-		log.Printf("[SalesContract] Failed to get purchase contract %s: %v\n", purchaseContractId, err)
-		return err
-	}
-
-	contract.Set("sales_contract", salesContractId)
-	return SaveRecord(app, contract)
 }

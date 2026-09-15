@@ -45,13 +45,13 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 			contract, err := GetRecordById(app, "purchase_contracts", contractId)
 			if err != nil {
 				log.Printf("[PurchaseInvoice] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			invoices, err := GetRecordsByField(app, "purchase_invoices", "purchase_contract", contractId)
 			if err != nil {
 				log.Printf("[PurchaseInvoice] Failed to get invoices: %v\n", err)
-				invoices = []*core.Record{}
+				return err
 			}
 
 			newInvoiceProductAmount := e.Record.GetFloat("product_amount")
@@ -69,46 +69,8 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 
 	app.OnRecordAfterCreateSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
-			contractId := e.Record.GetString("purchase_contract")
-			if contractId == "" {
-				log.Println("[PurchaseInvoice] purchase_contract is empty")
-				return e.Next()
-			}
-
-			contract, err := GetRecordById(app, "purchase_contracts", contractId)
-			if err != nil {
-				log.Printf("[PurchaseInvoice] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
-			}
-
-			invoices, err := GetRecordsByField(app, "purchase_invoices", "purchase_contract", contractId)
-			if err != nil {
-				log.Printf("[PurchaseInvoice] Failed to get invoices: %v\n", err)
-				invoices = []*core.Record{}
-			}
-
-			totalAmount := SumField(invoices, "amount")
-
-			totalContractAmount := contract.GetFloat("total_amount")
-			var receivedPercent, uninvoicedAmount, uninvoicedPercent float64
-
-			if totalContractAmount > 0 {
-				receivedPercent = ComputePercent(totalAmount, totalContractAmount)
-				uninvoicedAmount = totalContractAmount - totalAmount
-				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
-			}
-
-			contract.Set("invoiced_amount", totalAmount)
-			contract.Set("invoiced_percent", receivedPercent)
-			contract.Set("uninvoiced_amount", uninvoicedAmount)
-			contract.Set("uninvoiced_percent", uninvoicedPercent)
-
-			log.Printf("[PurchaseInvoice] Updated contract %s: invoiced_amount=%.2f, invoiced_percent=%.2f\n",
-				contractId, totalAmount, receivedPercent)
-
 			return finishPostCommit(e, "PurchaseInvoice.AfterCreate", func() error {
-				return updatePurchaseContractStatus(app, contract)
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -116,6 +78,7 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 
 	app.OnRecordUpdate("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			rememberChildContractBeforeUpdate(e, "purchase_contract")
 			app := e.App
 			contractId := e.Record.GetString("purchase_contract")
 			if contractId == "" {
@@ -126,13 +89,13 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 			contract, err := GetRecordById(app, "purchase_contracts", contractId)
 			if err != nil {
 				log.Printf("[PurchaseInvoice] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			invoices, err := GetRecordsByField(app, "purchase_invoices", "purchase_contract", contractId)
 			if err != nil {
 				log.Printf("[PurchaseInvoice] Failed to get invoices: %v\n", err)
-				invoices = []*core.Record{}
+				return err
 			}
 
 			currentInvoiceId := e.Record.Id
@@ -159,11 +122,6 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 				uninvoicedPercent = ComputePercent(uninvoicedAmount, totalContractAmount)
 			}
 
-			contract.Set("invoiced_amount", totalAmount)
-			contract.Set("invoiced_percent", receivedPercent)
-			contract.Set("uninvoiced_amount", uninvoicedAmount)
-			contract.Set("uninvoiced_percent", uninvoicedPercent)
-
 			e.Record.Set("received_amount", totalAmount)
 			e.Record.Set("received_percent", receivedPercent)
 			e.Record.Set("uninvoiced_amount", uninvoicedAmount)
@@ -189,22 +147,28 @@ func RegisterPurchaseInvoiceHooks(app core.App) {
 				}
 			}
 
-			if err := updatePurchaseContractStatus(app, contract); err != nil {
-				return err
-			}
-
 			return e.Next()
+		},
+		Priority: 0,
+	})
+
+	app.OnRecordAfterUpdateSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			return finishPostCommit(e, "PurchaseInvoice.AfterUpdate", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
+			})
 		},
 		Priority: 0,
 	})
 
 	app.OnRecordAfterDeleteSuccess("purchase_invoices").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
-			return updatePurchaseContractInvoiceProgress(app, e.Record.GetString("purchase_contract"))
+			return finishPostCommit(e, "PurchaseInvoice.AfterDelete", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "purchase", "purchase_contract", e.Record)
+			})
 		},
 		Priority: 0,
 	})
@@ -217,32 +181,4 @@ func shouldPreservePurchaseInvoiceAttachments(oldAttachments, newAttachments []s
 	_, verificationChanged := submittedFields["is_verified"]
 	_, confirmationChanged := submittedFields["manager_confirmed"]
 	return verificationChanged || confirmationChanged
-}
-
-func updatePurchaseContractInvoiceProgress(app core.App, contractId string) error {
-	contract, err := GetRecordById(app, "purchase_contracts", contractId)
-	if err != nil {
-		return err
-	}
-
-	invoices, err := GetRecordsByField(app, "purchase_invoices", "purchase_contract", contractId)
-	if err != nil {
-		invoices = []*core.Record{}
-	}
-
-	totalAmount := SumField(invoices, "amount")
-
-	totalContractAmount := contract.GetFloat("total_amount")
-	if totalContractAmount > 0 {
-		invoicePercent := ComputePercent(totalAmount, totalContractAmount)
-		uninvoicedAmount := totalContractAmount - totalAmount
-		uninvoicedPercent := ComputePercent(uninvoicedAmount, totalContractAmount)
-
-		contract.Set("invoiced_amount", totalAmount)
-		contract.Set("invoiced_percent", invoicePercent)
-		contract.Set("uninvoiced_amount", uninvoicedAmount)
-		contract.Set("uninvoiced_percent", uninvoicedPercent)
-	}
-
-	return updatePurchaseContractStatus(app, contract)
 }

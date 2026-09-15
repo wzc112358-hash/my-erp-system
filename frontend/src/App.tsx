@@ -1,7 +1,6 @@
 import { RouterProvider } from 'react-router-dom';
 import { ConfigProvider, theme, App as AntApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { AuthProvider } from '@/contexts/AuthContext';
 import { router } from '@/routes';
 
 function App() {
@@ -34,9 +33,7 @@ function App() {
       }}
     >
       <AntApp>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
+        <RouterProvider router={router} />
       </AntApp>
     </ConfigProvider>
   );

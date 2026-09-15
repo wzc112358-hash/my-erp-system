@@ -8,7 +8,7 @@ const clearedAuthState = {
   isAuthenticated: false,
 } as const;
 
-export const useAuthStore = create<AuthState>()((set, get) => ({
+export const useAuthStore = create<AuthState>()((set) => ({
   ...clearedAuthState,
   isAuthChecked: false,
 
@@ -30,14 +30,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   selectSystem: (system) => {
     switchSystem(system);
     set({ ...clearedAuthState, isAuthChecked: true });
-  },
-
-  setAuth: (user: User, token: string) => {
-    const currentState = get();
-    if (currentState.token !== token) {
-      pb.authStore.save(token, user as never);
-      set({ user, token, isAuthenticated: true, isAuthChecked: true });
-    }
   },
 
   checkAuth: async () => {

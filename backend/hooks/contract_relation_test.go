@@ -32,6 +32,35 @@ func TestCanRoleManageContractRelation(t *testing.T) {
 	}
 }
 
+func TestPendingContractRelationMarkerIsNotPersisted(t *testing.T) {
+	app := newContractOperationsTestApp(t)
+	defer app.Cleanup()
+
+	collection, err := app.FindCollectionByNameOrId("sales_contracts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(collection)
+	record.Set("no", "S-MARKER")
+	record.Set("product_name", "白油")
+	record.Set("customer", "customer-a")
+	record.SetRaw(pendingContractRelationKey, "purchase-id")
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	if !contractRelationWasRequested(record) {
+		t.Fatal("request marker must remain available to after-create hooks")
+	}
+
+	reloaded, err := app.FindRecordById("sales_contracts", record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contractRelationWasRequested(reloaded) {
+		t.Fatal("request marker must never be persisted")
+	}
+}
+
 func TestLinkContractsSupportsStaffAndMultipleRelationDirections(t *testing.T) {
 	app := newContractOperationsTestApp(t)
 	defer app.Cleanup()

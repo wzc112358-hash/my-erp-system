@@ -26,7 +26,6 @@ func newInvoiceRouteTestApp(t testing.TB, status string, headers map[string]stri
 	invoice.Set("product_name", "硫酸亚铁")
 	invoice.Set("manager_confirmed", status)
 	invoice.Set("creator_user", "sales-user")
-	invoice.Set("is_verified", "yes")
 	if status == "rejected" {
 		invoice.Set("rejection_reason", "原附件不清晰")
 	}
@@ -134,8 +133,11 @@ func TestInvoiceResubmissionRouteReturnsRejectedInvoiceToPending(t *testing.T) {
 			if err != nil {
 				tb.Fatal(err)
 			}
-			if invoice.GetString("manager_confirmed") != "pending" || invoice.GetString("is_verified") != "no" {
+			if invoice.GetString("manager_confirmed") != "pending" {
 				tb.Fatalf("unexpected resubmitted invoice state: %#v", invoice.FieldsData())
+			}
+			if invoice.Collection().Fields.GetByName("is_verified") != nil {
+				tb.Fatal("sales invoice unexpectedly exposes purchase-only verification field")
 			}
 			logs, err := app.FindRecordsByFilter("contract_operation_logs", "record_id = {:id} && operation = 'resubmit_record'", "", 0, 0, map[string]any{"id": invoiceRouteRecordID})
 			if err != nil || len(logs) != 1 || logs[0].GetString("result") != "success" {

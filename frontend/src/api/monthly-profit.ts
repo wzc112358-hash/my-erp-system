@@ -1,5 +1,5 @@
 import { pb } from '@/lib/pocketbase';
-import { calculateBusinessDealProfit } from '@/lib/contract-profit';
+import { calculateBusinessDealFinancials } from '@/lib/business-deal-financials';
 import { businessYearUtcRange } from '@/lib/business-month';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
 import { summarizeMonthlyProfits } from '@/lib/monthly-profit';
@@ -33,25 +33,6 @@ const listByRelationIds = async <T>(
   )));
   return records.flat();
 };
-
-const amountInCny = (amount: number, isCrossBorder: boolean, rate: number) => (
-  (Number(amount) || 0) * (isCrossBorder ? rate : 1)
-);
-
-const arrivalCostsInCny = (arrivals: PurchaseArrivalRecord[], rate: number) => arrivals.reduce(
-  (totals, arrival) => {
-    const freight1Rate = arrival.freight_1_currency === 'USD' ? rate : 1;
-    const freight2Rate = arrival.freight_2_currency === 'USD' ? rate : 1;
-    const miscellaneousRate = arrival.miscellaneous_expenses_currency === 'USD' ? rate : 1;
-    totals.freight += (arrival.freight_1 || 0) * freight1Rate
-      + (arrival.freight_2 || 0) * freight2Rate;
-    totals.miscellaneous += (arrival.miscellaneous_expenses || 0) * miscellaneousRate;
-    totals.tariff += arrival.tariff || 0;
-    totals.valueAddedTax += arrival.value_added_tax || 0;
-    return totals;
-  },
-  { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 },
-);
 
 const uniqueText = (values: (string | undefined)[]) => Array.from(
   new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
@@ -104,33 +85,14 @@ export const MonthlyProfitAPI = {
         .filter((contract): contract is ComparisonPurchaseContract => Boolean(contract));
       if (!salesContracts.length || !purchaseContracts.length) return [];
 
-      const salesAmounts = salesContracts.reduce((total, contract) => {
-        const amount = amountInCny(contract.total_amount, contract.is_cross_border, exchangeRate);
-        total.incTax += contract.is_price_excluding_tax ? amount * 1.13 : amount;
-        total.exTax += contract.is_price_excluding_tax ? amount : amount / 1.13;
-        return total;
-      }, { incTax: 0, exTax: 0 });
-      const purchaseAmount = purchaseContracts.reduce((sum, contract) => (
-        sum + amountInCny(contract.total_amount, contract.is_cross_border, exchangeRate)
-      ), 0);
-      const costs = purchaseContracts.reduce((totals, contract) => {
-        const contractCosts = arrivalCostsInCny(arrivalsByPurchase.get(contract.id) || [], exchangeRate);
-        totals.freight += contractCosts.freight;
-        totals.miscellaneous += contractCosts.miscellaneous;
-        totals.tariff += contractCosts.tariff;
-        totals.valueAddedTax += contractCosts.valueAddedTax;
-        return totals;
-      }, { freight: 0, miscellaneous: 0, tariff: 0, valueAddedTax: 0 });
-      const profit = calculateBusinessDealProfit({
-        salesAmountIncTax: salesAmounts.incTax,
-        salesAmountExTax: salesAmounts.exTax,
-        purchaseAmountIncTax: purchaseAmount,
-        freight: costs.freight,
-        miscellaneous: costs.miscellaneous,
-        tariff: costs.tariff,
-        valueAddedTax: costs.valueAddedTax,
+      const financials = calculateBusinessDealFinancials({
+        salesContracts,
+        purchaseContracts,
+        purchaseArrivals: purchaseContracts.flatMap((contract) => arrivalsByPurchase.get(contract.id) || []),
+        exchangeRate,
         taxRate: deal.tax_rate,
       });
+      const { profit, costs } = financials;
 
       return [{
         id: deal.id,

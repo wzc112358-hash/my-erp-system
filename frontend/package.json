@@ -15,11 +15,10 @@
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.2",
     "antd": "^6.3.0",
-    "axios": "^1.13.5",
     "pocketbase": "^0.26.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.0",
+    "react-router-dom": "^7.18.2",
     "xlsx-js-style": "^1.2.0",
     "zustand": "^5.0.11"
   },

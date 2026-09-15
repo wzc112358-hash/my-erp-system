@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { ComparisonAPI } from '@/api/comparison';
 import type { OverviewContract } from '@/types/comparison';
+import { DashboardReminders } from './overview/DashboardReminders';
 import { RecentContractOverview } from './overview/RecentContractOverview';
 import './DashboardPage.css';
 
@@ -67,6 +68,15 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="manager-dashboard-page manager-page">
+      <DashboardReminders
+        salesContracts={salesContracts}
+        purchaseContracts={purchaseContracts}
+        onOpenContract={(contract) => navigate(
+          contract.type === 'sales'
+            ? `/manager/overview/contract/${contract.id}`
+            : `/manager/overview/purchase/${contract.id}`,
+        )}
+      />
       <RecentContractOverview
         salesContracts={salesContracts}
         purchaseContracts={purchaseContracts}

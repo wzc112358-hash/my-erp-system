@@ -23,13 +23,13 @@ func RegisterSaleReceiptHooks(app core.App) {
 			contract, err := GetRecordById(app, "sales_contracts", contractId)
 			if err != nil {
 				log.Printf("[SaleReceipt] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			receipts, err := GetRecordsByField(app, "sale_receipts", "sales_contract", contractId)
 			if err != nil {
 				log.Printf("[SaleReceipt] Failed to get receipts: %v\n", err)
-				receipts = []*core.Record{}
+				return err
 			}
 
 			newReceiptProductAmount := e.Record.GetFloat("product_amount")
@@ -65,47 +65,8 @@ func RegisterSaleReceiptHooks(app core.App) {
 
 	app.OnRecordAfterCreateSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
-			contractId := e.Record.GetString("sales_contract")
-			if contractId == "" {
-				return e.Next()
-			}
-
-			contract, err := GetRecordById(app, "sales_contracts", contractId)
-			if err != nil {
-				log.Printf("[SaleReceipt] AfterCreate: Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
-			}
-
-			receipts, err := GetRecordsByField(app, "sale_receipts", "sales_contract", contractId)
-			if err != nil {
-				log.Printf("[SaleReceipt] AfterCreate: Failed to get receipts: %v\n", err)
-				receipts = []*core.Record{}
-			}
-
-			totalAmount := SumField(receipts, "amount")
-			executedQuantity := contract.GetFloat("executed_quantity")
-			unitPrice := contract.GetFloat("unit_price")
-			receivableAmount := executedQuantity * unitPrice
-
-			var receiptPercent, debtAmount, debtPercent float64
-
-			if receivableAmount > 0 {
-				receiptPercent = ComputePercent(totalAmount, receivableAmount)
-				debtAmount = receivableAmount - totalAmount
-				debtPercent = 100 - receiptPercent
-			}
-
-			contract.Set("receipted_amount", totalAmount)
-			contract.Set("receipt_percent", receiptPercent)
-			contract.Set("debt_amount", debtAmount)
-			contract.Set("debt_percent", debtPercent)
-
-			log.Printf("[SaleReceipt] AfterCreate: Updating contract %s: receipted_amount=%.2f, receipt_percent=%.2f\n",
-				contractId, totalAmount, receiptPercent)
-
 			return finishPostCommit(e, "SaleReceipt.AfterCreate", func() error {
-				return updateSalesContractStatus(app, contract)
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
 			})
 		},
 		Priority: 0,
@@ -113,6 +74,7 @@ func RegisterSaleReceiptHooks(app core.App) {
 
 	app.OnRecordUpdate("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
+			rememberChildContractBeforeUpdate(e, "sales_contract")
 			app := e.App
 			contractId := e.Record.GetString("sales_contract")
 			if contractId == "" {
@@ -123,13 +85,13 @@ func RegisterSaleReceiptHooks(app core.App) {
 			contract, err := GetRecordById(app, "sales_contracts", contractId)
 			if err != nil {
 				log.Printf("[SaleReceipt] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
+				return err
 			}
 
 			receipts, err := GetRecordsByField(app, "sale_receipts", "sales_contract", contractId)
 			if err != nil {
 				log.Printf("[SaleReceipt] Failed to get receipts: %v\n", err)
-				receipts = []*core.Record{}
+				return err
 			}
 
 			currentReceiptId := e.Record.Id
@@ -160,16 +122,6 @@ func RegisterSaleReceiptHooks(app core.App) {
 			e.Record.Set("debt_amount", debtAmount)
 			e.Record.Set("debt_percent", debtPercent)
 
-			contract.Set("receipted_amount", totalAmount)
-			contract.Set("receipt_percent", receiptPercent)
-			contract.Set("debt_amount", debtAmount)
-			contract.Set("debt_percent", debtPercent)
-
-			err = SaveRecord(app, contract)
-			if err != nil {
-				log.Printf("[SaleReceipt] Failed to save contract: %v\n", err)
-			}
-
 			oldStatus := ""
 			if oldRecord != nil {
 				oldStatus = oldRecord.GetString("manager_confirmed")
@@ -195,46 +147,23 @@ func RegisterSaleReceiptHooks(app core.App) {
 		Priority: 0,
 	})
 
+	app.OnRecordAfterUpdateSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			return finishPostCommit(e, "SaleReceipt.AfterUpdate", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
+			})
+		},
+		Priority: 0,
+	})
+
 	app.OnRecordAfterDeleteSuccess("sale_receipts").Bind(&hook.Handler[*core.RecordEvent]{
 		Func: func(e *core.RecordEvent) error {
-			app := e.App
 			if isContractCascadeDelete(e.Context) {
 				return e.Next()
 			}
-			contractId := e.Record.GetString("sales_contract")
-			if contractId == "" {
-				log.Println("[SaleReceipt] sales_contract is empty")
-				return e.Next()
-			}
-
-			contract, err := GetRecordById(app, "sales_contracts", contractId)
-			if err != nil {
-				log.Printf("[SaleReceipt] Failed to get contract %s: %v\n", contractId, err)
-				return e.Next()
-			}
-
-			receipts, err := GetRecordsByField(app, "sale_receipts", "sales_contract", contractId)
-			if err != nil {
-				log.Printf("[SaleReceipt] Failed to get receipts: %v\n", err)
-				receipts = []*core.Record{}
-			}
-
-			totalAmount := SumField(receipts, "amount")
-			receivableAmount := contract.GetFloat("executed_quantity") * contract.GetFloat("unit_price")
-			var receiptPercent, debtAmount, debtPercent float64
-
-			if receivableAmount > 0 {
-				receiptPercent = ComputePercent(totalAmount, receivableAmount)
-				debtAmount = receivableAmount - totalAmount
-				debtPercent = 100 - receiptPercent
-			}
-
-			contract.Set("receipted_amount", totalAmount)
-			contract.Set("receipt_percent", receiptPercent)
-			contract.Set("debt_amount", debtAmount)
-			contract.Set("debt_percent", debtPercent)
-
-			return updateSalesContractStatus(app, contract)
+			return finishPostCommit(e, "SaleReceipt.AfterDelete", func() error {
+				return recalculateChildContractProgress(e.Context, e.App, "sales", "sales_contract", e.Record)
+			})
 		},
 		Priority: 0,
 	})

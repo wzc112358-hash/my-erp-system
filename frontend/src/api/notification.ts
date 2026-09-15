@@ -18,18 +18,21 @@ export const createNotificationApi = <T>(collectionName: string, expandRelation:
     const filters: string[] = [];
 
     if (params.is_read !== undefined) {
-      filters.push(`is_read = ${params.is_read}`);
+      filters.push(pb.filter('is_read = {:isRead}', { isRead: params.is_read }));
     }
 
     if (pb.authStore.record) {
       const userId = pb.authStore.record.id;
       const userType = (pb.authStore.record as Record<string, unknown>).type || '';
-      filters.push(`(recipient = "${userId}" || recipient = "${userType}")`);
+      filters.push(pb.filter('(recipient = {:userId} || recipient = {:userType})', {
+        userId,
+        userType,
+      }));
     }
 
     const result = await pb.collection(collectionName).getList<T>(
-      1,
-      500,
+      params.page ?? 1,
+      params.per_page ?? 10,
       {
         filter: filters.length > 0 ? filters.join(' && ') : undefined,
         sort: '-created',
@@ -66,7 +69,10 @@ export const createNotificationApi = <T>(collectionName: string, expandRelation:
     const userId = pb.authStore.record?.id;
     const userType = (pb.authStore.record as Record<string, unknown> | null)?.type || '';
     const filter = userId
-      ? `is_read = false && (recipient = "${userId}" || recipient = "${userType}")`
+      ? pb.filter('is_read = false && (recipient = {:userId} || recipient = {:userType})', {
+        userId,
+        userType,
+      })
       : 'is_read = false';
     const result = await pb.collection(collectionName).getList<T>(
       1,
