@@ -11,6 +11,14 @@ const RECYCLE_COLLECTIONS = [
   "purchase_payments",
 ];
 
+const findCollection = (app, name) => {
+  try {
+    return app.findCollectionByNameOrId(name);
+  } catch {
+    return null;
+  }
+};
+
 const addField = (collection, field) => {
   if (!collection.fields.getByName(field.name)) collection.fields.add(field);
 };
@@ -37,7 +45,11 @@ const removeActiveOnlyRule = (rule) => {
 
 migrate((app) => {
   for (const name of RECYCLE_COLLECTIONS) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) {
+      console.warn(`[migration] recycle collection not found, skip: ${name}`);
+      continue;
+    }
     addField(collection, new DateField({
       id: `date_recycle_${name}`,
       name: "deleted_at",
@@ -104,7 +116,8 @@ migrate((app) => {
   app.save(logs);
 }, (app) => {
   for (const name of RECYCLE_COLLECTIONS) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) continue;
     ["deleted_at", "deleted_by", "delete_batch_id"].forEach((field) => {
       collection.fields.removeByName(field);
     });

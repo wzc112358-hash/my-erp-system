@@ -1,7 +1,16 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+const findCollection = (app, name) => {
+  try {
+    return app.findCollectionByNameOrId(name);
+  } catch {
+    return null;
+  }
+};
+
 migrate((app) => {
-  const collection = app.findCollectionByNameOrId("sale_invoices");
+  const collection = findCollection(app, "sale_invoices");
+  if (!collection) return;
   if (!collection.fields.getByName("is_verified")) {
     collection.fields.add(new SelectField({
       id: "select_sale_invoice_verified",
@@ -12,7 +21,8 @@ migrate((app) => {
     app.save(collection);
   }
 }, (app) => {
-  const collection = app.findCollectionByNameOrId("sale_invoices");
+  const collection = findCollection(app, "sale_invoices");
+  if (!collection) return;
   collection.fields.removeByName("is_verified");
   app.save(collection);
 });

@@ -10,12 +10,21 @@ const removeField = (collection, name) => {
   if (field) collection.fields.removeById(field.getId());
 };
 
+const findCollection = (app, name) => {
+  try {
+    return app.findCollectionByNameOrId(name);
+  } catch {
+    return null;
+  }
+};
+
 migrate((app) => {
   for (const [name, fieldId] of [
     ["sale_invoices", "text_sale_rejection_reason"],
     ["purchase_invoices", "text_purchase_rejection_reason"],
   ]) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) continue;
     addTextField(collection, fieldId, "rejection_reason", 500);
     app.save(collection);
   }
@@ -26,7 +35,8 @@ migrate((app) => {
     ["notifications", "purchasing_notification"],
     ["notifications_02", "sales_notification"],
   ]) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) continue;
     addTextField(collection, `${prefix}_record_collection`, "record_collection", 100);
     addTextField(collection, `${prefix}_record_id`, "record_id", 100);
     addTextField(collection, `${prefix}_rejection_reason`, "rejection_reason", 500);
@@ -41,13 +51,15 @@ migrate((app) => {
   }
 }, (app) => {
   for (const name of ["sale_invoices", "purchase_invoices"]) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) continue;
     removeField(collection, "rejection_reason");
     app.save(collection);
   }
 
   for (const name of ["notifications", "notifications_02"]) {
-    const collection = app.findCollectionByNameOrId(name);
+    const collection = findCollection(app, name);
+    if (!collection) continue;
     removeField(collection, "record_collection");
     removeField(collection, "record_id");
     removeField(collection, "rejection_reason");
