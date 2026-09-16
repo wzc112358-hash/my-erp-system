@@ -4,16 +4,18 @@ export type InvoiceVerificationCollection = 'purchase_invoices';
 export type InvoiceVerificationStatus = 'yes' | 'no';
 
 export interface InvoiceVerificationResult {
-  id: string;
-  is_verified: InvoiceVerificationStatus;
+  recordId: string;
+  status: InvoiceVerificationStatus;
+  managerConfirmed: string;
+  changed: boolean;
 }
 
 export const InvoiceVerificationAPI = {
   update: (
-    collection: InvoiceVerificationCollection,
     recordId: string,
     status: InvoiceVerificationStatus,
-  ) => pb.collection(collection).update<InvoiceVerificationResult>(recordId, {
-    is_verified: status,
+  ) => pb.send<InvoiceVerificationResult>('/api/erp/purchase-invoice-verifications', {
+    method: 'POST',
+    body: { recordId, status },
   }),
 };

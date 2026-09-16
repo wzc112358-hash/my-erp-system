@@ -11,7 +11,7 @@ import { getPbErrorMessage, isAbortedError } from '@/api/helpers';
 import { ManagerConfirmationAPI } from '@/api/manager-confirmation';
 import type { ManagerConfirmableCollection, ManagerConfirmationDecision } from '@/api/manager-confirmation';
 import { InvoiceVerificationAPI } from '@/api/invoice-verification';
-import type { InvoiceVerificationCollection, InvoiceVerificationStatus } from '@/api/invoice-verification';
+import type { InvoiceVerificationStatus } from '@/api/invoice-verification';
 import type { FlowContractOption, FlowNodeData, ContractDetailData } from '@/types/comparison';
 import { pb } from '@/lib/pocketbase';
 import { getUsdToCnyRate } from '@/lib/exchange-rate';
@@ -652,11 +652,10 @@ export const ProgressFlowPage: React.FC = () => {
 
   const handleVerificationChange = useCallback(async (status: InvoiceVerificationStatus) => {
     if (!modalData || modalData.flowType !== 'purchase_invoice') return;
-    const collection: InvoiceVerificationCollection = 'purchase_invoices';
     const nodeId = `pi-${modalData.recordId}`;
     setVerificationUpdating(true);
     try {
-      await InvoiceVerificationAPI.update(collection, modalData.recordId, status);
+      await InvoiceVerificationAPI.update(modalData.recordId, status);
       setModalData((current) => current ? {
         ...current,
         verificationStatus: status,
@@ -676,13 +675,14 @@ export const ProgressFlowPage: React.FC = () => {
             }
           : node
       )));
+      await refreshOptions();
       message.success('验票状态已更新');
     } catch (err) {
       message.error(getPbErrorMessage(err, '验票状态更新失败'));
     } finally {
       setVerificationUpdating(false);
     }
-  }, [message, modalData]);
+  }, [message, modalData, refreshOptions]);
 
   const getModalFooter = useCallback(() => {
     if (!modalData) return null;
@@ -697,7 +697,7 @@ export const ProgressFlowPage: React.FC = () => {
       <div className="manager-invoice-action-bar">
         {needsVerification && (
           <div className="manager-invoice-verification">
-            <span>验票状态</span>
+            <span>验票状态（管理确认后仍可修改）</span>
             <Select
               size="small"
               value={modalData.verificationStatus === 'yes' ? 'yes' : 'no'}
@@ -758,6 +758,13 @@ export const ProgressFlowPage: React.FC = () => {
         </Button>
       )}
       <Card style={{ marginBottom: 16, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <Alert
+          type="info"
+          showIcon
+          title="已确认但未验票的采购发票会继续保留在这里"
+          description="发票实际验票后，打开标有“未验票”的采购进项票节点，把验票状态改为“已验票”即可；原管理确认结果不会改变。"
+          style={{ marginBottom: 12 }}
+        />
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select
             value={selectedContract}

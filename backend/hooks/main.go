@@ -27,6 +27,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	RegisterBusinessDealRoutes(app)
 	RegisterRecycleBinRoutes(app)
 	RegisterManagerConfirmationRoutes(app)
+	RegisterPurchaseInvoiceVerificationRoutes(app)
 	RegisterInvoiceResubmissionRoutes(app)
 	RegisterBusinessRecordAuditHooks(app)
 

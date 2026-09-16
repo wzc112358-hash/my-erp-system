@@ -251,20 +251,21 @@ const ContractDetailPage: React.FC = () => {
     const key = `${collection}:${recordId}`;
     setVerificationUpdating(key);
     try {
-      await InvoiceVerificationAPI.update(collection, recordId, value);
+      await InvoiceVerificationAPI.update(recordId, value);
       if (id) {
         const data = isStandalonePurchase
           ? await ComparisonAPI.getPurchaseContractDetail(id)
           : await ComparisonAPI.getContractDetail(id);
         setDetailData(data);
       }
+      await fetchPendingCount();
       message.success('验票状态已更新');
     } catch (error) {
       message.error(getPbErrorMessage(error, '验票状态更新失败'));
     } finally {
       setVerificationUpdating(undefined);
     }
-  }, [id, isStandalonePurchase, message]);
+  }, [fetchPendingCount, id, isStandalonePurchase, message]);
 
   const invoiceVerificationColumn = (collection: InvoiceVerificationCollection) => ({
     title: '验票状态',
